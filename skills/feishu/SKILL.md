@@ -13,6 +13,12 @@ description: 通过飞书 Open API 在个人云盘创建或更新新版文档与
 - OAuth 回调地址默认是 `http://localhost:53682/callback`，必须与飞书开放平台配置一致。
 - 必需的用户权限：`docx:document`、`docs:document.media:upload`。
 
+## GitHub 同步
+
+- 本机此 Skill 有功能或说明更新时，在同一任务中将对应的脱敏版本同步到私有仓库 `https://github.com/4563599/software.git` 的 `skills/feishu/`，并验证推送结果；没有实质差异时不创建提交。
+- 仓库副本是可移植版本。只同步 Skill 源文件，保留本机专用配置在本机；不得直接将本目录整体复制或推送到仓库，也不得用仓库副本覆盖本机配置。
+- 提交前检查暂存差异，排除 App ID、App Secret、令牌、真实账号密码、私人飞书链接及本机缓存。无法确定内容是否安全时停止推送并告知用户。
+
 ## API 优先
 
 - 创建文档、读取文档信息、写入正文、追加正文、替换正文和检查结果，必须优先使用 `scripts/feishu_docs.py` 调用飞书 Open API。只要 API 能完成，就不得使用内置浏览器或桌面自动化模拟点击、输入和复制粘贴。

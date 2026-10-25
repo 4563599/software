@@ -1,0 +1,10 @@
+# 可选：Codex 模型请求使用 HTTPS/SSE。
+# 合并到现有 config.toml；model_provider 放在文件的顶层区域。
+# 不要用此文件覆盖已有的 Codex 配置。
+model_provider = "openai-http"
+
+[model_providers.openai-http]
+name = "OpenAI HTTP"
+wire_api = "responses"
+requires_openai_auth = true
+supports_websockets = false

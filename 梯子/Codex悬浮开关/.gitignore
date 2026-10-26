@@ -1,0 +1,8 @@
+*.exe
+*.log
+widget-settings.json
+last-*.json
+installation.json
+widget-self-test.json
+test-state/
+backups/

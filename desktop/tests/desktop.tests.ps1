@@ -10,5 +10,6 @@ $fixture=@([pscustomobject]@{ProcessId=10;ParentProcessId=1;Name='studio64.exe';
 if((Select-AndroidStudioRelatedProcessIds -Processes $fixture)-join ',' -ne '10,11'){throw 'Android process selection regressed.'}
 if((Get-AndroidStudioTaskKillArguments -ProcessIds @(10,11,10)) -ne '/F /T /PID 10 /PID 11'){throw 'Android elevated arguments regressed.'}
 & (Join-Path $PSScriptRoot 'ai-process-cleanup.tests.ps1')
+& (Join-Path $PSScriptRoot 'configure-notes.tests.ps1')
 & (Join-Path $root 'Install.ps1') -DryRun | Out-Null
 Write-Output 'PASS: Source parsing, C / AS selection, protected notes, and installation dry-run.'

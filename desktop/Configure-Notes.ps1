@@ -16,11 +16,14 @@ if((Test-Path -LiteralPath $config) -and -not $ReplaceServer){throw 'A server is
 New-Item -ItemType Directory -Path $data -Force | Out-Null
 $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
 $acl=New-Object Security.AccessControl.DirectorySecurity
-$acl.SetOwner($sid);$acl.SetAccessRuleProtection($true,$false)
+$acl.SetAccessRuleProtection($true,$false)
 foreach($identity in @($sid,(New-Object Security.Principal.SecurityIdentifier('S-1-5-18')))){
  $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($identity,'FullControl',[Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow)))
 }
-Set-Acl -LiteralPath $data -AclObject $acl
+# Persist access rules only, without requesting audit or owner privileges.
+$directory=Get-Item -LiteralPath $data
+if($PSVersionTable.PSEdition -eq 'Desktop'){$directory.SetAccessControl($acl)}
+else{[IO.FileSystemAclExtensions]::SetAccessControl($directory,$acl)}
 if(Test-Path -LiteralPath $config){Copy-Item -LiteralPath $config -Destination ($config+'.'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.bak')}
 $certificateTarget=Join-Path $data 'server-ca.pem'
 if([IO.Path]::GetFullPath($ServerCertificate) -ne [IO.Path]::GetFullPath($certificateTarget)){Copy-Item -LiteralPath $ServerCertificate -Destination $certificateTarget -Force}

@@ -8,6 +8,7 @@
     "test": "npm run test:windows && npm run test:server",
     "test:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/desktop.tests.ps1",
     "test:server": "python -m unittest discover -s t-notes/tests -p test_store.py -v",
+    "test:ui": "node t-notes/tests/ui_features_test.cjs",
     "test:integration": "python t-notes/tests/system_test.py"
   },
   "devDependencies": { "playwright": "1.62.1" }

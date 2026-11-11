@@ -2,7 +2,7 @@ param([switch]$DryRun,[switch]$NoStart,[switch]$ReplaceExisting)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $root=$PSScriptRoot
-$required=@('Start-Desktop.vbs','codex-floating-button.ps1','codex-floating-button-core.ps1','codex-network-check.ps1','ai-process-cleanup.ps1','ai-process-cleanup-worker.ps1','codex-floating-watchdog.ps1','codex-floating-watchdog.vbs','icons\codex-c.ico','icons\codex-c-1024.png','t-notes\Launch.ps1','t-notes\backend.vbs','t-notes\client\desktop.cjs','t-notes\client\web\index.html')
+$required=@('Start-Desktop.vbs','codex-floating-button.ps1','codex-floating-button-core.ps1','codex-network-check.ps1','ai-process-cleanup.ps1','ai-process-cleanup-worker.ps1','codex-floating-watchdog.ps1','codex-floating-watchdog.vbs','icons\codex-c.ico','icons\codex-c-1024.png','t-notes\Launch.ps1','t-notes\window.ps1','t-notes\backend.vbs','t-notes\client\desktop.cjs','t-notes\client\browser-prefs.cjs','t-notes\client\web\index.html')
 foreach($file in $required){if(-not (Test-Path -LiteralPath (Join-Path $root $file) -PathType Leaf)){throw "Required source file is missing: $file"}}
 $node=Join-Path $root 't-notes\runtime\node.exe'
 if(-not (Test-Path -LiteralPath $node)){$command=Get-Command node.exe -ErrorAction SilentlyContinue;if(-not $command){throw 'Install Node.js 22 or newer first.'};$node=$command.Source}

@@ -10,7 +10,10 @@ Windows 桌面常驻悬浮栏，包含 C、AS、T 三个按钮。所有客户端
 | AS | 经确认后关闭 Android Studio、Gradle、ADB、模拟器及相关子进程。未保存的 IDE 内容可能丢失。 |
 | T | 备忘录、AI 提示词、账号密码资料库。默认快速复制列表，支持搜索、分类、置顶、查看/编辑、三栏管理、加密备份及多电脑同步。 |
 
-- 悬浮栏可拖动，保持置顶；每分钟检查并恢复悬浮栏和本地笔记后台。
+- 悬浮栏可拖动，保持置顶，并记住拖动后的位置（原来的屏幕拔掉后回到主屏右下角）；每分钟检查并恢复悬浮栏和本地笔记后台。
+- 右键“退出悬浮按钮”是真正退出：守护任务不会再把它拉回来，下次登录或双击桌面 `Desktop Tools` 才恢复。悬浮栏意外崩溃仍会在一分钟内自动恢复。
+- T 是开关：一次只开一个笔记窗口，窗口已在最前时再点一次收起，否则把它唤到最前。每次点 T，笔记窗口都显示在 T 按钮正上方（靠近屏幕边缘时贴边，上方放不下时显示在下方）；切换到资料库大窗口时从右下角伸缩，仍停在按钮上方。
+- 悬浮栏按钮统一使用蓝色系，不使用绿色。
 - 通过无窗口启动器运行，避免定时弹出黑色命令窗口。
 - 笔记后台独立运行，不依赖 Codex 或 Claude 的存活。
 - 点击 C 不会修改代理、系统安全设置或删除笔记文件，也不会把所有同名 Java / Runtime Broker 一概结束。
@@ -30,6 +33,7 @@ desktop/
   icons/                           悬浮栏图标和生成工具
   t-notes/
     Launch.ps1 / backend.vbs        笔记窗口与独立后台启动
+    window.ps1                     识别并唤起已有笔记窗口，保证只开一个
     client/                        本地 HTTP 后台、Windows 登录保护和界面
     server/                        Linux HTTPS API、SQLite 数据库和每日备份
     tests/                         同步、离线冲突、恢复、加密和网络测试
@@ -92,6 +96,8 @@ python tools\deploy_server.py --host notes.example.com --fingerprint SHA256:填�
 | 内容 | 位置 / 处理 |
 | --- | --- |
 | 本机加密缓存、登录记忆、私人连接配置 | `%LOCALAPPDATA%\TNotes`，不属于源码 |
+| 每日自动备份（密文） | `文档\TNotes-Backups`，可在笔记的“同步与备份”里改到其他文件夹；保留最近 30 份 |
+| 悬浮栏位置 | `%LOCALAPPDATA%\TNotes\toolbar.json` |
 | 服务端加密数据库 | `/var/lib/tnotes/vault.sqlite3` |
 | 每日服务端备份 | `/var/lib/tnotes/backups` |
 | 源码、图标、模板和测试 | 本目录，可提交 Git |
@@ -115,6 +121,18 @@ python tools\verify_source.py
 ```
 
 集成测试在独立临时目录、随机端口和测试证书下运行，使用虚构账号数据，覆盖两客户端同步、离线冲突、密码遮挡、登录记忆、分类联动、一键复制、后台恢复、TLS 校验及网络重试。需要 Chrome。不会对真实资料库进行登录、清理或写入。
+
+界面功能测试只需要 Node.js 和 Chrome，不需要同步服务器：在临时目录里用虚构记录检查布局、提示、快捷键、搜索、回收站、提示词变量、每日备份、导入和恢复。
+
+```powershell
+npm run test:ui
+```
+
+单窗口测试需要 Edge 或 Chrome，会在临时数据目录和随机端口下短暂弹出登录小窗，验证同时启动、连续点击和最小化后唤起都只有一个窗口：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File t-notes\tests\single_window_test.ps1
+```
 
 AI 清理测试只使用进程快照夹具以及测试自己启动的短期子进程，不会点击 C 或关闭正在使用的 AI 应用。`ai-process-cleanup-worker.ps1` 默认是只读 `Audit` 模式；不要在开发时随意传入 `-Mode Clean`。
 

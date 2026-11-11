@@ -3,6 +3,7 @@ const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const os = require('node:os');
 const {spawn} = require('node:child_process');
 
 const port = Number(process.env.TNOTES_PORT || 47321);
@@ -41,6 +42,46 @@ if (remote && (remote.protocol !== 'https:' || remote.username || remote.passwor
 const ca = remote ? fs.readFileSync(path.join(path.dirname(configPath),'server-ca.pem')) : null;
 const staticFiles = new Map([['/','index.html'],['/app.js','app.js'],['/crypto.js','crypto.js'],['/style.css','style.css'],['/lucide.js','lucide.js'],['/icon.svg','icon.svg']]);
 let cached = fs.existsSync(cachePath) ? JSON.parse(fs.readFileSync(cachePath,'utf8')) : {version:0,data:null};
+// Daily encrypted backups. The file holds the same ciphertext as the cache, so it is safe in an ordinary folder.
+// The normal vault backs up to Documents, away from the data folder it protects. Any other data
+// directory (tests, a second vault) keeps its backups beside its own data so the two never mix.
+const settingsPath = path.join(dataDir, 'settings.json');
+const standardDataDir = path.join(process.env.LOCALAPPDATA || os.homedir(), 'TNotes');
+const defaultBackupDir = path.resolve(dataDir).toLowerCase() === path.resolve(standardDataDir).toLowerCase()
+  ? path.join(os.homedir(),'Documents','TNotes-Backups') : path.join(dataDir,'backups');
+const backupKeep = 30;
+const backupFile = /^tnotes-backup-\d{4}-\d{2}-\d{2}\.json$/;
+let settings = {};
+try { settings = JSON.parse(fs.readFileSync(settingsPath,'utf8')); } catch {}
+let backedUpVersion = -1, backupError = null;
+function backupDir() {
+  return typeof settings.backupDir==='string'&&path.isAbsolute(settings.backupDir)?settings.backupDir:defaultBackupDir;
+}
+function backupFiles(dir) {
+  try{return fs.readdirSync(dir).filter(name=>backupFile.test(name)).sort();}catch{return [];}
+}
+function writeBackup(force) {
+  if(!cached.data)return;
+  const now=new Date(),day=[now.getFullYear(),now.getMonth()+1,now.getDate()].map(n=>String(n).padStart(2,'0')).join('-');
+  const dir=backupDir(),file=path.join(dir,'tnotes-backup-'+day+'.json');
+  // One file per day, rewritten when the vault changes, so each file ends up as that day's last state.
+  if(!force&&backedUpVersion===cached.version&&fs.existsSync(file))return;
+  fs.mkdirSync(dir,{recursive:true});
+  fs.writeFileSync(file+'.tmp',JSON.stringify({format:'tnotes-encrypted-backup-v1',created:now.toISOString(),data:cached.data}));
+  fs.renameSync(file+'.tmp',file);
+  backedUpVersion=cached.version;backupError=null;
+  // Only files this function names are ever removed from the folder.
+  for(const old of backupFiles(dir).slice(0,-backupKeep))fs.unlinkSync(path.join(dir,old));
+}
+function tryBackup(force) {
+  try{writeBackup(force);return true;}
+  catch(e){backupError='无法写入备份文件夹（'+(/^[A-Z0-9_]{1,32}$/.test(e.code||'')?e.code:'WRITE_FAILED')+'）';return false;}
+}
+function backupInfo() {
+  const dir=backupDir(),files=backupFiles(dir);let latest=null;
+  if(files.length){const name=files[files.length-1];try{latest={name,time:fs.statSync(path.join(dir,name)).mtime.toISOString()};}catch{}}
+  return {dir,count:files.length,keep:backupKeep,latest,error:backupError};
+}
 function reply(res,code,data) {
   res.writeHead(code, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
   res.end(JSON.stringify(data));
@@ -155,6 +196,22 @@ const server=http.createServer(async(req,res)=>{
         fs.renameSync(temp,cachePath);cached=updated;return reply(res,200,{version:cached.version});
       }
     }
+    if(url.pathname==='/api/backup') {
+      if(req.method==='PUT') {
+        const input=await body(req),dir=typeof input.dir==='string'?input.dir.trim():'';
+        if(dir.length>240||dir.includes('\0')||!/^(?:[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/])/.test(dir))return reply(res,400,{error:'备份文件夹需要填写完整路径，例如 D:\\Backups\\TNotes'});
+        const target=path.resolve(dir),probe=path.join(target,'.tnotes-write-test-'+process.pid);
+        try{fs.mkdirSync(target,{recursive:true});fs.writeFileSync(probe,'');fs.unlinkSync(probe);}
+        catch{return reply(res,400,{error:'无法写入这个文件夹，请换一个位置'});}
+        settings={...settings,backupDir:target};
+        fs.writeFileSync(settingsPath+'.tmp',JSON.stringify(settings),{mode:0o600});fs.renameSync(settingsPath+'.tmp',settingsPath);
+        tryBackup(true);
+      } else if(req.method==='POST') {
+        if(!cached.data)return reply(res,409,{error:'还没有资料库，创建或登录后才能备份'});
+        if(!tryBackup(true))return reply(res,500,{error:'备份失败，请检查备份文件夹是否可以写入'});
+      } else if(req.method!=='GET')return reply(res,405,{error:'Method not allowed'});
+      return reply(res,200,backupInfo());
+    }
     if(['/v1/profile','/v1/register','/v1/login','/v1/records'].includes(url.pathname)) {
       if(!remote)return reply(res,503,{error:'服务器尚未配置'});
       if(!['GET','POST','PUT'].includes(req.method))return reply(res,405,{error:'Method not allowed'});
@@ -165,4 +222,7 @@ const server=http.createServer(async(req,res)=>{
 });
 server.requestTimeout=15000;
 server.listen(port,'127.0.0.1');
+// The backend runs all day, so the daily backup needs no scheduled task of its own.
+setTimeout(()=>tryBackup(false),5000);
+setInterval(()=>tryBackup(false),10*60*1000);
 server.on('error',e=>{console.error(e.code==='EADDRINUSE'?'TNotes port already in use':'TNotes startup failed');process.exitCode=1;});

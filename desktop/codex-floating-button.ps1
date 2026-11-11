@@ -24,7 +24,10 @@ try {
             [Type]$ReturnType,
 
             [Parameter(Mandatory = $true)]
-            [Type[]]$ParameterTypes
+            [AllowEmptyCollection()]
+            [Type[]]$ParameterTypes,
+
+            [string]$Library = 'user32.dll'
         )
 
         $attributes = [System.Reflection.MethodAttributes]::Public `
@@ -32,7 +35,7 @@ try {
             -bor [System.Reflection.MethodAttributes]::PinvokeImpl
         $method = $TypeBuilder.DefinePInvokeMethod(
             $Name,
-            'user32.dll',
+            $Library,
             $attributes,
             [System.Reflection.CallingConventions]::Standard,
             $ReturnType,
@@ -72,6 +75,25 @@ try {
             [int],
             [uint32]
         )
+        # Per-pixel transparency for the bar. POINT and SIZE are two 32-bit integers, passed here as one
+        # 64-bit value by reference; BLENDFUNCTION is four bytes, passed as one 32-bit value by reference.
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'GetDC' -ReturnType ([IntPtr]) -ParameterTypes @([IntPtr])
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'ReleaseDC' -ReturnType ([int]) -ParameterTypes @([IntPtr], [IntPtr])
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'UpdateLayeredWindow' -ReturnType ([bool]) -ParameterTypes @(
+            [IntPtr],
+            [IntPtr],
+            [IntPtr],
+            [Int64].MakeByRefType(),
+            [IntPtr],
+            [Int64].MakeByRefType(),
+            [int],
+            [int].MakeByRefType(),
+            [int]
+        )
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Library 'gdi32.dll' -Name 'CreateCompatibleDC' -ReturnType ([IntPtr]) -ParameterTypes @([IntPtr])
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Library 'gdi32.dll' -Name 'SelectObject' -ReturnType ([IntPtr]) -ParameterTypes @([IntPtr], [IntPtr])
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Library 'gdi32.dll' -Name 'DeleteObject' -ReturnType ([bool]) -ParameterTypes @([IntPtr])
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Library 'gdi32.dll' -Name 'DeleteDC' -ReturnType ([bool]) -ParameterTypes @([IntPtr])
 
         [void]$typeBuilder.CreateType()
     }
@@ -81,24 +103,25 @@ try {
     . (Join-Path $projectRoot 'codex-network-check.ps1')
     . (Join-Path $projectRoot 'ai-process-cleanup.ps1')
 
+    $notesWindowScript = Join-Path $projectRoot 't-notes\window.ps1'
+    if (Test-Path -LiteralPath $notesWindowScript) {
+        . $notesWindowScript
+    }
+
     function Invoke-TNotes {
-        $launcher = Join-Path $projectRoot 't-notes\Launch.ps1'
-        try { & $launcher -BackendOnly | Out-Null }
-        catch { [System.Windows.Forms.MessageBox]::Show('T Notes backend could not start. Your unsaved text is still in the current window.', 'T Notes') | Out-Null; return }
-        $window = Get-Process -Name 'msedge', 'chrome' -ErrorAction SilentlyContinue |
-            Where-Object { $_.MainWindowTitle -like 'T Notes v4*' -and $_.MainWindowHandle -ne 0 } |
-            Select-Object -First 1
-        if ($null -ne $window) {
-            [CodexWindowApi]::ShowWindowAsync($window.MainWindowHandle, 9) | Out-Null
-            [CodexWindowApi]::SetForegroundWindow($window.MainWindowHandle) | Out-Null
-            return
-        }
-        $launcher = Join-Path $projectRoot 't-notes\Launch.ps1'
-        if (-not (Test-Path -LiteralPath $launcher)) {
+        param(
+            # Screen rectangle of the T button, "x,y,width,height"; the notes window opens directly above it.
+            [string]$Anchor = ''
+        )
+
+        if (-not (Get-Command -Name 'Open-TNotes' -CommandType Function -ErrorAction SilentlyContinue)) {
             [System.Windows.Forms.MessageBox]::Show('T Notes is not installed.', 'T Notes') | Out-Null
             return
         }
-        Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList ('-NoProfile -WindowStyle Hidden -File "' + $launcher + '"') -WindowStyle Hidden
+        # Open-TNotes raises the existing window or starts exactly one; repeated clicks never add a window.
+        # With the window already in front, the click tucks it away instead.
+        try { Open-TNotes -Toggle -Anchor $Anchor | Out-Null }
+        catch { [System.Windows.Forms.MessageBox]::Show('T Notes backend could not start. Your unsaved text is still in the current window.', 'T Notes') | Out-Null }
     }
 
     function Get-AiRelatedProcessIds {
@@ -118,7 +141,6 @@ try {
             [System.Windows.Forms.MessageBoxDefaultButton]::Button2
         )
         if ($confirmation -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-        $codexButton.Enabled = $false
         $form.UseWaitCursor = $true
         try {
             $worker = Join-Path $projectRoot 'ai-process-cleanup-worker.ps1'
@@ -152,7 +174,6 @@ try {
         }
         finally {
             $form.UseWaitCursor = $false
-            if (-not $form.IsDisposed) { $codexButton.Enabled = $true }
         }
     }
 
@@ -252,47 +273,56 @@ try {
         throw "Icon image not found: $imagePath"
     }
 
-    $codexImage = [System.Drawing.Image]::FromFile($imagePath)
-    $studioImage = New-Object System.Drawing.Bitmap(48, 48)
-    $studioGraphics = [System.Drawing.Graphics]::FromImage($studioImage)
-    $studioBackgroundBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(0, 122, 204))
-    $studioTextBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
-    $studioFont = New-Object System.Drawing.Font('Segoe UI', 15, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
-    $studioTextFormat = New-Object System.Drawing.StringFormat
+    # One shape and size for all three buttons; only the colour and the letter differ.
+    # The corner radius matches the C artwork (22% of its size) so all three outlines are identical.
+    $barLayout = [pscustomobject]@{ ButtonSize = 52; Gap = 8; Margin = 8; Radius = 11 }
+
+    # Scale the C artwork once; every repaint then copies it unscaled.
+    $codexSource = [System.Drawing.Image]::FromFile($imagePath)
+    $codexImage = New-Object System.Drawing.Bitmap($barLayout.ButtonSize, $barLayout.ButtonSize, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $codexGraphics = [System.Drawing.Graphics]::FromImage($codexImage)
+    $codexAttributes = New-Object System.Drawing.Imaging.ImageAttributes
     try {
-        $studioGraphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $studioTextFormat.Alignment = [System.Drawing.StringAlignment]::Center
-        $studioTextFormat.LineAlignment = [System.Drawing.StringAlignment]::Center
-        $studioGraphics.FillEllipse($studioBackgroundBrush, 0, 0, 47, 47)
-        $studioGraphics.DrawString('AS', $studioFont, $studioTextBrush, [System.Drawing.RectangleF]::new(0, 0, 48, 48), $studioTextFormat)
+        $codexGraphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $codexGraphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+        # Without this wrap mode the scaler blends the edge rows with transparent black and leaves a dark rim.
+        $codexAttributes.SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY)
+        $codexGraphics.DrawImage(
+            $codexSource,
+            [System.Drawing.Rectangle]::new(0, 0, $barLayout.ButtonSize, $barLayout.ButtonSize),
+            0, 0, $codexSource.Width, $codexSource.Height,
+            [System.Drawing.GraphicsUnit]::Pixel,
+            $codexAttributes
+        )
     }
     finally {
-        $studioTextFormat.Dispose()
-        $studioFont.Dispose()
-        $studioTextBrush.Dispose()
-        $studioBackgroundBrush.Dispose()
-        $studioGraphics.Dispose()
+        $codexAttributes.Dispose()
+        $codexGraphics.Dispose()
+        $codexSource.Dispose()
     }
 
-    $notesImage = New-Object System.Drawing.Bitmap(48, 48)
-    $notesGraphics = [System.Drawing.Graphics]::FromImage($notesImage)
-    $notesBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(37, 99, 235))
-    $notesTextBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
-    $notesFont = New-Object System.Drawing.Font('Segoe UI', 28, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
-    $notesFormat = New-Object System.Drawing.StringFormat
-    try {
-        $notesFormat.Alignment = [System.Drawing.StringAlignment]::Center
-        $notesFormat.LineAlignment = [System.Drawing.StringAlignment]::Center
-        $notesGraphics.FillRectangle($notesBrush, 0, 0, 48, 48)
-        $notesGraphics.DrawString('T', $notesFont, $notesTextBrush, [System.Drawing.RectangleF]::new(0, 0, 48, 48), $notesFormat)
-    }
-    finally {
-        $notesFormat.Dispose()
-        $notesFont.Dispose()
-        $notesTextBrush.Dispose()
-        $notesBrush.Dispose()
-        $notesGraphics.Dispose()
-    }
+    $codexToolTipText = (-join ([char[]](0x5F7B, 0x5E95, 0x5173, 0x95ED))) + ' Codex / ChatGPT / Claude'
+    $studioToolTipText = (-join ([char[]](0x5F3A, 0x5236, 0x5173, 0x95ED))) + ' Android Studio'
+    $notesToolTipText = (-join ([char[]](0x6253, 0x5F00))) + ' / ' + (-join ([char[]](0x6536, 0x8D77))) + ' T ' + (-join ([char[]](0x7B14, 0x8BB0)))
+
+    $barButtons = @(
+        [pscustomobject]@{
+            Image = $codexImage; Text = ''; FontSize = 0
+            From = [System.Drawing.Color]::Empty; To = [System.Drawing.Color]::Empty
+            ToolTip = $codexToolTipText; Action = { Invoke-AiAppsShutdown }
+        },
+        [pscustomobject]@{
+            Image = $null; Text = 'AS'; FontSize = 22
+            From = [System.Drawing.Color]::FromArgb(20, 142, 226); To = [System.Drawing.Color]::FromArgb(0, 108, 188)
+            ToolTip = $studioToolTipText; Action = { Invoke-AndroidStudioShutdown }
+        },
+        [pscustomobject]@{
+            Image = $null; Text = 'T'; FontSize = 31
+            From = [System.Drawing.Color]::FromArgb(66, 133, 244); To = [System.Drawing.Color]::FromArgb(37, 99, 235)
+            ToolTip = $notesToolTipText; Action = { param($anchor) Invoke-TNotes -Anchor $anchor }
+        }
+    )
+    $barState = [pscustomobject]@{ Hover = -1; Pressed = -1; Busy = $false }
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'CodexFloatingButton'
@@ -300,53 +330,160 @@ try {
     $form.ShowInTaskbar = $false
     $form.TopMost = $true
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-    $form.ClientSize = New-Object System.Drawing.Size(200, 60)
-    $form.BackColor = [System.Drawing.Color]::Magenta
-    $form.TransparencyKey = [System.Drawing.Color]::Magenta
+    $form.ClientSize = New-Object System.Drawing.Size(
+        (2 * $barLayout.Margin + $barButtons.Count * $barLayout.ButtonSize + ($barButtons.Count - 1) * $barLayout.Gap),
+        (2 * $barLayout.Margin + $barLayout.ButtonSize)
+    )
 
-    $codexButton = New-Object System.Windows.Forms.PictureBox
-    $codexButton.Name = 'CodexButton'
-    $codexButton.Tag = 'Codex'
-    $codexButton.Location = New-Object System.Drawing.Point(6, 0)
-    $codexButton.Size = New-Object System.Drawing.Size(60, 60)
-    $codexButton.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
-    $codexButton.BackColor = [System.Drawing.Color]::Transparent
-    $codexButton.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $codexButton.Image = $codexImage
-
-    $studioButton = New-Object System.Windows.Forms.PictureBox
-    $studioButton.Name = 'AndroidStudioButton'
-    $studioButton.Tag = 'AndroidStudio'
-    $studioButton.Location = New-Object System.Drawing.Point(70, 0)
-    $studioButton.Size = New-Object System.Drawing.Size(60, 60)
-    $studioButton.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::CenterImage
-    $studioButton.BackColor = [System.Drawing.Color]::Transparent
-    $studioButton.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $studioButton.Image = $studioImage
-
-    $form.Controls.Add($codexButton)
-    $form.Controls.Add($studioButton)
-
-    $notesButton = New-Object System.Windows.Forms.PictureBox
-    $notesButton.Name = 'TNotesButton'
-    $notesButton.Location = New-Object System.Drawing.Point(134, 0)
-    $notesButton.Size = New-Object System.Drawing.Size(60, 60)
-    $notesButton.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::CenterImage
-    $notesButton.BackColor = [System.Drawing.Color]::Transparent
-    $notesButton.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $notesButton.Image = $notesImage
-    $form.Controls.Add($notesButton)
-
+    # A layered window takes its pixels, including their transparency, from Update-ToolbarSurface.
+    # A colour key cannot do this: smoothed edges blend with the key colour and show as a fringe.
     $GWL_EXSTYLE = -20
     $WS_EX_TOOLWINDOW = 0x00000080
+    $WS_EX_LAYERED = 0x00080000
     $WS_EX_NOACTIVATE = 0x08000000
     $formHandle = $form.Handle
     $extendedStyle = [CodexWindowApi]::GetWindowLong($formHandle, $GWL_EXSTYLE)
     [CodexWindowApi]::SetWindowLong(
         $formHandle,
         $GWL_EXSTYLE,
-        $extendedStyle -bor $WS_EX_TOOLWINDOW -bor $WS_EX_NOACTIVATE
+        $extendedStyle -bor $WS_EX_TOOLWINDOW -bor $WS_EX_LAYERED -bor $WS_EX_NOACTIVATE
     ) | Out-Null
+
+    function New-ToolbarRoundedPath {
+        param(
+            [single]$X,
+            [single]$Y,
+            [single]$Size,
+            [single]$Radius
+        )
+
+        $diameter = 2 * $Radius
+        $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $path.AddArc($X, $Y, $diameter, $diameter, 180, 90)
+        $path.AddArc($X + $Size - $diameter, $Y, $diameter, $diameter, 270, 90)
+        $path.AddArc($X + $Size - $diameter, $Y + $Size - $diameter, $diameter, $diameter, 0, 90)
+        $path.AddArc($X, $Y + $Size - $diameter, $diameter, $diameter, 90, 90)
+        $path.CloseFigure()
+        return $path
+    }
+
+    function Update-ToolbarSurface {
+        if ($form.IsDisposed -or -not $form.IsHandleCreated) {
+            return
+        }
+
+        $size = $barLayout.ButtonSize
+        $bitmap = New-Object System.Drawing.Bitmap($form.Width, $form.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        try {
+            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+            $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
+
+            for ($index = 0; $index -lt $barButtons.Count; $index++) {
+                $button = $barButtons[$index]
+                $left = $barLayout.Margin + $index * ($size + $barLayout.Gap)
+                $top = $barLayout.Margin
+
+                # A soft shadow keeps the buttons readable on light and dark backgrounds alike.
+                foreach ($layer in @(@(3, 9), @(2, 16), @(1, 26))) {
+                    $grow = $layer[0]
+                    $shadowPath = New-ToolbarRoundedPath -X ($left - $grow) -Y ($top - $grow + 2) -Size ($size + 2 * $grow) -Radius ($barLayout.Radius + $grow)
+                    $shadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb($layer[1], 0, 0, 0))
+                    try {
+                        $graphics.FillPath($shadowBrush, $shadowPath)
+                    }
+                    finally {
+                        $shadowBrush.Dispose()
+                        $shadowPath.Dispose()
+                    }
+                }
+
+                $bodyPath = New-ToolbarRoundedPath -X $left -Y $top -Size $size -Radius $barLayout.Radius
+                try {
+                    if ($null -ne $button.Image) {
+                        $graphics.DrawImageUnscaled($button.Image, $left, $top)
+                    }
+                    else {
+                        $bounds = [System.Drawing.RectangleF]::new($left, $top, $size, $size)
+                        $bodyBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($bounds, $button.From, $button.To, [single]45)
+                        $font = New-Object System.Drawing.Font('Segoe UI', $button.FontSize, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+                        $textShadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(70, 0, 0, 0))
+                        $textBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
+                        $textFormat = New-Object System.Drawing.StringFormat
+                        try {
+                            $textFormat.Alignment = [System.Drawing.StringAlignment]::Center
+                            $textFormat.LineAlignment = [System.Drawing.StringAlignment]::Center
+                            $graphics.FillPath($bodyBrush, $bodyPath)
+                            $graphics.DrawString($button.Text, $font, $textShadowBrush, [System.Drawing.RectangleF]::new($left + 1, $top + 2, $size, $size), $textFormat)
+                            $graphics.DrawString($button.Text, $font, $textBrush, [System.Drawing.RectangleF]::new($left, $top + 1, $size, $size), $textFormat)
+                        }
+                        finally {
+                            $textFormat.Dispose()
+                            $textBrush.Dispose()
+                            $textShadowBrush.Dispose()
+                            $font.Dispose()
+                            $bodyBrush.Dispose()
+                        }
+                    }
+
+                    $feedback = $null
+                    if ($barState.Pressed -eq $index) {
+                        $feedback = [System.Drawing.Color]::FromArgb(46, 0, 0, 0)
+                    }
+                    elseif ($barState.Hover -eq $index) {
+                        $feedback = [System.Drawing.Color]::FromArgb(38, 255, 255, 255)
+                    }
+                    if ($null -ne $feedback) {
+                        $feedbackBrush = New-Object System.Drawing.SolidBrush($feedback)
+                        try {
+                            $graphics.FillPath($feedbackBrush, $bodyPath)
+                        }
+                        finally {
+                            $feedbackBrush.Dispose()
+                        }
+                    }
+                }
+                finally {
+                    $bodyPath.Dispose()
+                }
+            }
+        }
+        finally {
+            $graphics.Dispose()
+        }
+
+        $screenDc = [CodexWindowApi]::GetDC([IntPtr]::Zero)
+        $memoryDc = [CodexWindowApi]::CreateCompatibleDC($screenDc)
+        # A transparent background makes GDI+ hand over the premultiplied pixels the layered window expects.
+        $surface = $bitmap.GetHbitmap([System.Drawing.Color]::FromArgb(0))
+        $previousObject = [CodexWindowApi]::SelectObject($memoryDc, $surface)
+        try {
+            [Int64]$surfaceSize = ([Int64]$bitmap.Height -shl 32) -bor [Int64]$bitmap.Width
+            [Int64]$sourcePoint = 0
+            # AC_SRC_OVER, no flags, constant alpha 255, AC_SRC_ALPHA.
+            [int]$blend = 0x01FF0000
+            $ULW_ALPHA = 2
+            [CodexWindowApi]::UpdateLayeredWindow(
+                $form.Handle,
+                $screenDc,
+                [IntPtr]::Zero,
+                [ref]$surfaceSize,
+                $memoryDc,
+                [ref]$sourcePoint,
+                0,
+                [ref]$blend,
+                $ULW_ALPHA
+            ) | Out-Null
+        }
+        finally {
+            [CodexWindowApi]::SelectObject($memoryDc, $previousObject) | Out-Null
+            [CodexWindowApi]::DeleteObject($surface) | Out-Null
+            [CodexWindowApi]::DeleteDC($memoryDc) | Out-Null
+            [CodexWindowApi]::ReleaseDC([IntPtr]::Zero, $screenDc) | Out-Null
+            $bitmap.Dispose()
+        }
+    }
 
     $HWND_TOPMOST = [IntPtr](-1)
     $SWP_NOSIZE = 0x0001
@@ -387,27 +524,57 @@ try {
         & $keepTopMost
     })
 
+    # The bar returns to where it was last dragged, as long as that screen is still connected.
+    $dataDirectory = Join-Path $env:LOCALAPPDATA 'TNotes'
+    $positionFile = Join-Path $dataDirectory 'toolbar.json'
+    $pauseFile = Join-Path $dataDirectory 'toolbar-paused'
     $workingArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    $form.Location = New-Object System.Drawing.Point(
-        [Math]::Max($workingArea.Left, $workingArea.Right - $form.Width - 18),
-        [Math]::Max($workingArea.Top, $workingArea.Bottom - $form.Height - 18)
+    $defaultLocation = New-Object System.Drawing.Point(
+        [Math]::Max($workingArea.Left, $workingArea.Right - $form.Width - 12),
+        [Math]::Max($workingArea.Top, $workingArea.Bottom - $form.Height - 12)
     )
+    $savedLocation = $null
+    try {
+        $savedLocation = Get-Content -LiteralPath $positionFile -Raw -ErrorAction Stop | ConvertFrom-Json
+    }
+    catch {
+    }
+    $form.Location = Get-FloatingBarStartLocation `
+        -SavedLocation $savedLocation `
+        -BarSize $form.Size `
+        -WorkingAreas @([System.Windows.Forms.Screen]::AllScreens | ForEach-Object { $_.WorkingArea }) `
+        -DefaultLocation $defaultLocation
+
+    function Save-ToolbarLocation {
+        try {
+            New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
+            Set-Content -LiteralPath $positionFile -Value ('{"X":' + $form.Left + ',"Y":' + $form.Top + '}') -Encoding ASCII
+        }
+        catch {
+        }
+    }
+
+    # Starting the bar (sign-in, desktop shortcut) ends a pause left by the Exit menu item.
+    Remove-Item -LiteralPath $pauseFile -Force -ErrorAction SilentlyContinue
 
     $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
     $exitText = -join ([char[]](0x9000, 0x51FA, 0x60AC, 0x6D6E, 0x6309, 0x94AE))
     $exitItem = $contextMenu.Items.Add($exitText)
-    $exitItem.Add_Click({ $form.Close() })
+    $exitItem.Add_Click({
+        # Tell the watchdog this exit is intended, so it does not bring the bar back a minute later.
+        try {
+            New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
+            Set-Content -LiteralPath $pauseFile -Value (Get-Date -Format 'o') -Encoding ASCII
+        }
+        catch {
+        }
+        $form.Close()
+    })
     $form.ContextMenuStrip = $contextMenu
-    $codexButton.ContextMenuStrip = $contextMenu
-    $studioButton.ContextMenuStrip = $contextMenu
-    $notesButton.ContextMenuStrip = $contextMenu
 
     $toolTip = New-Object System.Windows.Forms.ToolTip
-    $codexToolTipText = (-join ([char[]](0x5F7B, 0x5E95, 0x5173, 0x95ED))) + ' Codex / ChatGPT / Claude'
-    $studioToolTipText = (-join ([char[]](0x5F3A, 0x5236, 0x5173, 0x95ED))) + ' Android Studio'
-    $toolTip.SetToolTip($codexButton, $codexToolTipText)
-    $toolTip.SetToolTip($studioButton, $studioToolTipText)
-    $toolTip.SetToolTip($notesButton, 'T Notes')
+    # The bar never becomes the active window, so the tip must not wait for that.
+    $toolTip.ShowAlways = $true
 
     $dragState = [pscustomobject]@{
         IsDown = $false
@@ -417,7 +584,35 @@ try {
         DragThreshold = 4
     }
 
-    $mouseDownHandler = {
+    $hitTest = {
+        param($location)
+
+        return Get-FloatingButtonIndex `
+            -X $location.X -Y $location.Y `
+            -Count $barButtons.Count `
+            -ButtonSize $barLayout.ButtonSize -Gap $barLayout.Gap -Margin $barLayout.Margin
+    }
+
+    $setHover = {
+        param([int]$index)
+
+        if ($barState.Hover -eq $index) {
+            return
+        }
+
+        $barState.Hover = $index
+        if ($index -ge 0) {
+            $form.Cursor = [System.Windows.Forms.Cursors]::Hand
+            $toolTip.SetToolTip($form, $barButtons[$index].ToolTip)
+        }
+        else {
+            $form.Cursor = [System.Windows.Forms.Cursors]::Default
+            $toolTip.SetToolTip($form, '')
+        }
+        Update-ToolbarSurface
+    }
+
+    $form.Add_MouseDown({
         param($sender, $eventArgs)
 
         if ($eventArgs.Button -ne [System.Windows.Forms.MouseButtons]::Left) {
@@ -426,30 +621,28 @@ try {
 
         $dragState.IsDown = $true
         $dragState.IsDragging = $false
-        $senderOffset = if ($sender -eq $form) {
-            [System.Drawing.Point]::Empty
-        }
-        else {
-            $sender.Location
-        }
-        $dragState.Offset = Get-ControlPointerOffset `
-            -ControlLocation $senderOffset `
-            -EventLocation $eventArgs.Location
+        $dragState.Offset = $eventArgs.Location
         $dragState.Start = [System.Windows.Forms.Cursor]::Position
-    }
+        $barState.Pressed = & $hitTest $eventArgs.Location
+        Update-ToolbarSurface
+    })
 
-    $mouseMoveHandler = {
+    $form.Add_MouseMove({
         param($sender, $eventArgs)
 
         if (-not $dragState.IsDown) {
+            & $setHover (& $hitTest $eventArgs.Location)
             return
         }
 
         $cursor = [System.Windows.Forms.Cursor]::Position
         $deltaX = [Math]::Abs($cursor.X - $dragState.Start.X)
         $deltaY = [Math]::Abs($cursor.Y - $dragState.Start.Y)
-        if ($deltaX -ge $dragState.DragThreshold -or $deltaY -ge $dragState.DragThreshold) {
+        if (-not $dragState.IsDragging -and ($deltaX -ge $dragState.DragThreshold -or $deltaY -ge $dragState.DragThreshold)) {
+            # From here on the gesture moves the bar; it no longer counts as a press on a button.
             $dragState.IsDragging = $true
+            $barState.Pressed = -1
+            Update-ToolbarSurface
         }
 
         if ($dragState.IsDragging) {
@@ -457,9 +650,9 @@ try {
                 -CursorPosition $cursor `
                 -PointerOffset $dragState.Offset
         }
-    }
+    })
 
-    $mouseUpHandler = {
+    $form.Add_MouseUp({
         param($sender, $eventArgs)
 
         if ($eventArgs.Button -ne [System.Windows.Forms.MouseButtons]::Left) {
@@ -467,41 +660,46 @@ try {
         }
 
         $wasDragging = $dragState.IsDragging
+        $pressed = $barState.Pressed
         $dragState.IsDown = $false
         $dragState.IsDragging = $false
-        if (-not $wasDragging) {
-            if ($sender -eq $codexButton) {
-                Invoke-AiAppsShutdown
+        $barState.Pressed = -1
+        Update-ToolbarSurface
+
+        if ($wasDragging) {
+            Save-ToolbarLocation
+            return
+        }
+
+        # A click counts only when it is released on the button it started on.
+        if ($pressed -ge 0 -and $pressed -eq (& $hitTest $eventArgs.Location) -and -not $barState.Busy) {
+            $barState.Busy = $true
+            try {
+                # Each action is told where its button is on the screen; the notes window opens above it.
+                $buttonLeft = $form.Left + $barLayout.Margin + $pressed * ($barLayout.ButtonSize + $barLayout.Gap)
+                $anchor = '{0},{1},{2},{3}' -f $buttonLeft, ($form.Top + $barLayout.Margin), $barLayout.ButtonSize, $barLayout.ButtonSize
+                & $barButtons[$pressed].Action $anchor
             }
-            elseif ($sender -eq $studioButton) {
-                Invoke-AndroidStudioShutdown
-            }
-            elseif ($sender -eq $notesButton) {
-                Invoke-TNotes
+            finally {
+                $barState.Busy = $false
             }
         }
-    }
+    })
 
-    foreach ($control in @($form, $codexButton, $studioButton, $notesButton)) {
-        $control.Add_MouseDown($mouseDownHandler)
-        $control.Add_MouseMove($mouseMoveHandler)
-        $control.Add_MouseUp($mouseUpHandler)
-    }
+    $form.Add_MouseLeave({
+        & $setHover -1
+    })
 
     $form.Add_FormClosed({
         $topMostTimer.Stop()
         $topMostTimer.Dispose()
-        $codexButton.Image = $null
-        $studioButton.Image = $null
-        $notesButton.Image = $null
         $codexImage.Dispose()
-        $studioImage.Dispose()
-        $notesImage.Dispose()
         $toolTip.Dispose()
         $contextMenu.Dispose()
     })
 
     $form.Show()
+    Update-ToolbarSurface
     & $keepTopMost
     [CodexWindowApi]::ShowWindowAsync($form.Handle, 4) | Out-Null
     [System.Windows.Forms.Application]::Run($form)

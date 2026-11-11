@@ -49,7 +49,8 @@ function New-CodexIconBitmap {
         $gradient = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
             $rectangle,
             [System.Drawing.ColorTranslator]::FromHtml('#1769E8'),
-            [System.Drawing.ColorTranslator]::FromHtml('#19A9B3'),
+            # Blue only: the bar and its icons use no green or teal.
+            [System.Drawing.ColorTranslator]::FromHtml('#1147B8'),
             45.0
         )
 
@@ -89,7 +90,7 @@ function New-CodexIconBitmap {
             $shadowPath.Transform($shadowMatrix)
             $shadowMatrix.Dispose()
 
-            $shadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(125, 27, 69, 94))
+            $shadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(125, 14, 44, 110))
             $letterBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
 
             try {

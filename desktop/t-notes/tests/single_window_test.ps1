@@ -1,0 +1,111 @@
+param([int]$Port,[string]$DataDirectory)
+# Opens real browser windows against a throwaway data directory and port; never touches the real vault.
+$ErrorActionPreference='Stop'
+$source=Split-Path -Parent $PSScriptRoot
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+if(-not $Port){$probe=New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback,0);$probe.Start();$Port=$probe.LocalEndpoint.Port;$probe.Stop()}
+$ownsData=-not $DataDirectory
+if($ownsData){$DataDirectory=Join-Path ([IO.Path]::GetTempPath()) ('tnotes-window-test-'+[guid]::NewGuid().ToString('N'))}
+$env:TNOTES_PORT=[string]$Port;$env:TNOTES_DATA=$DataDirectory
+. (Join-Path $source 'window.ps1')
+$browserProfile=Get-TNotesBrowserProfile
+$powershell=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$launchArguments='-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+(Join-Path $source 'Launch.ps1')+'"'
+function Get-BrowserIds{
+    $browsers=@(Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" -Property ProcessId,CommandLine)
+    return @(Select-TNotesBrowserProcessIds -Processes $browsers -ProfileDirectory $browserProfile)
+}
+function Get-Windows{
+    $found=@()
+    foreach($id in Get-BrowserIds){
+        $condition=New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ProcessIdProperty,$id)
+        $found+=@([Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children,$condition))
+    }
+    return $found
+}
+function Wait-Windows([int]$Seconds=20){
+    # Give a wrongly opened second window time to appear before counting.
+    $deadline=(Get-Date).AddSeconds($Seconds)
+    while((Get-Date) -lt $deadline -and @(Get-Windows).Count -eq 0){Start-Sleep -Milliseconds 250}
+    Start-Sleep -Seconds 3
+    return @(Get-Windows).Count
+}
+function Close-Browser{
+    foreach($id in Get-BrowserIds){& (Join-Path $env:WINDIR 'System32\taskkill.exe') /F /T /PID $id 2>$null | Out-Null}
+    $deadline=(Get-Date).AddSeconds(10)
+    while((Get-Date) -lt $deadline -and @(Get-BrowserIds).Count){Start-Sleep -Milliseconds 250}
+}
+$backendId=0
+try{
+    $backend=& (Join-Path $source 'Launch.ps1') -BackendOnly
+    if(-not $backend.Ready){throw 'Test backend did not start.'}
+    $backendId=$backend.StartedProcessId
+
+    # Three launchers at once, as with a double-click or repeated Start-TNotes.cmd runs.
+    $launchers=@(1..3|ForEach-Object{Start-Process -FilePath $powershell -ArgumentList $launchArguments -WindowStyle Hidden -PassThru})
+    foreach($launcher in $launchers){if(-not $launcher.WaitForExit(60000)){throw 'A launcher did not finish.'}}
+    $count=Wait-Windows
+    if($count -ne 1){throw "Simultaneous launches opened $count windows instead of 1."}
+
+    # The launcher turns off the browser's password saving before the browser first opens the profile.
+    # Checked as text and never printed: the browser keeps account details in this file.
+    $preferences=[IO.File]::ReadAllText((Join-Path $browserProfile 'Default\Preferences'))
+    if($preferences -notmatch '"credentials_enable_service"\s*:\s*false'){throw 'The browser profile still offers to save passwords.'}
+
+    # Launching again with the window open must reuse it.
+    $again=Start-Process -FilePath $powershell -ArgumentList $launchArguments -WindowStyle Hidden -PassThru
+    if(-not $again.WaitForExit(60000)){throw 'The repeat launcher did not finish.'}
+    Start-Sleep -Seconds 3
+    $count=@(Get-Windows).Count
+    if($count -ne 1){throw "A repeat launch left $count windows instead of 1."}
+
+    # The T button path: clicks while the window is still starting are ignored,
+    # and the window opens directly above the button that was clicked.
+    Add-Type -AssemblyName System.Windows.Forms
+    $area=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $api=Get-TNotesWindowApi
+    function Assert-AboveButton([int[]]$Button,[string]$When){
+        $rectangle=New-Object int[] 4
+        if(-not $api::GetWindowRect((Get-TNotesWindowHandle),$rectangle)){throw 'The window position could not be read.'}
+        $expected=Get-TNotesAnchoredLocation -Anchor $Button -Width ($rectangle[2]-$rectangle[0]) -Height ($rectangle[3]-$rectangle[1]) -WorkingArea $area
+        if([Math]::Abs($rectangle[0]-$expected[0]) -gt 1 -or [Math]::Abs($rectangle[1]-$expected[1]) -gt 1){throw "$When the window is at $($rectangle[0]),$($rectangle[1]) instead of $($expected[0]),$($expected[1]) above the button."}
+        if($rectangle[3] -gt $Button[1] -or $rectangle[0] -lt $area.Left -or $rectangle[2] -gt $area.Right){throw "$When the window is not above the button or leaves the screen."}
+    }
+    $cornerButton=@(($area.Right-60),($area.Bottom-60),52,52)
+    $middleButton=@(($area.Left+800),($area.Bottom-60),52,52)
+    Close-Browser
+    $results=@(1..3|ForEach-Object{Open-TNotes -Anchor ($cornerButton -join ',')})
+    if(($results -join ',') -ne 'Started,Starting,Starting'){throw ('Rapid T clicks returned '+($results -join ','))}
+    if(-not $script:TNotesPendingLaunch.WaitForExit(60000)){throw 'The T button launcher did not finish.'}
+    $count=Wait-Windows
+    if($count -ne 1){throw "Rapid T clicks opened $count windows instead of 1."}
+    Assert-AboveButton $cornerButton 'After opening,'
+
+    # A later click raises the existing window, restoring it when minimized, and brings it back above the button.
+    $pattern=(Get-Windows)[0].GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern)
+    $pattern.SetWindowVisualState([Windows.Automation.WindowVisualState]::Minimized)
+    Start-Sleep -Seconds 1
+    $result=Open-TNotes -Anchor ($middleButton -join ',')
+    if($result -ne 'Focused'){throw "A click with the window open returned $result."}
+    Start-Sleep -Seconds 2
+    $windows=@(Get-Windows)
+    if($windows.Count -ne 1){throw "Raising the window left $($windows.Count) windows instead of 1."}
+    $state=$windows[0].GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Current.WindowVisualState
+    if($state -eq [Windows.Automation.WindowVisualState]::Minimized){throw 'The minimized window was not restored.'}
+    Assert-AboveButton $middleButton 'After the bar moved,'
+
+    # As a switch, a click tucks the window away only while it is the one in front.
+    $handle=Get-TNotesWindowHandle
+    $inFront=$api::GetForegroundWindow() -eq $handle
+    $result=Open-TNotes -Toggle
+    Start-Sleep -Seconds 1
+    $minimized=$api::IsIconic($handle)
+    if($inFront -and ($result -ne 'Minimized' -or -not $minimized)){throw "A click on the front window returned $result instead of tucking it away."}
+    if(-not $inFront -and ($result -ne 'Focused' -or $minimized)){throw "A click on a background window returned $result instead of raising it."}
+    $toggle=if($inFront){'front_window_minimized'}else{'background_window_raised'}
+    Write-Output ('{"simultaneous_launch_single_window":"passed","browser_password_saving_off":"passed","repeat_launch_reuses_window":"passed","rapid_clicks_single_window":"passed","opens_above_button":"passed","minimized_window_restored":"passed","toggle":"'+$toggle+'"}')
+}finally{
+    Close-Browser
+    if($backendId -gt 0){Stop-Process -Id $backendId -Force -ErrorAction SilentlyContinue}
+    if($ownsData){Start-Sleep -Milliseconds 500;Remove-Item -LiteralPath $DataDirectory -Recurse -Force -ErrorAction SilentlyContinue}
+}

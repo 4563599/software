@@ -1,4 +1,4 @@
-param([switch]$BackendOnly)
+param([switch]$BackendOnly,[string]$Anchor = '')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 $client = Join-Path $PSScriptRoot 'client'
@@ -49,12 +49,57 @@ if (-not $healthy) {
     $gate.Dispose()
 }
 if ($BackendOnly) { [pscustomobject]@{Ready=$healthy;StartedProcessId=$(if($started){$started.Id}else{0});Endpoint=$endpoint}; return }
-$browsers = @(
-    (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
-    (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
-    (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
-)
-$browser = $browsers | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $browser) { Start-Process $appUrl; exit 0 }
-$profile = Join-Path $env:LOCALAPPDATA 'TNotes\browser-v3'
-Start-Process -FilePath $browser -ArgumentList @('--app=' + $appUrl, '--new-window', '--user-data-dir="' + $profile + '"', '--window-size=470,810', '--no-first-run', '--no-default-browser-check')
+. (Join-Path $PSScriptRoot 'window.ps1')
+$browserProfile = Get-TNotesBrowserProfile
+# Only one window: launches are serialized, and a launch that finds the window just raises it.
+$windowGate = New-Object Threading.Mutex($false, ('Local\TNotesWindowLaunch-' + $port))
+$windowOwned = $false
+try {
+    try { $windowOwned = $windowGate.WaitOne(20000) } catch [Threading.AbandonedMutexException] { $windowOwned = $true }
+    # Not owning the gate means another launch is still bringing the window up; opening one here would duplicate it.
+    if ($windowOwned) {
+        $window = Get-TNotesWindowHandle -ProfileDirectory $browserProfile
+        if ($window -ne [IntPtr]::Zero) {
+            Show-TNotesWindow -Handle $window
+            Move-TNotesWindowToAnchor -Handle $window -Anchor $Anchor
+        } else {
+            $browsers = @(
+                (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
+                (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+                (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
+            )
+            $browser = $browsers | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            if (-not $browser) {
+                Start-Process $appUrl
+            } else {
+                if (@(Get-TNotesBrowserProcessIds -ProfileDirectory $browserProfile).Count -eq 0) {
+                    # No browser holds the profile right now, so its preferences can be set: the browser must not
+                    # offer to save the master password or the accounts kept in records.
+                    try { & $node (Join-Path $client 'browser-prefs.cjs') $browserProfile | Out-Null } catch {}
+                }
+                # --disable-sync: this profile exists only to show the vault; nothing in it belongs in a browser account.
+                $browserArguments = @('--app=' + $appUrl, '--new-window', '--user-data-dir="' + $browserProfile + '"', '--window-size=470,810', '--no-first-run', '--no-default-browser-check', '--disable-sync')
+                $bounds = @(ConvertFrom-TNotesAnchor -Anchor $Anchor)
+                if ($bounds.Count -eq 4) {
+                    # Ask the browser to open above the T button straight away, so the window does not jump there afterwards.
+                    Add-Type -AssemblyName System.Drawing
+                    $screen = [System.Windows.Forms.Screen]::FromPoint((New-Object System.Drawing.Point(($bounds[0] + [int]($bounds[2] / 2)), ($bounds[1] + [int]($bounds[3] / 2)))))
+                    $start = Get-TNotesAnchoredLocation -Anchor $bounds -Width 470 -Height 810 -WorkingArea $screen.WorkingArea
+                    $browserArguments += '--window-position=' + $start[0] + ',' + $start[1]
+                }
+                Start-Process -FilePath $browser -ArgumentList $browserArguments
+                # Hold the gate until the window exists, so a launch queued behind this one finds it.
+                $window = [IntPtr]::Zero
+                for ($attempt = 0; $attempt -lt 60 -and $window -eq [IntPtr]::Zero; $attempt++) {
+                    Start-Sleep -Milliseconds 250
+                    $window = Get-TNotesWindowHandle -ProfileDirectory $browserProfile
+                }
+                # The browser may still prefer where the window was last time; its real size is known only now.
+                if ($window -ne [IntPtr]::Zero) { Move-TNotesWindowToAnchor -Handle $window -Anchor $Anchor }
+            }
+        }
+    }
+} finally {
+    if ($windowOwned) { $windowGate.ReleaseMutex() }
+    $windowGate.Dispose()
+}

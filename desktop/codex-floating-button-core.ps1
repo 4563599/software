@@ -138,17 +138,66 @@ function Get-FloatingButtonLocation {
     return [System.Drawing.Point]::new($x, $y)
 }
 
-function Get-ControlPointerOffset {
+function Get-FloatingButtonIndex {
     param(
-        [Parameter(Mandatory = $true)]
-        $ControlLocation,
-
-        [Parameter(Mandatory = $true)]
-        $EventLocation
+        [int]$X,
+        [int]$Y,
+        [int]$Count,
+        [int]$ButtonSize,
+        [int]$Gap,
+        [int]$Margin
     )
 
-    $x = [int]$ControlLocation.X + [int]$EventLocation.X
-    $y = [int]$ControlLocation.Y + [int]$EventLocation.Y
+    # Buttons sit in one row; the gaps and the shadow margin around them belong to no button.
+    if ($Y -lt $Margin -or $Y -ge ($Margin + $ButtonSize)) {
+        return -1
+    }
 
-    return [System.Drawing.Point]::new($x, $y)
+    for ($index = 0; $index -lt $Count; $index++) {
+        $left = $Margin + $index * ($ButtonSize + $Gap)
+        if ($X -ge $left -and $X -lt ($left + $ButtonSize)) {
+            return $index
+        }
+    }
+
+    return -1
+}
+
+function Get-FloatingBarStartLocation {
+    param(
+        [AllowNull()]
+        $SavedLocation,
+
+        [Parameter(Mandatory = $true)]
+        $BarSize,
+
+        [AllowEmptyCollection()]
+        [object[]]$WorkingAreas = @(),
+
+        [Parameter(Mandatory = $true)]
+        $DefaultLocation
+    )
+
+    # A remembered position is only trusted while its screen is still connected;
+    # otherwise the bar would start somewhere it cannot be seen or reached.
+    if ($null -ne $SavedLocation -and
+        $null -ne $SavedLocation.PSObject.Properties['X'] -and
+        $null -ne $SavedLocation.PSObject.Properties['Y']) {
+        $savedX = 0
+        $savedY = 0
+        if ([int]::TryParse([string]$SavedLocation.X, [ref]$savedX) -and [int]::TryParse([string]$SavedLocation.Y, [ref]$savedY)) {
+            $centerX = $savedX + [int]($BarSize.Width / 2)
+            $centerY = $savedY + [int]($BarSize.Height / 2)
+            foreach ($area in $WorkingAreas) {
+                if ($centerX -ge $area.Left -and $centerX -lt $area.Right -and
+                    $centerY -ge $area.Top -and $centerY -lt $area.Bottom) {
+                    $x = [Math]::Max($area.Left, [Math]::Min($savedX, $area.Right - $BarSize.Width))
+                    $y = [Math]::Max($area.Top, [Math]::Min($savedY, $area.Bottom - $BarSize.Height))
+                    return [System.Drawing.Point]::new($x, $y)
+                }
+            }
+        }
+    }
+
+    return $DefaultLocation
 }

@@ -9,7 +9,10 @@ try {
     $running = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object {
         $_.SessionId -eq $sessionId -and $_.CommandLine -match $toolbarPattern
     })
-    if ($running.Count -eq 0) {
+    # "Exit" in the toolbar menu leaves this marker; the toolbar removes it the next time it is started
+    # (sign-in or the desktop shortcut). Without it, an exit would be undone within a minute.
+    $paused = Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'TNotes\toolbar-paused')
+    if ($running.Count -eq 0 -and -not $paused) {
     if (-not (Test-Path -LiteralPath $toolbar -PathType Leaf)) { throw 'Floating toolbar script is missing.' }
     $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
     Start-Process -FilePath $powershell -ArgumentList ('-NoProfile -ExecutionPolicy RemoteSigned -WindowStyle Hidden -File "' + $toolbar + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden | Out-Null

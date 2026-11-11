@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+ <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+ <meta name="tnotes-csrf" content="__CSRF__"><title>T Notes v4</title>
+ <link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/style.css">
+ <script src="/lucide.js" defer></script><script src="/app.js" type="module"></script>
+</head>
+<body>
+<header class="appbar">
+ <span class="brand">T</span><strong id="app-title">随手记</strong><span id="lock-state" class="muted">未登录</span>
+ <div class="push actions">
+  <button id="view" title="切换速记 / 资料库" aria-label="切换速记和资料库" disabled><i data-lucide="panels-top-left"></i></button>
+  <button id="settings" title="同步与备份" aria-label="同步与备份"><i data-lucide="cloud"></i></button>
+  <button id="lock" title="退出登录" aria-label="退出登录" disabled><i data-lucide="log-out"></i></button>
+ </div>
+</header>
+<section id="auth-screen">
+ <div class="auth-intro"><i data-lucide="notebook-pen"></i><h1>T 随手记</h1><p>备忘录 · AI 提示词 · 私人保险箱</p></div>
+ <form id="auth-form">
+  <label>资料库名称<input id="username" required minlength="3" maxlength="40" pattern="[a-zA-Z0-9_-]+" placeholder="例如 my-notes" autocomplete="username"></label>
+  <label>主密码<input id="master" type="password" required autocomplete="current-password"></label>
+  <label id="confirm-row" hidden>再次输入主密码<input id="master-confirm" type="password" autocomplete="new-password"></label>
+  <label class="checkbox-row" id="remember-row"><input id="remember" type="checkbox" checked>记住这台电脑</label>
+  <p id="create-warning" class="warning" hidden>主密码无法找回，请妥善保管。其他电脑使用同一资料库名称和主密码。</p>
+  <button id="auth-submit" type="submit" class="primary full" disabled><i data-lucide="log-in"></i><span>登录资料库</span></button>
+  <button id="auth-mode" type="button" class="text full">创建新资料库</button>
+  <p id="auth-error" role="alert" class="error"></p><p id="connection-hint" class="muted"></p>
+ </form>
+</section>
+<div id="workspace" hidden>
+ <nav class="sidebar" aria-label="分类">
+  <button data-filter="all" class="active"><i data-lucide="layers"></i>全部记录</button>
+  <button data-filter="note"><i data-lucide="sticky-note"></i>备忘录</button>
+  <button data-filter="prompt"><i data-lucide="sparkles"></i>AI 提示词</button>
+  <button data-filter="password"><i data-lucide="key-round"></i>保险箱</button>
+  <button data-filter="pinned"><i data-lucide="pin"></i>已置顶</button>
+  <button data-filter="trash"><i data-lucide="trash-2"></i>回收站</button>
+  <label class="tag-search">标签筛选<input id="tag-filter" placeholder="输入标签"></label>
+ </nav>
+ <section class="index">
+  <div class="searchbar"><i data-lucide="search"></i><input id="search" aria-label="搜索记录" placeholder="搜索标题和正文"><button id="new-record" title="新建" aria-label="新建记录"><i data-lucide="plus"></i></button></div>
+  <div id="record-list"></div>
+ </section>
+ <main class="editor">
+  <div class="editor-top">
+   <button id="back-to-list" title="返回记录列表" aria-label="返回记录列表"><i data-lucide="arrow-left"></i></button>
+   <span id="kind-label" class="kind-label">备忘录</span>
+   <select id="kind" aria-label="记录类型" hidden><option value="note">备忘录</option><option value="prompt">AI 提示词</option><option value="password">账号密码</option></select>
+   <div class="push actions">
+    <button id="edit" title="编辑" aria-label="编辑记录" disabled><i data-lucide="pencil"></i></button>
+    <button id="pin" title="置顶" aria-label="置顶记录" aria-pressed="false" disabled><i data-lucide="pin"></i></button>
+    <button id="copy" title="复制内容" aria-label="复制内容" disabled><i data-lucide="copy"></i></button>
+    <button id="delete" title="移到回收站" aria-label="移到回收站" disabled><i data-lucide="trash-2"></i></button>
+   </div>
+  </div>
+  <section id="record-view" aria-label="查看记录">
+   <div id="empty-record" class="empty-record"><i data-lucide="notebook"></i><p>暂无记录</p><button id="new-from-empty" class="primary"><i data-lucide="plus"></i>新建记录</button></div>
+   <article id="read-content" hidden>
+    <h1 id="read-title"></h1>
+    <div id="read-secret" hidden>
+     <div class="read-field"><span>账户</span><div class="field-row"><p id="read-account"></p><button id="view-copy-account" title="复制账户" aria-label="复制账户"><i data-lucide="copy"></i></button></div></div>
+     <div class="read-field"><span>密码</span><div class="field-row"><input id="view-password" type="password" readonly autocomplete="off" aria-label="记录密码"><button id="view-reveal" title="显示 / 隐藏密码" aria-label="显示或隐藏记录密码"><i data-lucide="eye"></i></button><button id="view-copy-password" title="复制密码" aria-label="复制密码"><i data-lucide="copy"></i></button></div></div>
+     <div id="read-site-row" class="read-field"><span>网站</span><p id="read-site"></p></div>
+    </div>
+    <p id="read-body"></p><p id="read-tag" class="muted"></p>
+   </article>
+  </section>
+  <div id="edit-fields" hidden>
+   <label>标题<input id="title" maxlength="200" placeholder="给这条记录起个名字"></label>
+   <div id="secret-fields" hidden>
+    <label>账户<div class="field-row"><input id="account" autocomplete="off"><button id="copy-account" title="复制账户" aria-label="复制账户"><i data-lucide="copy"></i></button></div></label>
+    <label>密码<div class="field-row"><input id="password" type="password" autocomplete="off"><button id="reveal" title="显示 / 隐藏" aria-label="显示或隐藏密码"><i data-lucide="eye"></i></button><button id="generate" title="生成随机密码" aria-label="生成随机密码"><i data-lucide="dices"></i></button><button id="copy-password" title="复制密码" aria-label="复制密码"><i data-lucide="copy"></i></button></div></label>
+    <label>网站<input id="site" placeholder="https://" autocomplete="off"></label>
+   </div>
+   <label><span id="body-label">内容</span><textarea id="body" rows="7" placeholder="记录你的想法…" maxlength="50000"></textarea></label>
+   <div class="editor-bottom"><label>标签<input id="tag" placeholder="工作 / 学习" maxlength="40"></label><button id="cancel-edit" title="取消编辑" aria-label="取消编辑"><i data-lucide="x"></i></button><button id="save" class="primary"><i data-lucide="check"></i>保存</button></div>
+  </div>
+  <div id="prompt-tools" hidden><button id="fill-prompt" class="text"><i data-lucide="braces"></i>填充提示词变量</button></div>
+  <p id="edited" class="muted"></p>
+ </main>
+ <section class="recent">
+  <div class="recent-heading"><span>全部记录</span><span id="quick-count" class="muted"></span><button id="quick-new" title="新建记录" aria-label="新建记录"><i data-lucide="plus"></i></button><button id="open-library" class="text">资料库<i data-lucide="arrow-up-right"></i></button></div>
+  <div class="quick-search"><i data-lucide="search"></i><input id="quick-search" placeholder="搜索记录" aria-label="快速搜索记录"></div>
+  <nav class="quick-filters" aria-label="记录类型筛选"><button data-quick-filter="all" class="active" aria-pressed="true">全部</button><button data-quick-filter="note" aria-pressed="false">备忘录</button><button data-quick-filter="prompt" aria-pressed="false">提示词</button><button data-quick-filter="password" aria-pressed="false">账号</button><button data-quick-filter="pinned" aria-pressed="false"><i data-lucide="pin"></i>置顶</button></nav>
+  <div id="recent-list"></div>
+ </section>
+</div>
+<footer><span id="sync-label">尚未登录</span><button id="sync-now" class="text" disabled><i data-lucide="refresh-cw"></i>同步</button></footer>
+<div id="notice" role="status" aria-live="polite"></div>
+<dialog id="settings-dialog">
+ <header><h2>同步与备份</h2><button data-close="settings-dialog" aria-label="关闭"><i data-lucide="x"></i></button></header>
+ <dl><dt>同步服务器</dt><dd id="server-url"></dd><dt>本机数据目录</dt><dd>%LOCALAPPDATA%\TNotes</dd><dt>未同步记录</dt><dd id="pending-count">0</dd><dt>本机登录</dt><dd id="remember-state">未记住登录</dd><dt>数据加密</dt><dd>本机和服务器均保存密文。</dd></dl>
+ <button id="export" class="full" disabled><i data-lucide="download"></i>导出加密备份</button>
+ <p class="muted">记住登录后，同一 Windows 用户可直接打开资料库。退出登录会清除本机登录记忆。主密码遗失后无法恢复资料。</p>
+</dialog>
+<dialog id="prompt-dialog"><header><h2>填充提示词</h2><button data-close="prompt-dialog" aria-label="关闭"><i data-lucide="x"></i></button></header><div id="variables"></div><label>结果<textarea id="prompt-output" rows="10" readonly></textarea></label><button id="copy-prompt" class="primary"><i data-lucide="copy"></i>复制结果</button></dialog>
+</body></html>

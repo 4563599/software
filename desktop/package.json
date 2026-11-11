@@ -1,0 +1,14 @@
+{
+  "name": "desktop-c-as-t-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Windows C / AS / T floating toolbar and encrypted cross-device notes",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "npm run test:windows && npm run test:server",
+    "test:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/desktop.tests.ps1",
+    "test:server": "python -m unittest discover -s t-notes/tests -p test_store.py -v",
+    "test:integration": "python t-notes/tests/system_test.py"
+  },
+  "devDependencies": { "playwright": "1.62.1" }
+}

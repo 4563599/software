@@ -1,0 +1,73 @@
+# 链接数据库并从中取数据（第 879-883 页）
+
+[p.879]
+链接数据库并从中取数据
+链接数据库并从中取数据
+Kotlin Notebook offers capabilities for connecting to and retrieving data from various types of SQL databases, such as MariaDB, PostgreSQL, MySQL, and SQLite. Utilizing the Kotlin DataFrame library, Kotlin Notebook can establish connections to databases, execute SQL queries, and import the results for further operations. For a detailed example, see the Notebook in the KotlinDataFrame SQL Examples GitHub repository.
+开始之前
+Kotlin Notebook relies on the Kotlin Notebook plugin, which is bundled and enabled in IntelliJ IDEA by default. If the Kotlin Notebook features are not available, ensure the plugin is enabled. For more information, see Set up an environment. Create a new Kotlin Notebook:
+1. Select File | New | Kotlin Notebook. 2. Ensure you have access to an SQL database, such as MariaDB or MySQL.
+连接数据库
+You can connect to and interact with an SQL database using specific functions from the Kotlin DataFrame library. You can use DatabaseConfiguration to establish a connection to your database and getSchemaForAllSqlTables() to retrieve the schema of all tables within it. Let's look at an example:
+1. Open your Kotlin Notebook file ( .ipynb ). 2. Add a dependency for a JDBC (Java Database Connectivity) driver, and specify the JDBC driver
+version. This example uses MariaDB:
+USE { dependencies("org.mariadb.jdbc:mariadb-java-client:$version")
+}
+3. Import the Kotlin DataFrame library, which is essential for data manipulation tasks, along with the necessary Java libraries for SQL connectivity and utility functions:
+879
+
+[p.880]
+链接数据库并从中取数据
+%use dataframe import java.sql.DriverManager import java.util.*
+4. Use the DatabaseConfiguration class to define your database's connection parameters, including the URL, username, and password:
+val URL = "YOUR_URL" val USER_NAME = "YOUR_USERNAME" val PASSWORD = "YOUR_PASSWORD" val dbConfig = DatabaseConfiguration(URL, USER_NAME, PASSWORD)
+5. Once connected, use the getSchemaForAllSqlTables() function to fetch and display the schema information for each table in the database:
+val dataschemas = DataFrame.getSchemaForAllSqlTables(dbConfig) dataschemas.forEach {
+println("---Yet another table schema---") println(it) println() }
+For more information on connecting to SQL databases, see Read from SQL databases in the Kotlin DataFrame documentation.
+获取并操作数据
+After establishing a connection to an SQL database, you can retrieve and manipulate data in Kotlin Notebook, utilizing the Kotlin DataFrame library. You can use the readSqlTable() function to retrieve data. To manipulate data, you can use methods, such as filter , groupBy , and convert . Let's look at an example of connecting to an IMDB database and retrieving data about movies directed by Quentin Tarantino:
+1. Use the readSqlTable() function to retrieve data from the "movies" table, setting limit to restrict the query to the first 100 records for efficiency:
+val dfs = DataFrame.readSqlTable(dbConfig, tableName = "movies", limit = 100)
+880
+
+[p.881]
+链接数据库并从中取数据
+2. Use an SQL query to retrieve a specific dataset related to movies directed by Quentin Tarantino. This query selects movie details and combines genres for each movie:
+val props = Properties() props.setProperty("user", USER_NAME) props.setProperty("password", PASSWORD)
+val TARANTINO_FILMS_SQL_QUERY = """ SELECT name, year, rank, GROUP_CONCAT(genre) as "genres" FROM movies JOIN movies_directors ON movie_id = movies.id JOIN directors ON directors.id=director_id LEFT JOIN movies_genres ON movies.i
+d = movies_genres.movie_id WHERE directors.first_name = "Quentin" AND directors.last_name = "Tarantino" GROUP BY name, year, rank ORDER BY year """
+// Retrieves a list of Quentin Tarantino's movies, including their name, year, ran k, and a concatenated string of all genres. // The results are grouped by name, year, rank, and sorted by year.
+var dfTarantinoMovies: DataFrame<*>
+DriverManager.getConnection(URL, props).use { connection -> connection.createStatement().use { st -> st.executeQuery(TARANTINO_FILMS_SQL_QUERY).use { rs -> val dfTarantinoFilmsSchema = DataFrame.getSchemaForResultSet(rs, connecti
+on) dfTarantinoFilmsSchema.print()
+dfTarantinoMovies = DataFrame.readResultSet(rs, connection) dfTarantinoMovies } } }
+3. After fetching the Tarantino movies dataset, you can further manipulate and filter the data.
+val df = dfTarantinoMovies // Replaces any missing values in the 'year' column with 0. .fillNA { year }.with { 0 }
+// Converts the 'year' column to integers. .convert { year }.toInt()
+// Filters the data to include only movies released after the year 2000. .filter { year > 2000 } df
+881
+
+[p.882]
+链接数据库并从中取数据
+The resulting output is a DataFrame where missing values in the year column are replaced with 0 using the fillNA method. The year column is converted to integer values with the convert method, and the data is filtered to include only rows from the year 2000 onwards using the filter method.
+在 Kotlin Notebook 中分析数据
+After establishing a connection to an SQL database, you can use Kotlin Notebook for in-depth data analysis utilizing the Kotlin DataFrame library. This includes functions for grouping, sorting, and aggregating data, helping you to uncover and understand patterns within your data. Let's dive into an example that involves analyzing actor data from a movie database, focusing on the most frequently occurring first names of actors:
+1. Extract data from the "actors" table using the readSqlTable() function:
+val actorDf = DataFrame.readSqlTable(dbConfig, "actors", 10000)
+2. Process the retrieved data to identify the top 20 most common actor first names. This analysis involves several DataFrame methods:
+val top20ActorNames = actorDf // Groups the data by the first_name column to organize it based on actor firs
+t names. .groupBy { first_name }
+// Counts the occurrences of each unique first name, providing a frequency dis tribution.
+.count()
+// Sorts the results in descending order of count to identify the most common names.
+.sortByDesc("count")
+// Selects the top 20 most frequent names for analysis. .take(20) top20ActorNames
+下一步做什么
+Explore data visualization using the Kandy library Find additional information about data visualization in Data visualization in Kotlin Notebook with Kandy
+882
+
+[p.883]
+链接数据库并从中取数据 For an extensive overview of tools and resources available for data science and analysis in Kotlin, see Kotlin and Java libraries for data analysis
+883
+

@@ -1,0 +1,90 @@
+{
+  "title": "a1b2c3d4「登录后按最后选择的场景进入首页」逐文件验证方案",
+  "alerts": [
+    {
+      "type": "warn",
+      "html": "<b>❗ fragment_me.xml</b>：只加了结尾的 <code>--&gt;</code>，前面缺 <code>&lt;!--</code>，标题栏没有被注释掉，需要先修复再验证。"
+    },
+    {
+      "type": "info",
+      "html": "<b>测试准备</b>：账号 A（家用）· 账号 B（运营）· 抓包 <code>POST app/v1/user/lastScenario</code> · Logcat 过滤 <code>refreshLastScenario</code>"
+    }
+  ],
+  "files": {
+    "app/src/main/java/com/example/app/ui/LoginActivity.kt": [
+      {
+        "hunk": 1,
+        "start": 7,
+        "kind": "import",
+        "why": "导包：下面新增的代码要用到这些类 / 方法。",
+        "verify": "编译通过即可。"
+      },
+      {
+        "hunk": 2,
+        "start": 78,
+        "kind": "code",
+        "why": "PRD 3.3.1：登录后按后端返回的 lastScenario 进入对应首页。所有登录出口统一调用同一个方法，避免漏掉某条路径。",
+        "verify": "<b>入口：</b>Me → 个人信息 → 退出登录 → 登录页<br>① 登录账号 A（家用）→ 进家用充电页<br>② 登录账号 B（运营）→ 进公共充电地图",
+        "lines": {
+          "showSuccessTip(R.string.login_successfully) {": "登录成功提示消失后：原来直接回首页，改为先按后端返回的场景设"
+        },
+        "syntax": [
+          [
+            "拖尾 lambda",
+            "lambda 表达式 › 传递末尾的 lambda 表达式 · 第 774 页",
+            "函数最后一个参数是函数时，lambda 可以写在括号外面；这里的大括号是提示结束后的回调。"
+          ],
+          [
+            "注释",
+            "基本语法 › 注释 · 第 557 页",
+            "// 开头是单行注释，不参与编译。"
+          ]
+        ]
+      },
+      {
+        "hunk": 3,
+        "start": 147,
+        "kind": "code",
+        "why": "未登录时没有首页可以回，所以返回键要么回注册页，要么退出 App。已登录时保持原来的逻辑。",
+        "verify": "① 退出登录后在登录页按返回 → App 退出<br>② 卸载重装 → 注册页 → 去登录 → 登录页按返回 → 回到注册页",
+        "lines": {
+          "override fun interceptOnBackPressed(): Boolean {": "返回 true 表示拦截返回键、自己处理。条件：原来的 ba",
+          "if(CacheUtil.isLogin()){": "已登录：保持原逻辑，回首页后结束。",
+          "if(isActivityExistsInStack(RegisterActivity::class.java)){": "未登录：页面栈里有注册页就只关闭登录页（露出注册页），否则退"
+        },
+        "syntax": [
+          [
+            "覆盖 override",
+            "继承 › 覆盖方法 · 第 675-676 页",
+            "重写父类方法时必须写 override。"
+          ],
+          [
+            "布尔运算 || / !",
+            "基本类型 › 布尔 · 第 616 页",
+            "|| 是“或者”，! 是取反。"
+          ],
+          [
+            "返回 return",
+            "返回与跳转 · 第 648 页",
+            "return 从当前函数直接返回，后面的代码不执行。"
+          ],
+          [
+            "类引用 / 获取 Java 类",
+            "在 Kotlin 中调用 Java › 获取 Java 类 · 第 920-921 页",
+            "RegisterActivity::class.java 取 Java 的 Class 对象，相当于 Java 的 RegisterActivity.class。"
+          ]
+        ]
+      }
+    ],
+    "app/src/main/res/layout/fragment_me.xml": [
+      {
+        "hunk": 1,
+        "start": 45,
+        "kind": "resource",
+        "warn": true,
+        "why": "<b>❗ 本意是按设计稿去掉标题栏，但只加了结尾的 <code>--&gt;</code>，开头的 <code>&lt;!--</code> 缺失，标题栏没有被注释掉。</b>",
+        "verify": "<b>当前 Me 页顶部仍然显示旧标题栏，需要修复后再验证。</b>"
+      }
+    ]
+  }
+}

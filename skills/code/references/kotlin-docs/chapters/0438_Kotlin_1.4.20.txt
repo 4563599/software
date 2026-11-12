@@ -1,0 +1,136 @@
+# Kotlin 1.4.20（第 438-446 页）
+
+[p.438]
+Kotlin 1.4.20
+Kotlin 1.4.20 的新特性
+发布于：2020-11-23 Kotlin 1.4.20 offers a number of new experimental features and provides fixes and improvements for existing features, including those added in 1.4.0. You can also learn about new features with more examples in this blog post.
+Kotlin/JVM
+Improvements of Kotlin/JVM are intended to keep it up with the features of modern Java versions: Java 15 目标 invokedynamic 字符串连接
+Java 15 目标
+Now Java 15 is available as a Kotlin/JVM target.
+invokedynamic 字符串连接
+invokedynamic string concatenation is Experimental. It may be dropped or changed at any time. Opt-in is required (see details below). Use it only for evaluation purposes. We appreciate your feedback on it in YouTrack.
+Kotlin 1.4.20 can compile string concatenations into dynamic invocations on JVM 9+ targets, therefore improving the performance. Currently, this feature is experimental and covers the following cases:
+String.plus in the operator ( a + b ), explicit ( a.plus(b) ), and reference ( (a::plus)(b) ) form. toString on inline and data classes. string templates except for ones with a single non-constant argument (see KT-42457). To enable invokedynamic string concatenation, add the -Xstring-concat compiler option with one of the following values: indy-with-constants to perform invokedynamic concatenation on strings with
+438
+
+[p.439]
+Kotlin 1.4.20
+StringConcatFactory.makeConcatWithConstants(). indy to perform invokedynamic concatenation on strings with StringConcatFactory.makeConcat(). inline to switch back to the classic concatenation via StringBuilder.append() .
+Kotlin/JS
+Kotlin/JS keeps evolving fast, and in 1.4.20 you can find a number experimental features and improvements:
+Gradle DSL 变更 新的向导模板 使用 IR 编译器时忽略编译错误
+Gradle DSL 变更
+The Gradle DSL for Kotlin/JS receives a number of updates which simplify project setup and customization. This includes webpack configuration adjustments, modifications to the auto-generated package.json file, and improved control over transitive dependencies.
+用于 webpack 配置的单点
+A new configuration block commonWebpackConfig is available for the browser target. Inside it, you can adjust common settings from a single point, instead of having to duplicate configurations for the webpackTask , runTask , and testTask . To enable CSS support by default for all three tasks, add the following snippet in the build.gradle(.kts) of your project:
+browser { commonWebpackConfig { cssSupport.enabled = true } binaries.executable()
+}
+Learn more about configuring webpack bundling.
+在 Gradle 中定制 package.json
+For more control over your Kotlin/JS package management and distribution, you can now add properties to the project file package.json via the Gradle DSL.
+439
+
+[p.440]
+Kotlin 1.4.20
+To add custom fields to your package.json , use the customField function in the compilation's packageJson block:
+kotlin { js(BOTH) { compilations["main"].packageJson { customField("hello", mapOf("one" to 1, "two" to 2)) } }
+}
+Learn more about package.json 定制.
+选择性 yarn 依赖解析
+Support for selective yarn dependency resolutions is Experimental. It may be dropped or changed at any time. Use it only for evaluation purposes. We appreciate your feedback on it in YouTrack.
+Kotlin 1.4.20 provides a way of configuring Yarn's selective dependency resolutions - the mechanism for overriding dependencies of the packages you depend on. You can use it through the YarnRootExtension inside the YarnPlugin in Gradle. To affect the resolved version of a package for your project, use the resolution function passing in the package name selector (as specified by Yarn) and the version to which it should resolve.
+rootProject.plugins.withType<YarnPlugin> { rootProject.the<YarnRootExtension>().apply { resolution("react", "16.0.0") resolution("processor/decamelize", "3.0.0") }
+}
+Here, all of your npm dependencies which require react will receive version 16.0.0 , and processor will receive its dependency decamelize as version 3.0.0 .
+禁用 granular workspaces
+Disabling granular workspaces is Experimental. It may be dropped or changed at any time. Use it only for evaluation purposes. We appreciate your feedback on it in YouTrack.
+440
+
+[p.441]
+Kotlin 1.4.20
+To speed up build times, the Kotlin/JS Gradle plugin only installs the dependencies which are required for a particular Gradle task. For example, the webpack-dev-server package is only installed when you execute one of the *Run tasks, and not when you execute the assemble task. Such behavior can potentially bring problems when you run multiple Gradle processes in parallel. When the dependency requirements clash, the two installations of npm packages can cause errors. To resolve this issue, Kotlin 1.4.20 includes an option to disable these so-called granular workspaces. This feature is currently available through the YarnRootExtension inside the YarnPlugin in Gradle. To use it, add the following snippet to your build.gradle.kts file:
+rootProject.plugins.withType<YarnPlugin> { rootProject.the<YarnRootExtension>().disableGranularWorkspaces()
+}
+新的向导模板
+To give you more convenient ways to customize your project during creation, the project wizard for Kotlin comes with new templates for Kotlin/JS applications:
+Browser Application - a minimal Kotlin/JS Gradle project that runs in the browser. React Application - a React app that uses the appropriate kotlin-wrappers . It provides options to enable integrations for style-sheets, navigational components, or state containers. Node.js Application - a minimal project for running in a Node.js runtime. It comes with the option to directly include the experimental kotlinx-nodejs package.
+使用 IR 编译器时忽略编译错误
+Ignore compilation errors mode is Experimental. It may be dropped or changed at any time. Opt-in is required (see details below). Use it only for evaluation purposes. We appreciate your feedback on it in YouTrack.
+The IR compiler for Kotlin/JS comes with a new experimental mode - compilation with errors. In this mode, you can run you code even if it contains errors, for example, if you want to try certain things it when the whole application is not ready yet. There are two tolerance policies for this mode:
+SEMANTIC : the compiler will accept code which is syntactically correct, but doesn't make sense semantically, such as val x: String = 3 . SYNTAX : the compiler will accept any code, even if it contains syntax errors.
+441
+
+[p.442]
+Kotlin 1.4.20
+To allow compilation with errors, add the -Xerror-tolerance-policy= compiler option with one of the values listed above. Learn more about Kotlin/JS IR compiler.
+Kotlin/Native
+Kotlin/Native's priorities in 1.4.20 are performance and polishing existing features. These are the notable improvements:
+逃逸分析 性能提升与错误修复 选择加入 Objective-C 异常的包装 CocoaPods 插件改进 对 Xcode 12 库的支持
+逃逸分析
+The escape analysis mechanism is Experimental. It may be dropped or changed at any time. Use it only for evaluation purposes. We appreciate your feedback on it in YouTrack.
+Kotlin/Native receives a prototype of the new escape analysis mechanism. It improves the runtime performance by allocating certain objects on the stack instead of the heap. This mechanism shows a 10% average performance increase on our benchmarks, and we continue improving it so that it speeds up the program even more. The escape analysis runs in a separate compilation phase for the release builds (with the -opt compiler option). If you want to disable the escape analysis phase, use the -Xdisable-phases=EscapeAnalysis compiler option.
+性能提升与错误修复
+Kotlin/Native receives performance improvements and bug fixes in various components, including the ones added in 1.4.0, for example, the code sharing mechanism.
+选择加入 Objective-C 异常的包装
+442
+
+[p.443]
+Kotlin 1.4.20
+The Objective-C exception wrapping mechanism is Experimental. It may be dropped or changed at any time. Opt-in is required (see details below). Use it only for evaluation purposes. We appreciate your feedback on it in YouTrack.
+Kotlin/Native now can handle exceptions thrown from Objective-C code in runtime to avoid program crashes. You can opt in to wrap NSException 's into Kotlin exceptions of type ForeignException . They hold the references to the original NSException 's. This lets you get the information about the root cause and handle it properly. To enable wrapping of Objective-C exceptions, specify the -Xforeign-exception-mode objc-wrap option in the cinterop call or add foreignExceptionMode = objc-wrap property to .def file. If you use CocoaPods integration, specify the option in the pod {} build script block of a dependency like this:
+pod("foo") { extraOpts = listOf("-Xforeign-exception-mode", "objc-wrap")
+}
+The default behavior remains unchanged: the program terminates when an exception is thrown from the Objective-C code.
+CocoaPods 插件改进
+Kotlin 1.4.20 continues the set of improvements in CocoaPods integration. Namely, you can try the following new features:
+改进了任务执行 扩展了 DSL 更新了与 Xcode 的集成
+改进了任务执行
+CocoaPods plugin gets an improved task execution flow. For example, if you add a new CocoaPods dependency, existing dependencies are not rebuilt. Adding an extra target also doesn't affect rebuilding dependencies for existing ones.
+扩展了 DSL
+The DSL of adding CocoaPods dependencies to your Kotlin project receives new capabilites.
+443
+
+[p.444]
+Kotlin 1.4.20
+In addition to local Pods and Pods from the CocoaPods repository, you can add dependencies on the following types of libraries:
+A library from a custom spec repository. A remote library from a Git repository. A library from an archive (also available by arbitrary HTTP address). A static library. A library with custom cinterop options. Learn more about adding CocoaPods dependencies in Kotlin projects. Find examples in the Kotlin with CocoaPods sample.
+更新了与 Xcode 的集成
+To work correctly with Xcode, Kotlin requires some Podfile changes: If your Kotlin Pod has any Git, HTTP, or specRepo Pod dependency, you should also specify it in the Podfile. When you add a library from the custom spec, you also should specify the location of specs at the beginning of your Podfile.
+Now integration errors have a detailed description in IDEA. So if you have problems with your Podfile, you will immediately know how to fix them. Learn more about creating Kotlin pods.
+对 Xcode 12 库的支持
+We have added support for new libraries delivered with Xcode 12. Now you can use them from the Kotlin code.
+Kotlin 多平台
+更新了多平台库发布的结构
+Starting from Kotlin 1.4.20, there is no longer a separate metadata publication. Metadata artifacts are now included in the root publication which stands for the whole library and is automatically resolved to the appropriate platform-specific artifacts when added as a dependency to the common source set. Learn more about publishing a multiplatform library.
+与早期版本的兼容性
+444
+
+[p.445]
+Kotlin 1.4.20
+This change of structure breaks the compatibility between projects with hierarchical project structure. If a multiplatform project and a library it depends on both have the hierarchical project structure, then you need to update them to Kotlin 1.4.20 or higher simultaneously. Libraries published with Kotlin 1.4.20 are not available for using from project published with earlier versions. Projects and libraries without the hierarchical project structure remain compatible.
+标准库
+The standard library of Kotlin 1.4.20 offers new extensions for working with files and a better performance.
+java.nio.file.Path 的扩展 改进了 String.replace 函数的性能
+java.nio.file.Path 的扩展
+Extensions for java.nio.file.Path are Experimental. They may be dropped or changed at any time. Opt-in is required (see details below). Use them only for evaluation purposes. We appreciate your feedback on them in YouTrack.
+Now the standard library provides experimental extensions for java.nio.file.Path . Working with the modern JVM file API in an idiomatic Kotlin way is now similar to working with java.io.File extensions from the kotlin.io package.
+// construct path with the div (/) operator val baseDir = Path("/base") val subDir = baseDir / "subdirectory" // list files in a directory val kotlinFiles: List<Path> = Path("/home/user").listDirectoryEntries("*.kt")
+The extensions are available in the kotlin.io.path package in the kotlin-stdlib-jdk7 module. To use the extensions, opt-in to the experimental annotation @ExperimentalPathApi .
+改进了 String.replace 函数的性能
+The new implementation of String.replace() speeds up the function execution. The case-sensitive variant uses a manual replacement loop based on indexOf , while the case-insensitive one uses regular expression matching.
+445
+
+[p.446]
+Kotlin 1.4.20
+Kotlin Android 扩展
+In 1.4.20 the Kotlin Android Extensions plugin becomes deprecated and Parcelable implementation generator moves to a separate plugin.
+弃用合成视图 Parcelable 实现生成器的新插件
+弃用合成视图
+Synthetic views were presented in the Kotlin Android Extensions plugin a while ago to simplify the interaction with UI elements and reduce boilerplate. Now Google offers a native mechanism that does the same - Android Jetpack's view bindings, and we're deprecating synthetic views in favor of those. We extract the Parcelable implementations generator from kotlin-android-extensions and start the deprecation cycle for the rest of it - synthetic views. For now, they will keep working with a deprecation warning. In the future, you'll need to switch your project to another solution. Here are the guidelines that will help you migrate your Android project from synthetics to view bindings.
+Parcelable 实现生成器的新插件
+The Parcelable implementation generator is now available in the new kotlin-parcelize plugin. Apply this plugin instead of kotlin-android-extensions .
+kotlin-parcelize and kotlin-android-extensions can't be applied together in one module.
+The @Parcelize annotation is moved to the kotlinx.parcelize package. Learn more about Parcelable implementation generator in the Android documentation.
+446
+

@@ -1,0 +1,21 @@
+# 时序规范（第 1587-1588 页）
+
+[p.1587]
+时序规范
+时序规范
+To be sure that the algorithm provides correct sequential behavior, you can define its sequential specification by writing a straightforward sequential implementation of the testing data structure.
+This feature also allows you to write a single test instead of two separate sequential and concurrent tests.
+To provide a sequential specification of the algorithm for verification: 1. Implement a sequential version of all the testing methods. 2. Pass the class with sequential implementation to the sequentialSpecification() option:
+StressOptions().sequentialSpecification(SequentialQueue::class)
+For example, here is the test to check correctness of j.u.c.ConcurrentLinkedQueue from the Java standard library.
+import org.jetbrains.kotlinx.lincheck.* import org.jetbrains.kotlinx.lincheck.annotations.* import org.jetbrains.kotlinx.lincheck.strategy.stress.* import org.junit.* import java.util.* import java.util.concurrent.* class ConcurrentLinkedQueueTest {
+private val s = ConcurrentLinkedQueue<Int>() @Operation fun add(value: Int) = s.add(value) @Operation fun poll(): Int? = s.poll() @Test fun stressTest() = StressOptions()
+.sequentialSpecification(SequentialQueue::class.java) .check(this::class) } class SequentialQueue { private val s = LinkedList<Int>() fun add(x: Int) = s.add(x)
+1587
+
+[p.1588]
+时序规范
+fun poll(): Int? = s.poll() }
+Get the full code of the examples.
+1588
+

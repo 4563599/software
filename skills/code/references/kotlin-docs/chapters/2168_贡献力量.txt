@@ -1,0 +1,45 @@
+# 贡献力量（第 2168-2172 页）
+
+[p.2168]
+贡献力量
+为 Kotlin 贡献力量
+Kotlin is an open-source project under the Apache 2.0 License. The source code, tooling, documentation, and even this website are maintained on GitHub. Kotlin is developed by JetBrains, but we are always on the lookout for more people to help us.
+Participate in Early Access Preview
+You can help us improve Kotlin by participating in Kotlin Early Access Preview (EAP) and providing us with your valuable feedback. For every release, Kotlin ships a few preview builds where you can try out the latest features before they go to production. You can report any bugs you find to our issue tracker YouTrack and we will try to fix them before a final release. This way, you can get bug fixes earlier than the standard Kotlin release cycle.
+Contribute to the compiler and standard library
+If you want to contribute to the Kotlin compiler and standard library, go to JetBrains/Kotlin GitHub, check out the latest Kotlin version, and follow the instructions on how to contribute. You can help us by completing open tasks. Please keep an open line of communication with us because we may have questions and comments on your changes. Otherwise, we won't be able to incorporate your contributions.
+Contribute to the Kotlin IDE plugin
+Kotlin IDE plugin is a part of the IntelliJ IDEA repository. To contribute to the Kotlin IDE plugin, clone the IntelliJ IDEA repository and follow the instructions on how to contribute.
+Contribute to other Kotlin libraries and tools
+Besides the standard library that provides core capabilities, Kotlin has a number of additional (kotlinx) libraries that extend its functionality. Each kotlinx library is developed in a separate repository, has its own versioning and release cycle.
+2168
+
+[p.2169]
+贡献力量
+If you want to contribute to a kotlinx library (such as kotlinx.coroutines or kotlinx.serialization) and tools, go to Kotlin GitHub, choose the repository you are interested in and clone it. Follow the contribution process described for each library and tool, such as kotlinx.serialization, ktor and others. If you have a library that could be useful to other Kotlin developers, let us know via feedback@kotlinlang.org.
+Contribute to the documentation
+If you've found an issue in the Kotlin documentation, feel free to check out the documentation source code on GitHub and send us a pull request. Follow these guidelines on style and formatting. Please keep an open line of communication with us because we may have questions and comments on your changes. Otherwise, we won't be able to incorporate your contributions.
+Translate documentation to other languages
+You are welcome to translate the Kotlin documentation into your own language and publish the translation on your website. However, we won't be able to host your translation in the main repository and publish it on kotlinlang.org. This site is the official documentation for the language, and we ensure that all the information here is correct and up to date. Unfortunately, we won't be able to review documentation in other languages. 译注：补充或改善中文站（即本站）翻译，可以 fork Kotlin 语言中文站项目并提 Pull Request。 目前《翻译指南》还在制订中，不过 #35 有一些草稿， 初次翻译请务必先阅读 #35 及其中链接对应的内容。
+Hold events and presentations
+If you've given or just plan to give presentations or hold events on Kotlin, please fill out the form. We'll feature them on the event list.
+中文站翻译贡献者
+Kotlin 编程语言中文站翻译贡献者如下（排名不分先后）： 灰蓝天际
+2169
+
+[p.2170]
+贡献力量
+晓_晨DEV S_arige dingsx 空白 LyndonChin Jacky Xu wahchi _Y EasonZhou pecpwee Airoyee 化缘 drakeet cx9527 zsn012 xwSurfer chiahaolu DemoJameson SnakeEys wssccc 592357390 imknown XuToTo ovear boris1993 iamhefang Maxwell1987 henryhuang 高金龙 shiyongkun yangxiaobinhaoshuai 乔禹昂 capcdk luozejiaqun shuhuaxie okou19900722 jonzoro ypxgxf cnfn Mikyou
+
+2170
+
+[p.2171]
+贡献力量
+HoshinoTented wangkezun TangHuaiZhe singlepig phxnirvana Farubaba renzhi(任智) 刘文俊 johnpoint whataa caixingke clarkhan yinhutjfox Him188 常少威 coderWangJie javaisgood jimmysuncpt star0224 yourzeromax Yue-plus CZKGO wsq22 gentrio easyfirst Guolianxing BobEve 7forz Andy1245-dot Aaro0n plain-dev willawang8908 singleNeuron ShreckYe deanssss cznno hepan small-ora ijunjie oncealong
+
+2171
+
+[p.2172]
+贡献力量 gtn1024 jixiaoyong shisheng1998 Smileslime47 sammary114 cos800
+2172
+

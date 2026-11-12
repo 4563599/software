@@ -1,0 +1,16 @@
+# 分享 Kotlin Notebook（第 855-856 页）
+
+[p.855]
+分享 Kotlin Notebook
+分享 Kotlin Notebook
+To share a Kotlin Notebook, you can just upload it to any notebook web viewer because Kotlin notebooks follow the universal Jupyter format. We recommend the following platforms to share Kotlin notebooks:
+JetBrains Datalore: This platform not only facilitates the sharing of Kotlin notebooks but also improves their usability. Datalore allows you to execute and edit notebooks, and incorporates advanced features, such as creating interactive reports and scheduling notebook runs. To see it in action, see Kotlin Datalore example using DataFrame.
+GitHub: GitHub natively renders Kotlin notebooks, allowing for straightforward sharing and collaboration. For an example, see the Examples of Kotlin DataFrame GitHub repository.
+855
+
+[p.856]
+分享 Kotlin Notebook
+下一步做什么
+Explore data visualization using the Kandy library Learn about retrieving data from files, web sources, or databases in Working with data sources For an extensive overview of tools and resources available for data science and analysis in Kotlin, see Kotlin and Java libraries for data analysis
+856
+

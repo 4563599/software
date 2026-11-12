@@ -1,0 +1,94 @@
+# 类（第 670-674 页）
+
+[p.670]
+类
+类
+Kotlin 中使用关键字 class 声明类
+class Person { /*……*/ }
+类声明由类名、类头（指定其类型参数、主构造函数等）以及由花括号包围的类体构成。类 头与类体都是可选的； 如果一个类没有类体，可以省略花括号。
+class Empty
+构造函数
+在 Kotlin 中的一个类有一个主构造函数并可能有一个或多个次构造函数。主构造函数在类头 中声明，它跟在类名与可选的类型参数后。
+class Person constructor(firstName: String) { /*……*/ }
+如果主构造函数没有任何注解或者可见性修饰符，可以省略这个 constructor 关键字。
+class Person(firstName: String) { /*……*/ }
+The primary constructor initializes a class instance and its properties in the class header. The class header can't contain any runnable code. If you want to run some code during object creation, use initializer blocks inside the class body. Initializer blocks are declared with the init keyword followed by curly braces. Write any code that you want to run within the curly braces. 在实例初始化期间，初始化块按照它们出现在类体中的顺序执行，与属性初始化器交织在一 起：
+//sampleStart class InitOrderDemo(name: String) {
+val firstProperty = "First property: $name".also(::println) init {
+println("First initializer block that prints $name") } val secondProperty = "Second property: ${name.length}".also(::println)
+670
+
+[p.671]
+类
+init { println("Second initializer block that prints ${name.length}")
+} } //sampleEnd fun main() {
+InitOrderDemo("hello") }
+主构造的参数可以在初始化块中使用。它们也可以在类体内声明的属性初始化器中使用：
+class Customer(name: String) { val customerKey = name.uppercase()
+}
+Kotlin has a concise syntax for declaring properties and initializing them from the primary constructor:
+class Person(val firstName: String, val lastName: String, var age: Int)
+Such declarations can also include default values of the class properties:
+class Person(val firstName: String, val lastName: String, var isEmployed: Boolean = tr ue)
+声明类属性时，可以使用尾部逗号：
+class Person( val firstName: String, val lastName: String, var age: Int, // 尾部逗号
+) { /*……*/ }
+与普通属性一样，主构造函数中声明的属性可以是可变的（ var ）或只读的（ val ）。 如果构造函数有注解或可见性修饰符，这个 constructor 关键字是必需的，并且这些修饰符 在它前面：
+class Customer public @Inject constructor(name: String) { /*……*/ }
+Learn more about visibility modifiers.
+671
+
+[p.672]
+类
+次构造函数
+类也可以声明前缀有 constructor 的次构造函数：
+class Person(val pets: MutableList<Pet> = mutableListOf())
+class Pet { constructor(owner: Person) { owner.pets.add(this) // adds this pet to the list of its owner's pets }
+}
+如果类有一个主构造函数，每个次构造函数需要委托给主构造函数， 可以直接委托或者通过 别的次构造函数间接委托。委托到同一个类的另一个构造函数用 this 关键字即可：
+class Person(val name: String) { val children: MutableList<Person> = mutableListOf() constructor(name: String, parent: Person) : this(name) { parent.children.add(this) }
+}
+请注意，初始化块中的代码实际上会成为主构造函数的一部分。对主构造函数的委托发生在 访问次构造函数的第一条语句时，因此所有初始化块与属性初始化器中的代码都会在次构造 函数体之前执行。 即使该类没有主构造函数，这种委托仍会隐式发生，并且仍会执行初始化块：
+//sampleStart class Constructors {
+init { println("Init block")
+}
+constructor(i: Int) { println("Constructor $i")
+} } //sampleEnd
+fun main() { Constructors(1)
+}
+如果一个非抽象类没有声明任何（主或次）构造函数，它会有一个生成的不带参数的主构造 函数。构造函数的可见性是 public。
+672
+
+[p.673]
+类
+如果你不希望你的类有一个公有构造函数，那么声明一个带有非默认可见性的空的主构造函 数：
+class DontCreateMe private constructor() { /*……*/ }
+在 JVM 上，如果主构造函数的所有的参数都有默认值，编译器会生成一个额外的无参构 造函数，它将使用默认值。这使得 Kotlin 更易于使用像 Jackson 或者 JPA 这样的通过无参 构造函数创建类的实例的库。
+class Customer(val customerName: String = "")
+创建类的实例
+创建一个类的实例，只需像普通函数一样调用构造函数。You can assign the created instance to a variable:
+val invoice = Invoice() val customer = Customer("Joe Smith")
+Kotlin does not have a new keyword.
+创建嵌套类、内部类与匿名内部类的类实例的过程在嵌套类中有述。
+类成员
+类可以包含： 构造函数与初始化块 函数 属性 嵌套类与内部类 对象声明
+继承
+673
+
+[p.674]
+类
+Classes can be derived from each other and form inheritance hierarchies. Learn more about inheritance in Kotlin.
+抽象类
+类以及其中的某些或全部成员可以声明为 abstract 。 抽象成员在本类中可以不用实现。 并 不需要用 open 标注抽象类或者函数。
+abstract class Polygon { abstract fun draw()
+} class Rectangle : Polygon() {
+override fun draw() { // draw the rectangle
+} }
+可以用一个抽象成员覆盖一个非抽象的开放成员。
+open class Polygon { open fun draw() { // some default polygon drawing method }
+} abstract class WildShape : Polygon() {
+// Classes that inherit WildShape need to provide their own // draw method instead of using the default on Polygon abstract override fun draw() }
+伴生对象
+如果你需要写一个可以无需用一个类的实例来调用、但需要访问类内部的函数（例如，工厂 方法），你可以把它写成该类内对象声明中的一员。 更具体地讲，如果在你的类内声明了一个伴生对象， 你就可以访问其成员，只是以类名作为 限定符。
+674
+

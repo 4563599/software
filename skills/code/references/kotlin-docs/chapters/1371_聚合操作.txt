@@ -1,0 +1,55 @@
+# 聚合操作（第 1371-1374 页）
+
+[p.1371]
+聚合操作
+
+聚合操作
+Kotlin 集合包含用于常用的 聚合操作 （基于集合内容返回单个值的操作）的函数 。 其中大多 数是众所周知的，并且其工作方式与在其他语言中相同。
+minOrNull() 与 maxOrNull() 分别返回最小和最大的元素。 On empty collections, they return null . average() 返回数字集合中元素的平均值。 sum() 返回数字集合中元素的总和。 count() 返回集合中元素的数量。
+
+fun main() { val numbers = listOf(6, 42, 10, 4)
+println("Count: ${numbers.count()}") println("Max: ${numbers.maxOrNull()}") println("Min: ${numbers.minOrNull()}") println("Average: ${numbers.average()}") println("Sum: ${numbers.sum()}") }
+还有一些通过某些选择器函数或自定义 Comparator 来检索最小和最大元素的函数。
+maxByOrNull() 与 minByOrNull() 接受一个选择器函数并返回使选择器返回最大或最小 值的元素。 maxWithOrNull() 与 minWithOrNull() 接受一个 Comparator 对象并且根据此 Comparator 对象返回最大或最小元素。 maxOfOrNull() and minOfOrNull() take a selector function and return the largest or the smallest return value of the selector itself. maxOfWithOrNull() and minOfWithOrNull() take a Comparator object and return the largest or smallest selector return value according to that Comparator .
+These functions return null on empty collections. There are also alternatives – maxOf , minOf , maxOfWith , and minOfWith – which do the same as their counterparts but throw a NoSuchElementException on empty collections.
+
+fun main() { //sampleStart
+val numbers = listOf(5, 42, 10, 4) val min3Remainder = numbers.minByOrNull { it % 3 } println(min3Remainder)
+
+1371
+
+[p.1372]
+聚合操作
+val strings = listOf("one", "two", "three", "four") val longestString = strings.maxWithOrNull(compareBy { it.length }) println(longestString) //sampleEnd }
+Besides regular sum() , there is an advanced summation function sumOf() that takes a selector function and returns the sum of its application to all collection elements. Selector can return different numeric types: Int , Long , Double , UInt , and ULong (also BigInteger and BigDecimal on the JVM).
+fun main() { //sampleStart
+val numbers = listOf(5, 42, 10, 4) println(numbers.sumOf { it * 2 }) println(numbers.sumOf { it.toDouble() / 2 }) //sampleEnd }
+fold 与 reduce
+对于更特定的情况，有函数 reduce() 和 fold() ，它们依次将所提供的操作应用于集合元素 并返回累积的结果。 操作有两个参数：先前的累积值和集合元素。 这两个函数的区别在于： fold() 接受一个初始值并将其用作第一步的累积值，而 reduce() 的第一步则将第一个和第二个元素作为第一步的操作参数。
+fun main() { //sampleStart
+val numbers = listOf(5, 2, 10, 4)
+val simpleSum = numbers.reduce { sum, element -> sum + element } println(simpleSum) val sumDoubled = numbers.fold(0) { sum, element -> sum + element * 2 } println(sumDoubled)
+//错误：第一个元素在结果中没有加倍 //val sumDoubledReduce = numbers.reduce { sum, element -> sum + element * 2 } //println(sumDoubledReduce) //sampleEnd }
+1372
+
+[p.1373]
+聚合操作
+上面的实例展示了区别： fold() 用于计算加倍的元素之和。 如果将相同的函数传给 reduce() ，那么它会返回另一个结果，因为在第一步中它将列表的第一个和第二个元素作为 参数，所以第一个元素不会被加倍。 如需将函数以相反的顺序应用于元素，可以使用函数 reduceRight() 和 foldRight() 它们的 工作方式类似于 fold() 和 reduce() ，但从最后一个元素开始，然后再继续到前一个元素。 记住，在使用 foldRight 或 reduceRight 时，操作参数会更改其顺序：第一个参数变为元素，然 后第二个参数变为累积值。
+fun main() { //sampleStart
+val numbers = listOf(5, 2, 10, 4) val sumDoubledRight = numbers.foldRight(0) { element, sum -> sum + element * 2 } println(sumDoubledRight) //sampleEnd }
+你还可以使用将元素索引作为参数的操作。 为此，使用函数 reduceIndexed() 与 foldIndexed() 传递元素索引作为操作的第一个参数。 最后，还有将这些操作从右到左应用于集合元素的函数—— reduceRightIndexed() 与 foldRightIndexed() 。
+fun main() { //sampleStart
+val numbers = listOf(5, 2, 10, 4) val sumEven = numbers.foldIndexed(0) { idx, sum, element -> if (idx % 2 == 0) sum + element else sum } println(sumEven)
+val sumEvenRight = numbers.foldRightIndexed(0) { idx, element, sum -> if (idx % 2 == 0) sum + element else sum }
+println(sumEvenRight) //sampleEnd }
+All reduce operations throw an exception on empty collections. To receive null instead, use their *OrNull() counterparts:
+reduceOrNull() reduceRightOrNull() reduceIndexedOrNull() reduceRightIndexedOrNull()
+1373
+
+[p.1374]
+聚合操作 For cases where you want to save intermediate accumulator values, there are functions runningFold() (or its synonym scan() ) and runningReduce() .
+fun main() { //sampleStart
+val numbers = listOf(0, 1, 2, 3, 4, 5) val runningReduceSum = numbers.runningReduce { sum, item -> sum + item } val runningFoldSum = numbers.runningFold(10) { sum, item -> sum + item } //sampleEnd val transform = { index: Int, element: Int -> "N = ${index + 1}: $element" } println(runningReduceSum.mapIndexed(transform).joinToString("\n", "Sum of first N elements with runningReduce:\n")) println(runningFoldSum.mapIndexed(transform).joinToString("\n", "Sum of first N el ements with runningFold:\n")) }
+If you need an index in the operation parameter, use runningFoldIndexed() or runningReduceIndexed() .
+1374
+

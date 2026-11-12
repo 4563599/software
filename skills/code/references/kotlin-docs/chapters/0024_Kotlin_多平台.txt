@@ -1,0 +1,55 @@
+# Kotlin 多平台（第 24-28 页）
+
+[p.24]
+Kotlin 多平台
+Kotlin 多平台
+简化跨平台项目的开发，并减少为不同平台编写和维护相同代码所花费的时间。 Kotlin 多平台快速入门
+搭建并运行第一个 KMP 项目 Compose 多平台
+探索 JetBrains 开发的基于 Kotlin 的声明式多平台 UI 框架
+热门使用场景
+共享逻辑但保持 UI 原生
+了解 Kotlin 多平台并在 Android Studio 中创建在 Android 与 iOS 上都能运行的移动应用 共享逻辑与 UI
+使用 Compose 多平台创建一个在 Android、iOS 与桌面端共享 UI 的应用程序 共享一段逻辑
+创建一个在 Android 与 iOS 之间共享数据访问层的多平台应用 让应用支持多平台
+24
+
+[p.25]
+Kotlin 多平台 让 Android 应用程序能在 iOS 上运行
+Kotlin 多平台技术
+项目结构的关键概念
+了解基础知识：公共代码与平台专用代码、目标以及源代码集 预期与实际声明
+使用预期声明与实际声明来访问平台特定 API 分层项目结构
+为共享公共代码安排源代码集的分层结构 设置 iOS 集成
+将 Kotlin 多平台共享模块集成到 iOS 应用中
+教程与样例
+搭建并运行第一个 KMP 项目
+搭建并运行第一个 KMP 项目
+25
+
+[p.26]
+Kotlin 多平台 让应用支持多平台
+让 Android 应用程序能在 iOS 上运行 测试多平台应用
+解如何创建并测试 Kotlin 多平台应用程序 参见精选项目列表
+Kotlin 多平台样例 在 GitHub 上查找更多项目
+GitHub“kotlin-multiplatform”主题
+工具
+Kotlin 多平台 IDE 插件
+用于 IntelliJ IDEA 与 Android Studio 的 Kotlin 多平台插件 Compose 热加载
+使用 Compose 热加载快速迭代 UI Gradle DSL 参考
+26
+
+[p.27]
+Kotlin 多平台 为 Kotlin 多平台项目配置 Gradle 构建脚本 库搜索平台
+由 JetBrains 开发的 Kotlin 多平台库实验性搜索平台 新建项目向导
+快速生成并下载多平台项目模板 Amper 配置工具
+使用 Amper 配置项目
+社区与帮助
+加入 Kotlin 官方的 Slack 频道
+Kotlin Slack 在 StackOverflow 上订阅 Kotlin 多平台标签
+订阅 kotlin-multiplatform 标签 在 YouTrack 中报告问题
+Kotlin 问题追踪系统
+27
+
+[p.28]
+Kotlin 多平台 28
+

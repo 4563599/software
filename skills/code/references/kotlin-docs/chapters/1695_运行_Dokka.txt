@@ -1,0 +1,1215 @@
+# 运行 Dokka（第 1695-1754 页）
+
+[p.1695]
+运行 Dokka
+运行 Dokka
+Gradle Maven CLI
+1695
+
+[p.1696]
+运行 Dokka
+
+Gradle
+To generate documentation for a Gradle-based project, you can use the Gradle plugin for Dokka. It comes with basic autoconfiguration for your project, has convenient Gradle tasks for generating documentation, and provides a great deal of configuration options to customize the output. You can play around with Dokka and see how it can be configured for various projects by visiting our Gradle example projects.
+Apply Dokka
+The recommended way of applying the Gradle plugin for Dokka is with the plugins DSL:
+【Kotlin】
+plugins { id("org.jetbrains.dokka") version "2.0.0"
+}
+
+【Groovy】
+plugins { id 'org.jetbrains.dokka' version '2.0.0'
+}
+
+When documenting multi-project builds, you need to apply the Gradle plugin for Dokka within subprojects as well. You can use allprojects {} or subprojects {} Gradle configurations to achieve that:
+
+【Gradle Kotlin DSL】
+subprojects { apply(plugin = "org.jetbrains.dokka")
+
+1696
+
+[p.1697]
+运行 Dokka
+}
+
+【Gradle Groovy DSL】
+subprojects { apply plugin: 'org.jetbrains.dokka'
+}
+
+See Configuration examples if you are not sure where to apply Dokka.
+Under the hood, Dokka uses the Kotlin Gradle plugin to perform autoconfiguration of source sets for which documentation is to be generated. Make sure to apply the Kotlin Gradle Plugin or configure source sets manually.
+
+If you are using Dokka in a precompiled script plugin, you need to add the Kotlin Gradle plugin as a dependency for it to work properly.
+
+If you cannot use the plugins DSL for some reason, you can use the legacy method of applying plugins.
+
+Generate documentation
+
+The Gradle plugin for Dokka comes with HTML, Markdown and Javadoc output formats built in. It adds a number of tasks for generating documentation, both for single and multi-project builds.
+
+Single-project builds
+
+Use the following tasks to build documentation for simple, single-project applications and libraries:
+
+Task
+dokkaHtml
+
+Description Generates documentation in HTML format.
+
+Experimental formats
+Task
+
+Description
+
+1697
+
+[p.1698]
+运行 Dokka
+
+dokkaGfm dokkaJavadoc dokkaJekyll
+
+Generates documentation in GitHub Flavored Markdown format. Generates documentation in Javadoc format. Generates documentation in Jekyll compatible Markdown format.
+
+By default, generated documentation is located in the build/dokka/{format} directory of your project. The output location, among other things, can be configured.
+
+Multi-project builds
+For documenting multi-project builds, make sure that you apply the Gradle plugin for Dokka within subprojects that you want to generate documentation for, as well as in their parent project.
+
+MultiModule tasks
+
+MultiModule tasks generate documentation for each subproject individually via Partial tasks, collect and process all outputs, and produce complete documentation with a common table of contents and resolved cross-project references.
+Dokka creates the following tasks for parent projects automatically:
+
+Task
+dokkaHtmlMultiModule
+
+Description Generates multi-module documentation in HTML output format.
+
+Experimental formats (multi-module)
+
+Task
+dokkaGfmMultiModule dokkaJekyllMultiModule
+
+Description
+Generates multi-module documentation in GitHub Flavored Markdown output format.
+Generates multi-module documentation in Jekyll compatible Markdown output format.
+
+The Javadoc output format does not have a MultiModule task, but a Collector task can be used instead.
+
+By default, you can find ready-to-use documentation under {parentProject}/build/dokka/{format}MultiModule directory.
+MultiModule results
+Given a project with the following structure:
+
+1698
+
+[p.1699]
+运行 Dokka
+parentProject └── childProjectA ├── demo ├── ChildProjectAClass └── childProjectB ├── demo ├── ChildProjectBClass
+These pages are generated after running dokkaHtmlMultiModule :
+See our multi-module project example for more details.
+Collector tasks
+Similar to MultiModule tasks, Collector tasks are created for each parent project: dokkaHtmlCollector , dokkaGfmCollector , dokkaJavadocCollector and dokkaJekyllCollector . A Collector task executes the corresponding single-project task for each subproject (for example, dokkaHtml ), and merges all outputs into a single virtual project. The resulting documentation looks as if you have a single-project build that contains all declarations from the subprojects.
+1699
+
+[p.1700]
+运行 Dokka Use the dokkaJavadocCollector task if you need to create Javadoc documentation for your multi-project build.
+Collector results
+Given a project with the following structure:
+parentProject └── childProjectA ├── demo ├── ChildProjectAClass └── childProjectB ├── demo ├── ChildProjectBClass
+These pages are generated after running dokkaHtmlCollector :
+See our multi-module project example for more details.
+Partial tasks
+Each subproject has Partial tasks created for it: dokkaHtmlPartial , dokkaGfmPartial , and dokkaJekyllPartial . These tasks are not intended to be run independently, they are called by the parent's MultiModule task. However, you can configure Partial tasks to customize Dokka for your subprojects.
+1700
+
+[p.1701]
+运行 Dokka
+Output generated by Partial tasks contains unresolved HTML templates and references, so it cannot be used on its own without post-processing done by the parent's MultiModule task.
+If you want to generate documentation for a single subproject only, use single-project tasks. For example, :subprojectName:dokkaHtml .
+
+Build javadoc.jar
+If you want to publish your library to a repository, you may need to provide a javadoc.jar file that contains API reference documentation of your library.
+For example, if you want to publish to Maven Central, you must supply a javadoc.jar alongside your project. However, not all repositories have that rule.
+The Gradle plugin for Dokka does not provide any way to do this out of the box, but it can be achieved with custom Gradle tasks. One for generating documentation in HTML format and another one for Javadoc format:
+【Kotlin】
+tasks.register<Jar>("dokkaHtmlJar") { dependsOn(tasks.dokkaHtml) from(tasks.dokkaHtml.flatMap { it.outputDirectory }) archiveClassifier.set("html-docs")
+}
+tasks.register<Jar>("dokkaJavadocJar") { dependsOn(tasks.dokkaJavadoc) from(tasks.dokkaJavadoc.flatMap { it.outputDirectory }) archiveClassifier.set("javadoc")
+}
+
+【Groovy】
+tasks.register('dokkaHtmlJar', Jar.class) { dependsOn(dokkaHtml) from(dokkaHtml) archiveClassifier.set("html-docs")
+}
+
+1701
+
+[p.1702]
+运行 Dokka
+tasks.register('dokkaJavadocJar', Jar.class) { dependsOn(dokkaJavadoc) from(dokkaJavadoc) archiveClassifier.set("javadoc")
+}
+If you publish your library to Maven Central, you can use services like javadoc.io to host your library's API documentation for free and without any setup. It takes documentation pages straight from the javadoc.jar . It works well with the HTML format as demonstrated in this example.
+
+Configuration examples
+Depending on the type of project that you have, the way you apply and configure Dokka differs slightly. However, configuration options themselves are the same, regardless of the type of your project. For simple and flat projects with a single build.gradle.kts or build.gradle file found in the root of your project, see Single-project configuration. For a more complex build with subprojects and multiple nested build.gradle.kts or build.gradle files, see Multi-project configuration.
+Single-project configuration
+Single-project builds usually have only one build.gradle.kts or build.gradle file in the root of the project, and typically have the following structure:
+
+【Kotlin】
+Single platform:
+. ├── build.gradle.kts └── src
+└── main └── kotlin └── HelloWorld.kt
+
+1702
+
+[p.1703]
+运行 Dokka
+Multiplatform:
+. ├── build.gradle.kts └── src
+└── commonMain └── kotlin └── Common.kt
+└── jvmMain └── kotlin └── JvmUtils.kt
+└── nativeMain └── kotlin └── NativeUtils.kt
+【Groovy】 Single platform:
+. ├── build.gradle └── src
+└── main └── kotlin └── HelloWorld.kt
+Multiplatform:
+. ├── build.gradle └── src
+└── commonMain └── kotlin └── Common.kt
+└── jvmMain └── kotlin └── JvmUtils.kt
+└── nativeMain └── kotlin └── NativeUtils.kt
+In such projects, you need to apply Dokka and its configuration in the root build.gradle.kts or build.gradle file.
+1703
+
+[p.1704]
+运行 Dokka
+You can configure tasks and output formats individually:
+【Kotlin】 Inside ./build.gradle.kts :
+plugins { id("org.jetbrains.dokka") version "2.0.0"
+} tasks.dokkaHtml {
+outputDirectory.set(layout.buildDirectory.dir("documentation/html")) } tasks.dokkaGfm {
+outputDirectory.set(layout.buildDirectory.dir("documentation/markdown")) }
+
+【Groovy】
+Inside ./build.gradle :
+plugins { id 'org.jetbrains.dokka' version '2.0.0'
+}
+dokkaHtml { outputDirectory.set(file("build/documentation/html"))
+}
+dokkaGfm { outputDirectory.set(file("build/documentation/markdown"))
+}
+
+Or you can configure all tasks and output formats at the same time:
+【Kotlin】 Inside ./build.gradle.kts :
+import org.jetbrains.dokka.gradle.DokkaTask
+
+1704
+
+[p.1705]
+运行 Dokka
+import org.jetbrains.dokka.gradle.DokkaTaskPartial import org.jetbrains.dokka.DokkaConfiguration.Visibility
+plugins { id("org.jetbrains.dokka") version "2.0.0"
+}
+// Configure all single-project Dokka tasks at the same time, // such as dokkaHtml, dokkaJavadoc and dokkaGfm. tasks.withType<DokkaTask>().configureEach {
+dokkaSourceSets.configureEach { documentedVisibilities.set( setOf( Visibility.PUBLIC, Visibility.PROTECTED, ) )
+perPackageOption { matchingRegex.set(".*internal.*") suppress.set(true)
+} } }
+【Groovy】
+Inside ./build.gradle :
+import org.jetbrains.dokka.gradle.DokkaTask import org.jetbrains.dokka.gradle.DokkaTaskPartial import org.jetbrains.dokka.DokkaConfiguration.Visibility
+plugins { id 'org.jetbrains.dokka' version '2.0.0'
+}
+// Configure all single-project Dokka tasks at the same time, // such as dokkaHtml, dokkaJavadoc and dokkaGfm. tasks.withType(DokkaTask.class) {
+dokkaSourceSets.configureEach { documentedVisibilities.set([ Visibility.PUBLIC, Visibility.PROTECTED ])
+perPackageOption { matchingRegex.set(".*internal.*") suppress.set(true)
+}
+
+1705
+
+[p.1706]
+运行 Dokka
+} }
+
+Multi-project configuration
+Gradle's multi-project builds are more complex in structure and configuration. They usually have multiple nested build.gradle.kts or build.gradle files, and typically have the following structure:
+【Kotlin】
+. ├── build.gradle.kts ├── settings.gradle.kts ├── subproject-A
+└── build.gradle.kts └── src
+└── main └── kotlin └── HelloFromA.kt
+├── subproject-B └── build.gradle.kts └── src └── main └── kotlin └── HelloFromB.kt
+
+【Groovy】
+. ├── build.gradle ├── settings.gradle ├── subproject-A
+└── build.gradle └── src
+└── main └── kotlin └── HelloFromA.kt
+├── subproject-B └── build.gradle └── src └── main └── kotlin
+
+1706
+
+[p.1707]
+运行 Dokka
+
+└── HelloFromB.kt
+
+In this case, there are multiple ways of applying and configuring Dokka.
+Subproject configuration
+To configure subprojects in a multi-project build, you need to configure Partial tasks. You can configure all subprojects at the same time in the root build.gradle.kts or build.gradle file, using Gradle's allprojects {} or subprojects {} configuration blocks:
+【Kotlin】 In the root ./build.gradle.kts :
+import org.jetbrains.dokka.gradle.DokkaTaskPartial
+plugins { id("org.jetbrains.dokka") version "2.0.0"
+}
+subprojects { apply(plugin = "org.jetbrains.dokka")
+// configure only the HTML task tasks.dokkaHtmlPartial {
+outputDirectory.set(layout.buildDirectory.dir("docs/partial")) }
+// configure all format tasks at once tasks.withType<DokkaTaskPartial>().configureEach {
+dokkaSourceSets.configureEach { includes.from("README.md")
+} } }
+
+【Groovy】 In the root ./build.gradle :
+import org.jetbrains.dokka.gradle.DokkaTaskPartial
+
+1707
+
+[p.1708]
+运行 Dokka
+plugins { id 'org.jetbrains.dokka' version '2.0.0'
+}
+subprojects { apply plugin: 'org.jetbrains.dokka'
+// configure only the HTML task dokkaHtmlPartial {
+outputDirectory.set(file("build/docs/partial")) }
+// configure all format tasks at once tasks.withType(DokkaTaskPartial.class) {
+dokkaSourceSets.configureEach { includes.from("README.md")
+} } }
+
+Alternatively, you can apply and configure Dokka within subprojects individually. For example, to have specific settings for the subproject-A subproject only, you need to apply the following code inside ./subproject-A/build.gradle.kts :
+【Kotlin】 Inside ./subproject-A/build.gradle.kts :
+apply(plugin = "org.jetbrains.dokka") // configuration for subproject-A only. tasks.dokkaHtmlPartial {
+outputDirectory.set(layout.buildDirectory.dir("docs/partial")) }
+
+【Groovy】 Inside ./subproject-A/build.gradle :
+apply plugin: 'org.jetbrains.dokka' // configuration for subproject-A only. dokkaHtmlPartial {
+
+1708
+
+[p.1709]
+运行 Dokka
+outputDirectory.set(file("build/docs/partial")) }
+Parent project configuration
+If you want to configure something which is universal across all documentation and does not belong to the subprojects - in other words, it's a property of the parent project - you need to configure the MultiModule tasks. For example, if you want to change the name of your project which is used in the header of the HTML documentation, you need to apply the following inside the root build.gradle.kts or build.gradle file:
+【Kotlin】 In the root ./build.gradle.kts file:
+plugins { id("org.jetbrains.dokka") version "2.0.0"
+} tasks.dokkaHtmlMultiModule {
+moduleName.set("WHOLE PROJECT NAME USED IN THE HEADER") }
+【Groovy】 In the root ./build.gradle file:
+plugins { id 'org.jetbrains.dokka' version '2.0.0'
+} dokkaHtmlMultiModule {
+moduleName.set("WHOLE PROJECT NAME USED IN THE HEADER") }
+Configuration options
+1709
+
+[p.1710]
+运行 Dokka
+Dokka has many configuration options to tailor your and your reader's experience. Below are some examples and detailed descriptions for each configuration section. You can also find an example with all configuration options applied at the bottom of the page. See Configuration examples for more details on where to apply configuration blocks and how.
+General configuration
+Here is an example of general configuration of any Dokka task, regardless of source set or package:
+
+【Kotlin】
+
+import org.jetbrains.dokka.gradle.DokkaTask
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType<DokkaTask>().configureEach {
+
+moduleName.set(project.name)
+
+moduleVersion.set(project.version.toString())
+
+outputDirectory.set(layout.buildDirectory.dir("dokka/$name"))
+
+failOnWarning.set(false)
+
+suppressObviousFunctions.set(true)
+
+suppressInheritedMembers.set(false)
+
+offlineMode.set(false)
+
+// .. // source set configuration section // .. }
+
+【Groovy】
+
+import org.jetbrains.dokka.gradle.DokkaTask
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType(DokkaTask.class) {
+
+moduleName.set(project.name)
+
+moduleVersion.set(project.version.toString())
+
+outputDirectory.set(file("build/dokka/$name"))
+
+failOnWarning.set(false)
+
+suppressObviousFunctions.set(true)
+
+1710
+
+[p.1711]
+运行 Dokka
+suppressInheritedMembers.set(false) offlineMode.set(false)
+// .. // source set configuration section // .. }
+The display name used to refer to the module. It is used for the table of contents, navigation, logging, etc. If set for a single-project build or a MultiModule task, it is used as the project name. Default: Gradle project name The module version. If set for a single-project build or a MultiModule task, it is used as the project version. Default: Gradle project version The directory to where documentation is generated, regardless of format. It can be set on a per-task basis. The default is {project}/{buildDir}/{format} , where {format} is the task name with the "dokka" prefix removed. For the dokkaHtmlMultiModule task, it is project/buildDir/htmlMultiModule . Whether to fail documentation generation if Dokka has emitted a warning or an error. The process waits until all errors and warnings have been emitted first. This setting works well with reportUndocumented . Default: false Whether to suppress obvious functions. A function is considered to be obvious if it is:
+Inherited from kotlin.Any , Kotlin.Enum , java.lang.Object or java.lang.Enum , such as equals , hashCode , toString . Synthetic (generated by the compiler) and does not have any documentation, such as dataClass.componentN or dataClass.copy . Default: true Whether to suppress inherited members that aren't explicitly overridden in a given class.
+1711
+
+[p.1712]
+运行 Dokka
+Note: This can suppress functions such as equals / hashCode / toString , but cannot suppress synthetic functions such as dataClass.componentN and dataClass.copy . Use suppressObviousFunctions for that. Default: false Whether to resolve remote files/links over your network. This includes package-lists used for generating external documentation links. For example, to make classes from the standard library clickable. Setting this to true can significantly speed up build times in certain cases, but can also worsen documentation quality and user experience. For example, by not resolving class/member links from your dependencies, including the standard library. Note: You can cache fetched files locally and provide them to Dokka as local paths. See externalDocumentationLinks section. Default: false
+Source set configuration
+Dokka allows configuring some options for Kotlin source sets:
+
+【Kotlin】
+
+import org.jetbrains.dokka.DokkaConfiguration.Visibility import org.jetbrains.dokka.gradle.DokkaTask import org.jetbrains.dokka.Platform import java.net.URL
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType<DokkaTask>().configureEach {
+
+// ..
+
+// general configuration section
+
+// ..
+
+dokkaSourceSets { // configuration exclusive to the 'linux' source set named("linux") { dependsOn("native") sourceRoots.from(file("linux/src")) } configureEach { suppress.set(false)
+
+1712
+
+[p.1713]
+运行 Dokka
+displayName.set(name) documentedVisibilities.set(setOf(Visibility.PUBLIC)) reportUndocumented.set(false) skipEmptyPackages.set(true) skipDeprecated.set(false) suppressGeneratedFiles.set(true) jdkVersion.set(8) languageVersion.set("1.7") apiVersion.set("1.7") noStdlibLink.set(false) noJdkLink.set(false) noAndroidSdkLink.set(false) includes.from(project.files(), "packages.md", "extra.md") platform.set(Platform.DEFAULT) sourceRoots.from(file("src")) classpath.from(project.files(), file("libs/dependency.jar")) samples.from(project.files(), "samples/Basic.kt", "samples/Advanced.kt")
+sourceLink { // Source link section
+} externalDocumentationLink {
+// External documentation link section } perPackageOption {
+// Package options section } } } }
+
+【Groovy】
+
+import org.jetbrains.dokka.DokkaConfiguration.Visibility import org.jetbrains.dokka.gradle.DokkaTask import org.jetbrains.dokka.Platform import java.net.URL
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType(DokkaTask.class) {
+
+// ..
+
+// general configuration section
+
+// ..
+
+dokkaSourceSets { // configuration exclusive to the 'linux' source set named("linux") { dependsOn("native")
+
+1713
+
+[p.1714]
+运行 Dokka
+sourceRoots.from(file("linux/src")) } configureEach {
+suppress.set(false) displayName.set(name) documentedVisibilities.set([Visibility.PUBLIC]) reportUndocumented.set(false) skipEmptyPackages.set(true) skipDeprecated.set(false) suppressGeneratedFiles.set(true) jdkVersion.set(8) languageVersion.set("1.7") apiVersion.set("1.7") noStdlibLink.set(false) noJdkLink.set(false) noAndroidSdkLink.set(false) includes.from(project.files(), "packages.md", "extra.md") platform.set(Platform.DEFAULT) sourceRoots.from(file("src")) classpath.from(project.files(), file("libs/dependency.jar")) samples.from(project.files(), "samples/Basic.kt", "samples/Advanced.kt")
+sourceLink { // Source link section
+} externalDocumentationLink {
+// External documentation link section } perPackageOption {
+// Package options section } } } }
+Whether this source set should be skipped when generating documentation.
+Default: false
+The display name used to refer to this source set.
+The name is used both externally (for example, as source set name visible to documentation readers) and internally (for example, for logging messages of reportUndocumented ).
+By default, the value is deduced from information provided by the Kotlin Gradle plugin.
+The set of visibility modifiers that should be documented.
+1714
+
+[p.1715]
+运行 Dokka
+This can be used if you want to document protected / internal / private declarations, as well as if you want to exclude public declarations and only document internal API. This can be configured on per-package basis. Default: DokkaConfiguration.Visibility.PUBLIC Whether to emit warnings about visible undocumented declarations, that is declarations without KDocs after they have been filtered by documentedVisibilities and other filters. This setting works well with failOnWarning . This can be configured on per-package basis. Default: false Whether to skip packages that contain no visible declarations after various filters have been applied. For example, if skipDeprecated is set to true and your package contains only deprecated declarations, it is considered to be empty. Default: true Whether to document declarations annotated with @Deprecated . This can be configured on per-package basis. Default: false Whether to document/analyze generated files. Generated files are expected to be present under the {project}/{buildDir}/generated directory. If set to true , it effectively adds all files from that directory to the suppressedFiles option, so you can configure it manually. Default: true The JDK version to use when generating external documentation links for Java types. For example, if you use java.util.UUID in some public declaration signature, and this option is set to 8 , Dokka generates an external documentation link to JDK 8 Javadocs for it. Default: JDK 8 The Kotlin language version used for setting up analysis and @sample environment. By default, the latest language version available to Dokka's embedded compiler is used. The Kotlin API version used for setting up analysis and @sample environment.
+1715
+
+[p.1716]
+运行 Dokka
+By default, it is deduced from languageVersion . Whether to generate external documentation links that lead to the API reference documentation of Kotlin's standard library. Note: Links are generated when noStdLibLink is set to false . Default: false Whether to generate external documentation links to JDK's Javadocs. The version of JDK Javadocs is determined by the jdkVersion option. Note: Links are generated when noJdkLink is set to false . Default: false Whether to generate external documentation links to the Android SDK API reference. This is only relevant in Android projects, ignored otherwise. Note: Links are generated when noAndroidSdkLink is set to false . Default: false A list of Markdown files that contain module and package documentation. The contents of the specified files are parsed and embedded into documentation as module and package descriptions. See Dokka gradle example for an example of what it looks like and how to use it. The platform to be used for setting up code analysis and @sample environment. The default value is deduced from information provided by the Kotlin Gradle plugin. The source code roots to be analyzed and documented. Acceptable inputs are directories and individual .kt / .java files. By default, source roots are deduced from information provided by the Kotlin Gradle plugin. The classpath for analysis and interactive samples. This is useful if some types that come from dependencies are not resolved/picked up automatically. This option accepts both .jar and .klib files. By default, classpath is deduced from information provided by the Kotlin Gradle plugin. A list of directories or files that contain sample functions which are referenced via the @sample KDoc tag.
+1716
+
+[p.1717]
+运行 Dokka
+Source link configuration
+The sourceLinks configuration block allows you to add a source link to each signature that leads to the remoteUrl with a specific line number. (The line number is configurable by setting remoteLineSuffix ). This helps readers to find the source code for each declaration. For an example, see the documentation for the count() function in kotlinx.coroutines .
+
+【Kotlin】
+
+import org.jetbrains.dokka.gradle.DokkaTask import java.net.URL
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType<DokkaTask>().configureEach {
+
+// ..
+
+// general configuration section
+
+// ..
+
+dokkaSourceSets.configureEach { // .. // source set configuration section // ..
+
+sourceLink { localDirectory.set(projectDir.resolve("src")) remoteUrl.set(URL("https://github.com/kotlin/dokka/tree/master/src")) remoteLineSuffix.set("#L")
+} } }
+
+【Groovy】
+
+import org.jetbrains.dokka.gradle.DokkaTask import java.net.URL
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType(DokkaTask.class) {
+
+// ..
+
+1717
+
+[p.1718]
+运行 Dokka
+// general configuration section // ..
+dokkaSourceSets.configureEach { // .. // source set configuration section // ..
+sourceLink { localDirectory.set(file("src")) remoteUrl.set(new URL("https://github.com/kotlin/dokka/tree/master/src")) remoteLineSuffix.set("#L")
+} } }
+
+The path to the local source directory. The path must be relative to the root of the current project. The URL of the source code hosting service that can be accessed by documentation readers, like GitHub, GitLab, Bitbucket, etc. This URL is used to generate source code links of declarations. The suffix used to append the source code line number to the URL. This helps readers navigate not only to the file, but to the specific line number of the declaration. The number itself is appended to the specified suffix. For example, if this option is set to #L and the line number is 10, the resulting URL suffix is #L10 . Suffixes used by popular services:
+GitHub: #L GitLab: #L Bitbucket: #linesDefault: #L
+Package options
+The perPackageOption configuration block allows setting some options for specific packages matched by matchingRegex .
+
+【Kotlin】
+import org.jetbrains.dokka.DokkaConfiguration.Visibility import org.jetbrains.dokka.gradle.DokkaTask
+
+1718
+
+[p.1719]
+运行 Dokka
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType<DokkaTask>().configureEach {
+
+// ..
+
+// general configuration section
+
+// ..
+
+dokkaSourceSets.configureEach { // .. // source set configuration section // ..
+
+perPackageOption { matchingRegex.set(".*api.*") suppress.set(false) skipDeprecated.set(false) reportUndocumented.set(false) documentedVisibilities.set(setOf(Visibility.PUBLIC))
+} } }
+
+【Groovy】
+
+import org.jetbrains.dokka.DokkaConfiguration.Visibility import org.jetbrains.dokka.gradle.DokkaTask
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType(DokkaTask.class) {
+
+// ..
+
+// general configuration section
+
+// ..
+
+dokkaSourceSets.configureEach { // .. // Source set configuration section // ..
+
+perPackageOption { matchingRegex.set(".*api.*") suppress.set(false) skipDeprecated.set(false) reportUndocumented.set(false) documentedVisibilities.set([Visibility.PUBLIC])
+} }
+
+1719
+
+[p.1720]
+运行 Dokka
+}
+The regular expression that is used to match the package. Default: .* Whether this package should be skipped when generating documentation. Default: false Whether to document declarations annotated with @Deprecated . This can be configured on source set level. Default: false Whether to emit warnings about visible undocumented declarations, that is declarations without KDocs after they have been filtered by documentedVisibilities and other filters. This setting works well with failOnWarning . This can be configured on source set level. Default: false The set of visibility modifiers that should be documented. This can be used if you want to document protected / internal / private declarations within this package, as well as if you want to exclude public declarations and only document internal API. This can be configured on source set level. Default: DokkaConfiguration.Visibility.PUBLIC
+External documentation links configuration
+The externalDocumentationLink block allows the creation of links that lead to the externally hosted documentation of your dependencies. For example, if you are using types from kotlinx.serialization , by default they are unclickable in your documentation, as if they are unresolved. However, since the API reference documentation for kotlinx.serialization is built by Dokka and is published on kotlinlang.org, you can configure external documentation links for it. Thus allowing Dokka to generate links for types from the library, making them resolve successfully and clickable. By default, external documentation links for Kotlin standard library, JDK, Android SDK and AndroidX are configured.
+1720
+
+[p.1721]
+运行 Dokka
+
+【Kotlin】
+
+import org.jetbrains.dokka.gradle.DokkaTask import java.net.URL
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType<DokkaTask>().configureEach {
+
+// ..
+
+// general configuration section
+
+// ..
+
+dokkaSourceSets.configureEach { // .. // source set configuration section // ..
+
+externalDocumentationLink { url.set(URL("https://kotlinlang.org/api/kotlinx.serialization/")) packageListUrl.set( rootProject.projectDir.resolve("serialization.package.list").toURL() )
+} } }
+
+【Groovy】
+
+import org.jetbrains.dokka.gradle.DokkaTask import java.net.URL
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType(DokkaTask.class) {
+
+// ..
+
+// general configuration section
+
+// ..
+
+dokkaSourceSets.configureEach { // .. // source set configuration section // ..
+
+externalDocumentationLink { url.set(new URL("https://kotlinlang.org/api/kotlinx.serialization/"))
+
+1721
+
+[p.1722]
+运行 Dokka
+packageListUrl.set( file("serialization.package.list").toURL()
+) } } }
+
+The root URL of documentation to link to. It must contain a trailing slash. Dokka does its best to automatically find package-list for the given URL, and link declarations together. If automatic resolution fails or if you want to use locally cached files instead, consider setting the packageListUrl option. The exact location of a package-list . This is an alternative to relying on Dokka automatically resolving it. Package lists contain information about the documentation and the project itself, such as module and package names. This can also be a locally cached file to avoid network calls.
+Complete configuration
+Below you can see all possible configuration options applied at the same time.
+
+【Kotlin】
+
+import org.jetbrains.dokka.DokkaConfiguration.Visibility import org.jetbrains.dokka.gradle.DokkaTask import org.jetbrains.dokka.Platform import java.net.URL
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType<DokkaTask>().configureEach {
+
+moduleName.set(project.name)
+
+moduleVersion.set(project.version.toString())
+
+outputDirectory.set(layout.buildDirectory.dir("dokka/$name"))
+
+failOnWarning.set(false)
+
+suppressObviousFunctions.set(true)
+
+suppressInheritedMembers.set(false)
+
+offlineMode.set(false)
+
+1722
+
+[p.1723]
+运行 Dokka
+dokkaSourceSets { named("linux") { dependsOn("native") sourceRoots.from(file("linux/src")) } configureEach { suppress.set(false) displayName.set(name) documentedVisibilities.set(setOf(Visibility.PUBLIC)) reportUndocumented.set(false) skipEmptyPackages.set(true) skipDeprecated.set(false) suppressGeneratedFiles.set(true) jdkVersion.set(8) languageVersion.set("1.7") apiVersion.set("1.7") noStdlibLink.set(false) noJdkLink.set(false) noAndroidSdkLink.set(false) includes.from(project.files(), "packages.md", "extra.md") platform.set(Platform.DEFAULT) sourceRoots.from(file("src")) classpath.from(project.files(), file("libs/dependency.jar")) samples.from(project.files(), "samples/Basic.kt", "samples/Advanced.kt")
+sourceLink { localDirectory.set(projectDir.resolve("src")) remoteUrl.set(URL("https://github.com/kotlin/dokka/tree/master/src")) remoteLineSuffix.set("#L")
+}
+externalDocumentationLink { url.set(URL("https://kotlinlang.org/api/latest/jvm/stdlib/")) packageListUrl.set( rootProject.projectDir.resolve("stdlib.package.list").toURL() )
+}
+perPackageOption { matchingRegex.set(".*api.*") suppress.set(false) skipDeprecated.set(false) reportUndocumented.set(false) documentedVisibilities.set( setOf( Visibility.PUBLIC, Visibility.PRIVATE, Visibility.PROTECTED, Visibility.INTERNAL, Visibility.PACKAGE ) )
+1723
+
+[p.1724]
+运行 Dokka
+} } } }
+
+【Groovy】
+
+import org.jetbrains.dokka.DokkaConfiguration.Visibility import org.jetbrains.dokka.gradle.DokkaTask import org.jetbrains.dokka.Platform import java.net.URL
+
+// Note: To configure multi-project builds, you need
+
+//
+
+to configure Partial tasks of the subprojects.
+
+//
+
+See "Configuration example" section of documentation.
+
+tasks.withType(DokkaTask.class) {
+
+moduleName.set(project.name)
+
+moduleVersion.set(project.version.toString())
+
+outputDirectory.set(file("build/dokka/$name"))
+
+failOnWarning.set(false)
+
+suppressObviousFunctions.set(true)
+
+suppressInheritedMembers.set(false)
+
+offlineMode.set(false)
+
+dokkaSourceSets { named("linux") { dependsOn("native") sourceRoots.from(file("linux/src")) } configureEach { suppress.set(false) displayName.set(name) documentedVisibilities.set([Visibility.PUBLIC]) reportUndocumented.set(false) skipEmptyPackages.set(true) skipDeprecated.set(false) suppressGeneratedFiles.set(true) jdkVersion.set(8) languageVersion.set("1.7") apiVersion.set("1.7") noStdlibLink.set(false) noJdkLink.set(false) noAndroidSdkLink.set(false) includes.from(project.files(), "packages.md", "extra.md") platform.set(Platform.DEFAULT) sourceRoots.from(file("src")) classpath.from(project.files(), file("libs/dependency.jar")) samples.from(project.files(), "samples/Basic.kt", "samples/Advanced.kt")
+
+sourceLink {
+
+1724
+
+[p.1725]
+运行 Dokka
+localDirectory.set(file("src")) remoteUrl.set(new URL("https://github.com/kotlin/dokka/tree/master/src" )) remoteLineSuffix.set("#L") } externalDocumentationLink { url.set(new URL("https://kotlinlang.org/api/latest/jvm/stdlib/")) packageListUrl.set(
+file("stdlib.package.list").toURL() ) } perPackageOption { matchingRegex.set(".*api.*") suppress.set(false) skipDeprecated.set(false) reportUndocumented.set(false) documentedVisibilities.set([Visibility.PUBLIC]) } } } }
+1725
+
+[p.1726]
+运行 Dokka
+
+Maven
+To generate documentation for a Maven-based project, you can use the Maven plugin for Dokka. Compared to the Gradle plugin for Dokka, the Maven plugin has only basic features and does not provide support for multi-module builds.
+
+You can play around with Dokka and see how it can be configured for a Maven project by visiting our Maven example project.
+Apply Dokka
+To apply Dokka, you need to add dokka-maven-plugin to the plugins section of your POM file:
+<build> <plugins> <plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> <version>2.0.0</version> <executions> <execution> <phase>pre-site</phase> <goals> <goal>dokka</goal> </goals> </execution> </executions> </plugin> </plugins>
+</build>
+
+Generate documentation
+
+The following goals are provided by the Maven plugin:
+
+Goal
+dokka:dokka
+
+Description
+Generates documentation with Dokka plugins applied. HTML format by default.
+
+1726
+
+[p.1727]
+运行 Dokka
+
+Experimental
+
+Goal
+dokka:javadoc
+dokka:javadocJar
+
+Description
+Generates documentation in Javadoc format.
+Generates a javadoc.jar file that contains documentation in Javadoc format.
+
+Other output formats
+By default, the Maven plugin for Dokka builds documentation in HTML output format.
+All other output formats are implemented as Dokka plugins. In order to generate documentation in the desired format, you have to add it as a Dokka plugin to the configuration.
+For example, to use the experimental GFM format, you have to add gfm-plugin artifact:
+<plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> ... <configuration> <dokkaPlugins> <plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>gfm-plugin</artifactId> <version>2.0.0</version> </plugin> </dokkaPlugins> </configuration>
+</plugin>
+
+With this configuration, running the dokka:dokka goal produces documentation in GFM format. To learn more about Dokka plugins, see Dokka plugins.
+
+Build javadoc.jar
+If you want to publish your library to a repository, you may need to provide a javadoc.jar file that contains API reference documentation of your library. For example, if you want to publish to Maven Central, you must supply a javadoc.jar alongside your project. However, not all repositories have that rule.
+
+1727
+
+[p.1728]
+运行 Dokka
+Unlike the Gradle plugin for Dokka, the Maven plugin comes with a ready-to-use dokka:javadocJar goal. By default, it generates documentation in Javadoc output format in the target folder.
+If you are not satisfied with the built-in goal or want to customize the output (for example, you want to generate documentation in HTML format instead of Javadoc), similar behavior can be achieved by adding the Maven JAR plugin with the following configuration:
+<plugin> <groupId>org.apache.maven.plugins</groupId> <artifactId>maven-jar-plugin</artifactId> <version>3.3.0</version> <executions> <execution> <goals> <goal>test-jar</goal> </goals> </execution> <execution> <id>dokka-jar</id> <phase>package</phase> <goals> <goal>jar</goal> </goals> <configuration> <classifier>dokka</classifier> <classesDirectory>${project.build.directory}/dokka</classesDirectory> <skipIfEmpty>true</skipIfEmpty> </configuration> </execution> </executions>
+</plugin>
+The documentation and the .jar archive for it are then generated by running dokka:dokka and jar:jar@dokka-jar goals:
+mvn dokka:dokka jar:jar@dokka-jar
+If you publish your library to Maven Central, you can use services like javadoc.io to host your library's API documentation for free and without any setup. It takes documentation pages straight from the javadoc.jar . It works well with the HTML format as demonstrated in this example.
+Configuration example
+1728
+
+[p.1729]
+运行 Dokka
+Maven's plugin configuration block can be used to configure Dokka.
+Here is an example of a basic configuration that only changes the output location of your documentation:
+<plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> ... <configuration> <outputDir>${project.basedir}/target/documentation/dokka</outputDir> </configuration>
+</plugin>
+Configuration options
+Dokka has many configuration options to tailor your and your reader's experience.
+Below are some examples and detailed descriptions for each configuration section. You can also find an example with all configuration options applied at the bottom of the page.
+General configuration
+<plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> <!-- ... --> <configuration> <skip>false</skip> <moduleName>${project.artifactId}</moduleName> <outputDir>${project.basedir}/target/documentation</outputDir> <failOnWarning>false</failOnWarning> <suppressObviousFunctions>true</suppressObviousFunctions> <suppressInheritedMembers>false</suppressInheritedMembers> <offlineMode>false</offlineMode> <sourceDirectories> <dir>${project.basedir}/src</dir> </sourceDirectories> <documentedVisibilities> <visibility>PUBLIC</visibility> <visibility>PROTECTED</visibility> </documentedVisibilities> <reportUndocumented>false</reportUndocumented> <skipDeprecated>false</skipDeprecated> <skipEmptyPackages>true</skipEmptyPackages> <suppressedFiles> <file>/path/to/dir</file>
+1729
+
+[p.1730]
+运行 Dokka
+<file>/path/to/file</file> </suppressedFiles> <jdkVersion>8</jdkVersion> <languageVersion>1.7</languageVersion> <apiVersion>1.7</apiVersion> <noStdlibLink>false</noStdlibLink> <noJdkLink>false</noJdkLink> <includes>
+<include>packages.md</include> <include>extra.md</include> </includes> <classpath>${project.compileClasspathElements}</classpath> <samples> <dir>${project.basedir}/samples</dir> </samples> <sourceLinks> <!-- Separate section --> </sourceLinks> <externalDocumentationLinks> <!-- Separate section --> </externalDocumentationLinks> <perPackageOptions> <!-- Separate section --> </perPackageOptions> </configuration> </plugin>
+Whether to skip documentation generation.
+Default: false
+The display name used to refer to the project/module. It's used for the table of contents, navigation, logging, etc.
+Default: {project.artifactId}
+The directory to where documentation is generated, regardless of format.
+Default: {project.basedir}/target/dokka
+Whether to fail documentation generation if Dokka has emitted a warning or an error. The process waits until all errors and warnings have been emitted first.
+This setting works well with reportUndocumented .
+Default: false
+Whether to suppress obvious functions.
+A function is considered to be obvious if it is:
+1730
+
+[p.1731]
+运行 Dokka
+Inherited from kotlin.Any , Kotlin.Enum , java.lang.Object or java.lang.Enum , such as equals , hashCode , toString . Synthetic (generated by the compiler) and does not have any documentation, such as dataClass.componentN or dataClass.copy . Default: true Whether to suppress inherited members that aren't explicitly overridden in a given class. Note: This can suppress functions such as equals / hashCode / toString , but cannot suppress synthetic functions such as dataClass.componentN and dataClass.copy . Use suppressObviousFunctions for that. Default: false Whether to resolve remote files/links over your network. This includes package-lists used for generating external documentation links. For example, to make classes from the standard library clickable. Setting this to true can significantly speed up build times in certain cases, but can also worsen documentation quality and user experience. For example, by not resolving class/member links from your dependencies, including the standard library. Note: You can cache fetched files locally and provide them to Dokka as local paths. See externalDocumentationLinks section. Default: false The source code roots to be analyzed and documented. Acceptable inputs are directories and individual .kt / .java files. Default: {project.compileSourceRoots} The set of visibility modifiers that should be documented. This can be used if you want to document protected / internal / private declarations, as well as if you want to exclude public declarations and only document internal API. Can be configured on per-package basis. Default: PUBLIC Whether to emit warnings about visible undocumented declarations, that is declarations without KDocs after they have been filtered by documentedVisibilities and other filters. This setting works well with failOnWarning . This can be overridden at package level.
+1731
+
+[p.1732]
+运行 Dokka
+Default: false Whether to document declarations annotated with @Deprecated . This can be overridden at package level. Default: false Whether to skip packages that contain no visible declarations after various filters have been applied. For example, if skipDeprecated is set to true and your package contains only deprecated declarations, it is considered to be empty. Default: true The directories or individual files that should be suppressed, meaning that declarations from them are not documented. The JDK version to use when generating external documentation links for Java types. For example, if you use java.util.UUID in some public declaration signature, and this option is set to 8 , Dokka generates an external documentation link to JDK 8 Javadocs for it. Default: JDK 8 The Kotlin language version used for setting up analysis and @sample environment. By default, the latest language version available to Dokka's embedded compiler is used. The Kotlin API version used for setting up analysis and @sample environment. By default, it is deduced from languageVersion . Whether to generate external documentation links that lead to the API reference documentation of Kotlin's standard library. Note: Links are generated when noStdLibLink is set to false . Default: false Whether to generate external documentation links to JDK's Javadocs. The version of JDK Javadocs is determined by the jdkVersion option. Note: Links are generated when noJdkLink is set to false . Default: false A list of Markdown files that contain module and package documentation
+1732
+
+[p.1733]
+运行 Dokka
+The contents of specified files are parsed and embedded into documentation as module and package descriptions. The classpath for analysis and interactive samples. This is useful if some types that come from dependencies are not resolved/picked up automatically. This option accepts both .jar and .klib files. Default: {project.compileClasspathElements} A list of directories or files that contain sample functions which are referenced via @sample KDoc tag.
+Source link configuration
+The sourceLinks configuration block allows you to add a source link to each signature that leads to the url with a specific line number. (The line number is configurable by setting lineSuffix ). This helps readers to find the source code for each declaration. For an example, see the documentation for the count() function in kotlinx.coroutines .
+<plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> <!-- ... --> <configuration> <sourceLinks> <link> <path>src</path> <url>https://github.com/kotlin/dokka/tree/master/src</url> <lineSuffix>#L</lineSuffix> </link> </sourceLinks> </configuration>
+</plugin>
+The path to the local source directory. The path must be relative to the root of the current module. Note: Only Unix based paths are allowed, Windows-style paths will throw an error. The URL of the source code hosting service that can be accessed by documentation readers, like GitHub, GitLab, Bitbucket, etc. This URL is used to generate source code links of declarations. The suffix used to append source code line number to the URL. This helps readers navigate not only to the file, but to the specific line number of the declaration.
+1733
+
+[p.1734]
+运行 Dokka
+The number itself is appended to the specified suffix. For example, if this option is set to #L and the line number is 10, the resulting URL suffix is #L10 .
+Suffixes used by popular services:
+GitHub: #L GitLab: #L Bitbucket: #lines-
+External documentation links configuration
+The externalDocumentationLinks block allows the creation of links that lead to the externally hosted documentation of your dependencies.
+For example, if you are using types from kotlinx.serialization , by default they are unclickable in your documentation, as if they are unresolved. However, since the API reference documentation for kotlinx.serialization is built by Dokka and is published on kotlinlang.org, you can configure external documentation links for it. Thus allowing Dokka to generate links for types from the library, making them resolve successfully and clickable.
+By default, external documentation links for Kotlin standard library and JDK are configured.
+<plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> <!-- ... --> <configuration> <externalDocumentationLinks> <link> <url>https://kotlinlang.org/api/kotlinx.serialization/</url> <packageListUrl>file:/${project.basedir}/serialization.package.list</p
+ackageListUrl> </link>
+</externalDocumentationLinks> </configuration> </plugin>
+The root URL of documentation to link to. It must contain a trailing slash.
+Dokka does its best to automatically find the package-list for the given URL, and link declarations together.
+If automatic resolution fails or if you want to use locally cached files instead, consider setting the packageListUrl option.
+The exact location of a package-list . This is an alternative to relying on Dokka automatically resolving it.
+1734
+
+[p.1735]
+运行 Dokka
+Package lists contain information about the documentation and the project itself, such as module and package names.
+This can also be a locally cached file to avoid network calls.
+Package options
+The perPackageOptions configuration block allows setting some options for specific packages matched by matchingRegex .
+<plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> <!-- ... --> <configuration> <perPackageOptions> <packageOptions> <matchingRegex>.*api.*</matchingRegex> <suppress>false</suppress> <reportUndocumented>false</reportUndocumented> <skipDeprecated>false</skipDeprecated> <documentedVisibilities> <visibility>PUBLIC</visibility> <visibility>PRIVATE</visibility> <visibility>PROTECTED</visibility> <visibility>INTERNAL</visibility> <visibility>PACKAGE</visibility> </documentedVisibilities> </packageOptions> </perPackageOptions> </configuration>
+</plugin>
+The regular expression that is used to match the package.
+Default: .*
+Whether this package should be skipped when generating documentation.
+Default: false
+The set of visibility modifiers that should be documented.
+This can be used if you want to document protected / internal / private declarations within this package, as well as if you want to exclude public declarations and only document internal API.
+Default: PUBLIC
+Whether to document declarations annotated with @Deprecated .
+1735
+
+[p.1736]
+运行 Dokka
+This can be set on project/module level.
+Default: false
+Whether to emit warnings about visible undocumented declarations, that is declarations without KDocs after they have been filtered by documentedVisibilities and other filters.
+This setting works well with failOnWarning .
+Default: false
+Complete configuration
+Below you can see all the possible configuration options applied at the same time.
+<plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> <!-- ... --> <configuration> <skip>false</skip> <moduleName>${project.artifactId}</moduleName> <outputDir>${project.basedir}/target/documentation</outputDir> <failOnWarning>false</failOnWarning> <suppressObviousFunctions>true</suppressObviousFunctions> <suppressInheritedMembers>false</suppressInheritedMembers> <offlineMode>false</offlineMode> <sourceDirectories> <dir>${project.basedir}/src</dir> </sourceDirectories> <documentedVisibilities> <visibility>PUBLIC</visibility> <visibility>PRIVATE</visibility> <visibility>PROTECTED</visibility> <visibility>INTERNAL</visibility> <visibility>PACKAGE</visibility> </documentedVisibilities> <reportUndocumented>false</reportUndocumented> <skipDeprecated>false</skipDeprecated> <skipEmptyPackages>true</skipEmptyPackages> <suppressedFiles> <file>/path/to/dir</file> <file>/path/to/file</file> </suppressedFiles> <jdkVersion>8</jdkVersion> <languageVersion>1.7</languageVersion> <apiVersion>1.7</apiVersion> <noStdlibLink>false</noStdlibLink> <noJdkLink>false</noJdkLink> <includes> <include>packages.md</include>
+1736
+
+[p.1737]
+运行 Dokka
+<include>extra.md</include> </includes> <classpath>${project.compileClasspathElements}</classpath> <samples>
+<dir>${project.basedir}/samples</dir> </samples> <sourceLinks>
+<link> <path>src</path> <url>https://github.com/kotlin/dokka/tree/master/src</url> <lineSuffix>#L</lineSuffix>
+</link> </sourceLinks> <externalDocumentationLinks>
+<link> <url>https://kotlinlang.org/api/latest/jvm/stdlib/</url> <packageListUrl>file:/${project.basedir}/stdlib.package.list</packageL
+istUrl> </link>
+</externalDocumentationLinks> <perPackageOptions>
+<packageOptions> <matchingRegex>.*api.*</matchingRegex> <suppress>false</suppress> <reportUndocumented>false</reportUndocumented> <skipDeprecated>false</skipDeprecated> <documentedVisibilities> <visibility>PUBLIC</visibility> <visibility>PRIVATE</visibility> <visibility>PROTECTED</visibility> <visibility>INTERNAL</visibility> <visibility>PACKAGE</visibility> </documentedVisibilities>
+</packageOptions> </perPackageOptions> </configuration> </plugin>
+1737
+
+[p.1738]
+运行 Dokka
+
+CLI
+If for some reason you cannot use Gradle or Maven build tools, Dokka has a command line (CLI) runner for generating documentation. In comparison, it has the same, if not more, capabilities as the Gradle plugin for Dokka. Although it is considerably more difficult to set up as there is no autoconfiguration, especially in multiplatform and multi-module environments.
+Get started
+The CLI runner is published to Maven Central as a separate runnable artifact. You can find it on Maven Central or download it directly. With the dokka-cli-2.0.0.jar file saved on your computer, run it with the -help option to see all available configuration options and their description:
+java -jar dokka-cli-2.0.0.jar -help
+It also works for some nested options, such as -sourceSet :
+java -jar dokka-cli-2.0.0.jar -sourceSet -help
+
+Generate documentation
+
+Prerequisites
+
+Since there is no build tool to manage dependencies, you have to provide dependency .jar files yourself.
+Listed below are the dependencies that you need for any output format:
+
+Group
+org.jetbrains.dokka org.jetbrains.dokka
+
+Artifact
+dokka-base analysis-kotlin-descriptors
+
+Version 2.0.0 2.0.0
+
+Link download download
+
+Below are the additional dependencies that you need for HTML output format:
+
+1738
+
+[p.1739]
+运行 Dokka
+
+Group
+org.jetbrains.kotlinx org.freemarker
+
+Artifact
+kotlinx-html-jvm freemarker
+
+Version 0.8.0 2.3.31
+
+Link download download
+
+Run with command line options
+You can pass command line options to configure the CLI runner.
+At the very least you need to provide the following options:
+-pluginsClasspath - a list of absolute/relative paths to downloaded dependencies, separated by semi-colons ; -sourceSet - an absolute path to code sources to generate documentation for -outputDir - an absolute/relative path of the documentation output directory
+java -jar dokka-cli-2.0.0.jar \ -pluginsClasspath "./dokka-base-2.0.0.jar;./analysis-kotlin-descriptors-2.0.0.jar
+;./kotlinx-html-jvm-0.8.0.jar;./freemarker-2.3.31.jar" \ -sourceSet "-src /home/myCoolProject/src/main/kotlin" \ -outputDir "./dokka/html"
+
+Executing the given example generates documentation in HTML output format. See Command line options for more configuration details.
+Run with JSON configuration
+It's possible to configure the CLI runner with JSON. In this case, you need to provide an absolute/relative path to the JSON configuration file as the first and only argument. All other configuration options are parsed from it.
+java -jar dokka-cli-2.0.0.jar dokka-configuration.json
+
+At the very least, you need the following JSON configuration file:
+{ "outputDir": "./dokka/html", "sourceSets": [ { "sourceSetID": { "scopeId": "moduleName", "sourceSetName": "main" }, "sourceRoots": [
+
+1739
+
+[p.1740]
+运行 Dokka
+"/home/myCoolProject/src/main/kotlin" ] } ], "pluginsClasspath": [ "./dokka-base-2.0.0.jar", "./kotlinx-html-jvm-0.8.0.jar", "./analysis-kotlin-descriptors-2.0.0.jar", "./freemarker-2.3.31.jar" ] }
+See JSON configuration options for more details.
+Other output formats
+By default, the dokka-base artifact contains the HTML output format only.
+All other output formats are implemented as Dokka plugins. In order to use them, you have to put them on the plugins classpath.
+For example, if you want to generate documentation in the experimental GFM output format, you need to download and pass gfm-plugin's JAR (download) into the pluginsClasspath configuration option.
+Via command line options:
+java -jar dokka-cli-2.0.0.jar \ -pluginsClasspath "./dokka-base-2.0.0.jar;...;./gfm-plugin-2.0.0.jar" \ ...
+Via JSON configuration:
+{ ... "pluginsClasspath": [ "./dokka-base-2.0.0.jar", "...", "./gfm-plugin-2.0.0.jar" ], ...
+}
+With the GFM plugin passed to pluginsClasspath , the CLI runner generates documentation in the GFM output format.
+For more information, see Markdown and Javadoc pages.
+1740
+
+[p.1741]
+运行 Dokka
+
+Command line options
+To see the list of all possible command line options and their detailed description, run:
+java -jar dokka-cli-2.0.0.jar -help
+
+Short summary: Option
+moduleName moduleVersion outputDir sourceSet pluginsConfiguration pluginsClasspath offlineMode failOnWarning delayTemplateSubstitution noSuppressObviousFunctions includes suppressInheritedMembers
+globalPackageOptions
+globalLinks globalSrcLink helpSourceSet loggingLevel
+
+Description
+Name of the project/module.
+Documented version.
+Output directory path, ./dokka by default.
+Configuration for a Dokka source set. Contains nested configuration options.
+Configuration for Dokka plugins.
+List of jars with Dokka plugins and their dependencies. Accepts multiple paths separated by semicolons.
+Whether to resolve remote files/links over network.
+Whether to fail documentation generation if Dokka has emitted a warning or an error.
+Whether to delay substitution of some elements. Used in incremental builds of multi-module projects.
+Whether to suppress obvious functions such as those inherited from kotlin.Any and java.lang.Object .
+Markdown files that contain module and package documentation. Accepts multiple values separated by semicolons.
+Whether to suppress inherited members that aren't explicitly overridden in a given class.
+Global list of package configuration options in format
+"matchingRegex,-deprecated,privateApi,+warnUndocumented,+suppress;+visibility:PUBLIC;..."
+Accepts multiple values separated by semicolons.
+Global external documentation links in format {url}^{packageListUrl} . Accepts multiple values separated by
+Global mapping between a source directory and a Web service for browsing the code. Accepts multiple paths separated by semicolons.
+Prints help for the nested -sourceSet configuration.
+Logging level, possible values: DEBUG, PROGRESS, INFO, WARN, ERROR .
+
+1741
+
+[p.1742]
+运行 Dokka
+
+help, h
+
+Usage info.
+
+Source set options
+To see the list of command line options for the nested -sourceSet configuration, run:
+java -jar dokka-cli-2.0.0.jar -sourceSet -help
+
+Short summary: Option
+sourceSetName displayName classpath src
+dependentSourceSets
+samples
+includes
+documentedVisibilities reportUndocumented noSkipEmptyPackages skipDeprecated jdkVersion languageVersion apiVersion noStdlibLink noJdkLink suppressedFiles
+
+Description
+Name of the source set.
+Display name of the source set, used both internally and externally.
+Classpath for analysis and interactive samples. Accepts multiple paths separated by semicolons.
+Source code roots to be analyzed and documented. Accepts multiple paths separated by semicolons.
+Names of the dependent source sets in format moduleName/sourceSetName . Accepts multiple values separated by semicolons.
+List of directories or files that contain sample functions. Accepts multiple paths separated by semicolons.
+Markdown files that contain module and package documentation. Accepts multiple paths separated by semicolons.
+Visibilities to be documented. Accepts multiple values separated by semicolons. Possible values: PUBLIC , PRIVATE , PROTECTED , INTERNAL , PACKAGE .
+Whether to report undocumented declarations.
+Whether to create pages for empty packages.
+Whether to skip deprecated declarations.
+Version of JDK to use for linking to JDK Javadocs.
+Language version used for setting up analysis and samples.
+Kotlin API version used for setting up analysis and samples.
+Whether to generate links to the Kotlin standard library.
+Whether to generate links to JDK Javadocs.
+Paths to files to be suppressed. Accepts multiple paths
+
+1742
+
+[p.1743]
+运行 Dokka
+
+suppressedFiles
+
+separated by semicolons.
+
+analysisPlatform perPackageOptions externalDocumentationLinks srcLink
+
+Platform used for setting up analysis.
+List of package source set configurations in format
+matchingRegexp,-deprecated,-
+privateApi,+warnUndocumented,+suppress;... . Accepts multiple values separated by semicolons.
+External documentation links in format {url}^{packageListUrl} . Accepts multiple values separated by ^^ .
+Mapping between a source directory and a Web service for browsing the code. Accepts multiple paths separated by semicolons.
+
+JSON configuration
+Below are some examples and detailed descriptions for each configuration section. You can also find an example with all configuration options applied at the bottom of the page.
+General configuration
+{ "moduleName": "Dokka Example", "moduleVersion": null, "outputDir": "./build/dokka/html", "failOnWarning": false, "suppressObviousFunctions": true, "suppressInheritedMembers": false, "offlineMode": false, "includes": [ "module.md" ], "sourceLinks": [ { "_comment": "Options are described in a separate section" } ], "perPackageOptions": [ { "_comment": "Options are described in a separate section" } ], "externalDocumentationLinks": [ { "_comment": "Options are described in a separate section" } ], "sourceSets": [ { "_comment": "Options are described in a separate section" } ], "pluginsClasspath": [ "./dokka-base-2.0.0.jar",
+
+1743
+
+[p.1744]
+运行 Dokka
+"./analysis-kotlin-descriptors-2.0.0.jar", "./freemarker-2.3.31.jar" ] }
+The display name used to refer to the module. It is used for the table of contents, navigation, logging, etc. Default: root The module version. Default: empty The directory to where documentation is generated, regardless of output format. Default: ./dokka Whether to fail documentation generation if Dokka has emitted a warning or an error. The process waits until all errors and warnings have been emitted first. This setting works well with reportUndocumented Default: false Whether to suppress obvious functions. A function is considered to be obvious if it is:
+Inherited from kotlin.Any , Kotlin.Enum , java.lang.Object or java.lang.Enum , such as equals , hashCode , toString . Synthetic (generated by the compiler) and does not have any documentation, such as dataClass.componentN or dataClass.copy . Default: true Whether to suppress inherited members that aren't explicitly overridden in a given class. Note: This can suppress functions such as equals / hashCode / toString , but cannot suppress synthetic functions such as dataClass.componentN and dataClass.copy . Use suppressObviousFunctions for that. Default: false Whether to resolve remote files/links over your network. This includes package-lists used for generating external documentation links. For example, to make classes from the standard library clickable.
+1744
+
+[p.1745]
+运行 Dokka
+Setting this to true can significantly speed up build times in certain cases, but can also worsen documentation quality and user experience. For example, by not resolving class/member links from your dependencies, including the standard library. Note: You can cache fetched files locally and provide them to Dokka as local paths. See externalDocumentationLinks section. Default: false A list of Markdown files that contain module and package documentation. The contents of specified files are parsed and embedded into documentation as module and package descriptions. This can be configured on per-package basis. Individual and additional configuration of Kotlin source sets. For a list of possible options, see source set configuration. The global configuration of source links that is applied for all source sets. For a list of possible options, see source link configuration. The global configuration of matched packages, regardless of the source set they are in. For a list of possible options, see per-package configuration. The global configuration of external documentation links, regardless of the source set they are used in. For a list of possible options, see external documentation links configuration. A list of JAR files with Dokka plugins and their dependencies.
+Source set configuration
+How to configure Kotlin source sets:
+{ "sourceSets": [ { "displayName": "jvm", "sourceSetID": { "scopeId": "moduleName", "sourceSetName": "main" }, "dependentSourceSets": [ { "scopeId": "dependentSourceSetScopeId",
+1745
+
+[p.1746]
+运行 Dokka
+"sourceSetName": "dependentSourceSetName" } ], "documentedVisibilities": ["PUBLIC", "PRIVATE", "PROTECTED", "INTERNAL", "PACKAG E"], "reportUndocumented": false, "skipEmptyPackages": true, "skipDeprecated": false, "jdkVersion": 8, "languageVersion": "1.7", "apiVersion": "1.7", "noStdlibLink": false, "noJdkLink": false, "includes": [ "module.md" ], "analysisPlatform": "jvm", "sourceRoots": [ "/home/ignat/IdeaProjects/dokka-debug-mvn/src/main/kotlin" ], "classpath": [ "libs/kotlin-stdlib-2.1.21.jar", "libs/kotlin-stdlib-common-2.1.21.jar" ], "samples": [ "samples/basic.kt" ], "suppressedFiles": [ "src/main/kotlin/org/jetbrains/dokka/Suppressed.kt" ], "sourceLinks": [ { "_comment": "Options are described in a separate section" } ], "perPackageOptions": [ { "_comment": "Options are described in a separate section" } ], "externalDocumentationLinks": [ { "_comment": "Options are described in a separate section" } ] } ] }
+The display name used to refer to this source set.
+The name is used both externally (for example, the source set name is visible to documentation readers) and internally (for example, for logging messages of reportUndocumented ).
+The platform name can be used if you don't have a better alternative.
+The technical ID of the source set
+1746
+
+[p.1747]
+运行 Dokka
+The set of visibility modifiers that should be documented. This can be used if you want to document protected / internal / private declarations, as well as if you want to exclude public declarations and only document internal API. This can be configured on per-package basis. Possible values:
+PUBLIC PRIVATE PROTECTED INTERNAL PACKAGE
+Default: PUBLIC Whether to emit warnings about visible undocumented declarations, that is declarations without KDocs after they have been filtered by documentedVisibilities and other filters. This setting works well with failOnWarning . This can be configured on per-package basis. Default: false Whether to skip packages that contain no visible declarations after various filters have been applied. For example, if skipDeprecated is set to true and your package contains only deprecated declarations, it is considered to be empty. Default for CLI runner is false . Whether to document declarations annotated with @Deprecated . This can be configured on per-package basis. Default: false The JDK version to use when generating external documentation links for Java types. For example, if you use java.util.UUID in some public declaration signature, and this option is set to 8 , Dokka generates an external documentation link to JDK 8 Javadocs for it. The Kotlin language version used for setting up analysis and @sample environment. The Kotlin API version used for setting up analysis and @sample environment. Whether to generate external documentation links that lead to the API reference documentation of Kotlin's standard library.
+1747
+
+[p.1748]
+运行 Dokka
+Note: Links are generated when noStdLibLink is set to false . Default: false Whether to generate external documentation links to JDK's Javadocs. The version of JDK Javadocs is determined by the jdkVersion option. Note: Links are generated when noJdkLink is set to false . Default: false A list of Markdown files that contain module and package documentation. The contents of the specified files are parsed and embedded into documentation as module and package descriptions. Platform to be used for setting up code analysis and @sample environment. Possible values:
+jvm common js native
+The source code roots to be analyzed and documented. Acceptable inputs are directories and individual .kt / .java files. The classpath for analysis and interactive samples. This is useful if some types that come from dependencies are not resolved/picked up automatically. This option accepts both .jar and .klib files. A list of directories or files that contain sample functions which are referenced via the @sample KDoc tag. The files to be suppressed when generating documentation. A set of parameters for source links that is applied only for this source set. For a list of possible options, see source link configuration. A set of parameters specific to matched packages within this source set. For a list of possible options, see per-package configuration. A set of parameters for external documentation links that is applied only for this source set. For a list of possible options, see external documentation links configuration.
+1748
+
+[p.1749]
+运行 Dokka
+Source link configuration
+The sourceLinks configuration block allows you to add a source link to each signature that leads to the remoteUrl with a specific line number. (The line number is configurable by setting remoteLineSuffix ). This helps readers to find the source code for each declaration. For an example, see the documentation for the count() function in kotlinx.coroutines . You can configure source links for all source sets together at the same time, or individually:
+{ "sourceLinks": [ { "localDirectory": "src/main/kotlin", "remoteUrl": "https://github.com/Kotlin/dokka/tree/master/src/main/kotlin", "remoteLineSuffix": "#L" } ]
+}
+The path to the local source directory. The URL of the source code hosting service that can be accessed by documentation readers, like GitHub, GitLab, Bitbucket, etc. This URL is used to generate source code links of declarations. The suffix used to append the source code line number to the URL. This helps readers navigate not only to the file, but to the specific line number of the declaration. The number itself is appended to the specified suffix. For example, if this option is set to #L and the line number is 10, the resulting URL suffix is #L10 . Suffixes used by popular services:
+GitHub: #L GitLab: #L Bitbucket: #linesDefault: empty (no suffix)
+Per-package configuration
+The perPackageOptions configuration block allows setting some options for specific packages matched by matchingRegex . You can add package configurations for all source sets together at the same time, or individually:
+1749
+
+[p.1750]
+运行 Dokka
+{ "perPackageOptions": [ { "matchingRegex": ".*internal.*", "suppress": false, "skipDeprecated": false, "reportUndocumented": false, "documentedVisibilities": ["PUBLIC", "PRIVATE", "PROTECTED", "INTERNAL", "PACKAG
+E"] }
+] }
+The regular expression that is used to match the package. Whether this package should be skipped when generating documentation. Default: false Whether to document declarations annotated with @Deprecated . This can be set on project/module level. Default: false Whether to emit warnings about visible undocumented declarations, that is declarations without KDocs after they have been filtered by documentedVisibilities and other filters. This setting works well with failOnWarning . This can be configured on source set level. Default: false The set of visibility modifiers that should be documented. This can be used if you want to document protected / internal / private declarations within this package, as well as if you want to exclude public declarations and only document internal API. Can be configured on source set level. Default: PUBLIC
+External documentation links configuration
+The externalDocumentationLinks block allows the creation of links that lead to the externally hosted documentation of your dependencies.
+1750
+
+[p.1751]
+运行 Dokka
+For example, if you are using types from kotlinx.serialization , by default they are unclickable in your documentation, as if they are unresolved. However, since the API reference documentation for kotlinx.serialization is built by Dokka and is published on kotlinlang.org, you can configure external documentation links for it. Thus allowing Dokka to generate links for types from the library, making them resolve successfully and clickable.
+You can configure external documentation links for all source sets together at the same time, or individually:
+{ "externalDocumentationLinks": [ { "url": "https://kotlinlang.org/api/kotlinx.serialization/", "packageListUrl": "https://kotlinlang.org/api/kotlinx.serialization/package-list"
+} ] }
+The root URL of documentation to link to. It must contain a trailing slash.
+Dokka does its best to automatically find package-list for the given URL, and link declarations together.
+If automatic resolution fails or if you want to use locally cached files instead, consider setting the packageListUrl option. The exact location of a package-list . This is an alternative to relying on Dokka automatically resolving it.
+Package lists contain information about the documentation and the project itself, such as module and package names.
+This can also be a locally cached file to avoid network calls.
+Complete configuration
+Below you can see all possible configuration options applied at the same time.
+{ "moduleName": "Dokka Example", "moduleVersion": null, "outputDir": "./build/dokka/html", "failOnWarning": false, "suppressObviousFunctions": true, "suppressInheritedMembers": false,
+1751
+
+[p.1752]
+运行 Dokka
+"offlineMode": false, "sourceLinks": [
+{ "localDirectory": "src/main/kotlin", "remoteUrl": "https://github.com/Kotlin/dokka/tree/master/src/main/kotlin", "remoteLineSuffix": "#L"
+} ], "externalDocumentationLinks": [
+{ "url": "https://docs.oracle.com/javase/8/docs/api/", "packageListUrl": "https://docs.oracle.com/javase/8/docs/api/package-list"
+}, {
+"url": "https://kotlinlang.org/api/latest/jvm/stdlib/", "packageListUrl": "https://kotlinlang.org/api/latest/jvm/stdlib/package-list" } ], "perPackageOptions": [ { "matchingRegex": ".*internal.*", "suppress": false, "reportUndocumented": false, "skipDeprecated": false, "documentedVisibilities": ["PUBLIC", "PRIVATE", "PROTECTED", "INTERNAL", "PACKAG E"] } ], "sourceSets": [ { "displayName": "jvm", "sourceSetID": {
+"scopeId": "moduleName", "sourceSetName": "main" }, "dependentSourceSets": [ {
+"scopeId": "dependentSourceSetScopeId", "sourceSetName": "dependentSourceSetName" } ], "documentedVisibilities": ["PUBLIC", "PRIVATE", "PROTECTED", "INTERNAL", "PACKAG E"], "reportUndocumented": false, "skipEmptyPackages": true, "skipDeprecated": false, "jdkVersion": 8, "languageVersion": "1.7", "apiVersion": "1.7", "noStdlibLink": false, "noJdkLink": false, "includes": [ "module.md"
+1752
+
+[p.1753]
+运行 Dokka
+], "analysisPlatform": "jvm", "sourceRoots": [
+"/home/ignat/IdeaProjects/dokka-debug-mvn/src/main/kotlin" ], "classpath": [
+"libs/kotlin-stdlib-2.1.21.jar", "libs/kotlin-stdlib-common-2.1.21.jar" ], "samples": [ "samples/basic.kt" ], "suppressedFiles": [ "src/main/kotlin/org/jetbrains/dokka/Suppressed.kt" ], "sourceLinks": [ {
+"localDirectory": "src/main/kotlin", "remoteUrl": "https://github.com/Kotlin/dokka/tree/master/src/main/kotlin", "remoteLineSuffix": "#L" } ], "externalDocumentationLinks": [ { "url": "https://docs.oracle.com/javase/8/docs/api/", "packageListUrl": "https://docs.oracle.com/javase/8/docs/api/package-list" }, { "url": "https://kotlinlang.org/api/latest/jvm/stdlib/", "packageListUrl": "https://kotlinlang.org/api/latest/jvm/stdlib/package-list"
+} ], "perPackageOptions": [
+{ "matchingRegex": ".*internal.*", "suppress": false, "reportUndocumented": false, "skipDeprecated": false, "documentedVisibilities": ["PUBLIC", "PRIVATE", "PROTECTED", "INTERNAL", "PA
+CKAGE"] }
+] } ], "pluginsClasspath": [ "./dokka-base-2.0.0.jar", "./kotlinx-html-jvm-0.8.0.jar", "./analysis-kotlin-descriptors-2.0.0.jar", "./freemarker-2.3.31.jar" ], "pluginsConfiguration": [ {
+1753
+
+[p.1754]
+运行 Dokka
+"fqPluginName": "org.jetbrains.dokka.base.DokkaBase", "serializationFormat": "JSON", "values": "{\"separateInheritedMembers\":false,\"footerMessage\":\"© 2021 pretty good Copyright\"}" } ], "includes": [ "module.md" ] }
+1754
+

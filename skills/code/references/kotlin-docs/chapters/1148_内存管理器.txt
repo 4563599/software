@@ -1,0 +1,274 @@
+# 内存管理器（第 1148-1167 页）
+
+[p.1148]
+内存管理器
+内存管理器
+Kotlin/Native 内存管理 与 ARC 集成 迁移到新版内存管理器
+1148
+
+[p.1149]
+内存管理器
+Kotlin/Native 内存管理
+Kotlin/Native uses a modern memory manager that is similar to the JVM, Go, and other mainstream technologies, including the following features:
+Objects are stored in a shared heap and can be accessed from any thread. Tracing garbage collection is performed periodically to collect objects that are not reachable from the "roots", like local and global variables.
+Garbage collector
+Kotlin/Native's garbage collector (GC) algorithm is constantly evolving. Currently, it functions as a stop-the-world mark and concurrent sweep collector that does not separate the heap into generations. The GC is executed on a separate thread and started based on the memory pressure heuristics or by a timer. Alternatively, it can be called manually. The GC processes the mark queue on several threads in parallel, including application threads, the GC thread, and optional marker threads. Application threads and at least one GC thread participate in the marking process. By default, application threads must be paused when the GC is marking objects in the heap.
+You can disable the parallelization of the mark phase with the kotlin.native.binary.gcMarkSingleThreaded=true compiler option. However, this may increase the garbage collector's pause time on large heaps.
+When the marking phase is completed, the GC processes weak references and nullifies reference points to an unmarked object. By default, weak references are processed concurrently to decrease the GC pause time. See how to monitor and optimize garbage collection.
+Enable garbage collection manually
+To force-start the garbage collector, call kotlin.native.internal.GC.collect() . This method triggers a new collection and waits for its completion.
+Monitor GC performance
+1149
+
+[p.1150]
+内存管理器 To monitor the GC performance, you can look through its logs and diagnose issues. To enable logging, set the following compiler option in your Gradle build script:
+-Xruntime-logs=gc=info
+Currently, the logs are only printed to stderr . On Apple platforms, you can take advantage of the Xcode Instruments toolkit to debug iOS app performance. The garbage collector reports pauses with signposts available in Instruments. Signposts enable custom logging within your app, allowing you to check if a GC pause corresponds to an application freeze. To track GC-related pauses in your app:
+1. To enable the feature, set the following compiler option in your gradle.properties file:
+kotlin.native.binary.enableSafepointSignposts=true
+2. Open Xcode, go to Product | Profile or press Cmd + I. This action compiles your app and launches Instruments.
+3. In the template selection, select os_signpost. 4. Configure it by specifying org.kotlinlang.native.runtime as subsystem and safepoint as
+category. 5. Click the red record button to run your app and start recording signpost events:
+1150
+
+[p.1151]
+内存管理器
+Here, each blue blob on the lowest graph represents a separate signpost event, which is a GC pause.
+Optimize GC performance
+To improve GC performance, you can enable concurrent marking to decrease the GC pause time. This allows the marking phase of garbage collection to run simultaneously with application threads. The feature is currently Experimental. To enable it, set the following compiler option in your gradle.properties file:
+kotlin.native.binary.gc=cms
+Disable garbage collection
+It's recommended to keep the GC enabled. However, you can disable it in certain cases, such as for testing purposes or if you encounter issues and have a short-lived program. To do so, set the following binary option in your gradle.properties file:
+kotlin.native.binary.gc=noop
+1151
+
+[p.1152]
+内存管理器
+With this option enabled, the GC doesn't collect Kotlin objects, so memory consumption will keep rising as long as the program runs. Be careful not to exhaust the system memory.
+Memory consumption
+Kotlin/Native uses its own memory allocator. It divides system memory into pages, allowing independent sweeping in consecutive order. Each allocation becomes a memory block within a page, and the page keeps track of block sizes. Different page types are optimized for various allocation sizes. The consecutive arrangement of memory blocks ensures efficient iteration through all allocated blocks. When a thread allocates memory, it searches for a suitable page based on the allocation size. Threads maintain a set of pages for different size categories. Typically, the current page for a given size can accommodate the allocation. If not, the thread requests a different page from the shared allocation space. This page may already be available, require sweeping, or have to be created first. The Kotlin/Native memory allocator comes with protection against sudden spikes in memory allocations. It prevents situations where the mutator starts to allocate a lot of garbage quickly and the GC thread cannot keep up with it, making the memory usage grow endlessly. In this case, the GC forces a stop-the-world phase until the iteration is completed. You can monitor memory consumption yourself, check for memory leaks, and adjust memory consumption.
+Check for memory leaks
+To access the memory manager metrics, call kotlin.native.internal.GC.lastGCInfo() . This method returns statistics for the last run of the garbage collector. The statistics can be useful for:
+Debugging memory leaks when using global variables Checking for leaks when running tests
+import kotlin.native.internal.* import kotlin.test.* class Resource val global = mutableListOf<Resource>() @OptIn(ExperimentalStdlibApi::class) fun getUsage(): Long {
+1152
+
+[p.1153]
+内存管理器
+GC.collect() return GC.lastGCInfo!!.memoryUsageAfter["heap"]!!.totalObjectsSizeBytes }
+fun run() { global.add(Resource()) // The test will fail if you remove the next line global.clear()
+}
+@Test fun test() {
+val before = getUsage() // A separate function is used to ensure that all temporary objects are cleared run() val after = getUsage() assertEquals(before, after) }
+Adjust memory consumption
+If there are no memory leaks in the program, but you still see unexpectedly high memory consumption, try updating Kotlin to the latest version. We're constantly improving the memory manager, so even a simple compiler update might improve memory consumption. If you continue to experience high memory consumption after updating, switch to the system memory allocator by using the following compiler option in your Gradle build script:
+-Xallocator=std
+If this doesn't improve your memory consumption, report an issue in YouTrack.
+Unit tests in the background
+In unit tests, nothing processes the main thread queue, so don't use Dispatchers.Main unless it was mocked. Mocking it can be done by calling Dispatchers.setMain from kotlinx-coroutines-test . If you don't rely on kotlinx.coroutines or if Dispatchers.setMain doesn't work for you for some reason, try the following workaround for implementing the test launcher:
+package testlauncher
+import platform.CoreFoundation.* import kotlin.native.concurrent.* import kotlin.native.internal.test.* import kotlin.system.*
+1153
+
+[p.1154]
+内存管理器
+fun mainBackground(args: Array<String>) { val worker = Worker.start(name = "main-background") worker.execute(TransferMode.SAFE, { args.freeze() }) { val result = testLauncherEntryPoint(it) exitProcess(result) } CFRunLoopRun() error("CFRunLoopRun should never return")
+}
+Then, compile the test binary with the -e testlauncher.mainBackground compiler option.
+下一步做什么
+Migrate from the legacy memory manager Check the specifics of integration with Swift/Objective-C ARC
+1154
+
+[p.1155]
+内存管理器
+与 Swift/Objective-C ARC 集成
+Kotlin and Objective-C use different memory management strategies. Kotlin has a tracing garbage collector, while Objective-C relies on automatic reference counting (ARC). The integration between these strategies is usually seamless and generally requires no additional work. However, there are some specifics you should keep in mind:
+Threads
+Deinitializers
+Deinitialization on the Swift/Objective-C objects and the objects they refer to is called on the main thread if these objects are passed to Kotlin on the main thread, for example:
+// Kotlin class KotlinExample {
+fun action(arg: Any) { println(arg)
+} }
+// Swift class SwiftExample {
+init() { print("init on \(Thread.current)")
+}
+deinit { print("deinit on \(Thread.current)")
+} }
+func test() { KotlinExample().action(arg: SwiftExample())
+}
+The resulting output:
+init on <_NSMainThread: 0x600003bc0000>{number = 1, name = main} shared.SwiftExample deinit on <_NSMainThread: 0x600003bc0000>{number = 1, name = main}
+1155
+
+[p.1156]
+内存管理器
+Deinitialization on the Swift/Objective-C objects is called on a special GC thread instead of the main one if:
+Swift/Objective-C objects are passed to Kotlin on a thread other than main. The main dispatch queue isn't processed. If you want to call deinitialization on a special GC thread explicitly, set kotlin.native.binary.objcDisposeOnMain=false in your gradle.properties . This option enables deinitialization on a special GC thread, even if Swift/Objective-C objects were passed to Kotlin on the main thread. A special GC thread complies with the Objective-C runtime, meaning that it has a run loop and drain autorelease pools.
+Completion handlers
+When calling Kotlin suspending functions from Swift, completion handlers might be called on threads other than the main one, for example:
+// Kotlin // coroutineScope, launch, and delay are from kotlinx.coroutines suspend fun asyncFunctionExample() = coroutineScope {
+launch { delay(1000L) println("World!")
+} println("Hello") }
+// Swift func test() {
+print("Running test on \(Thread.current)") PlatformKt.asyncFunctionExample(completionHandler: { _ in
+print("Running completion handler on \(Thread.current)") }) }
+The resulting output:
+Running test on <_NSMainThread: 0x600001b100c0>{number = 1, name = main} Hello World! Running completion handler on <NSThread: 0x600001b45bc0>{number = 7, name = (null)}
+1156
+
+[p.1157]
+内存管理器
+Garbage collection and lifecycle
+Object reclamation
+An object is reclaimed only during the garbage collection. This applies to Swift/Objective-C objects that cross interop boundaries into Kotlin/Native, for example:
+// Kotlin class KotlinExample {
+fun action(arg: Any) { println(arg)
+} }
+
+// Swift class SwiftExample {
+deinit { print("SwiftExample deinit")
+} }
+func test() { swiftTest() kotlinTest()
+}
+func swiftTest() { print(SwiftExample()) print("swiftTestFinished")
+}
+func kotlinTest() { KotlinExample().action(arg: SwiftExample()) print("kotlinTest finished")
+}
+The resulting output:
+shared.SwiftExample SwiftExample deinit swiftTestFinished shared.SwiftExample kotlinTest finished SwiftExample deinit
+Objective-C objects lifecycle
+
+1157
+
+[p.1158]
+内存管理器
+The Objective-C objects might live longer than they should, which sometimes might cause performance issues. For example, when a long-running loop creates several temporary objects that cross the Swift/Objective-C interop boundary on each iteration.
+In the GC logs, there's a number of stable refs in the root set. If this number keeps growing, it may indicate that the Swift/Objective-C objects are not freed up when they should. In this case, try the autoreleasepool block around loop bodies that do interop calls:
+// Kotlin fun growingMemoryUsage() {
+repeat(Int.MAX_VALUE) { NSLog("$it\n")
+} }
+fun steadyMemoryUsage() { repeat(Int.MAX_VALUE) { autoreleasepool { NSLog("$it\n") } }
+}
+Garbage collection of Swift and Kotlin objects' chains
+Consider the following example:
+// Kotlin interface Storage {
+fun store(arg: Any) }
+class KotlinStorage(var field: Any? = null) : Storage { override fun store(arg: Any) { field = arg }
+}
+class KotlinExample { fun action(firstSwiftStorage: Storage, secondSwiftStorage: Storage) { // Here, we create the following chain: // firstKotlinStorage -> firstSwiftStorage -> secondKotlinStorage -> secondSwi
+ftStorage. val firstKotlinStorage = KotlinStorage() firstKotlinStorage.store(firstSwiftStorage) val secondKotlinStorage = KotlinStorage() firstSwiftStorage.store(secondKotlinStorage) secondKotlinStorage.store(secondSwiftStorage)
+}
+1158
+
+[p.1159]
+内存管理器
+}
+// Swift class SwiftStorage : Storage {
+let name: String
+var field: Any? = nil
+init(_ name: String) { self.name = name
+}
+func store(arg: Any) { field = arg
+}
+deinit { print("deinit SwiftStorage \(name)")
+} }
+func test() { KotlinExample().action( firstSwiftStorage: SwiftStorage("first"), secondSwiftStorage: SwiftStorage("second") )
+}
+It takes some time between "deinit SwiftStorage first" and "deinit SwiftStorage second" messages to appear in the log. The reason is that firstKotlinStorage and secondKotlinStorage are collected in different GC cycles. Here's the sequence of events:
+1. KotlinExample.action finishes. firstKotlinStorage is considered "dead" because nothing references it, while secondKotlinStorage is not because it is referenced by firstSwiftStorage .
+2. First GC cycle starts, and firstKotlinStorage is collected. 3. There are no references to firstSwiftStorage , so it is "dead" as well, and deinit is called. 4. Second GC cycle starts. secondKotlinStorage is collected because firstSwiftStorage is no
+longer referencing it. 5. secondSwiftStorage is finally reclaimed.
+It requires two GC cycles to collect these four objects because deinitialization of Swift and ObjectiveC objects happens after the GC cycle. The limitation stems from deinit , which can call arbitrary code, including the Kotlin code that cannot be run during the GC pause.
+1159
+
+[p.1160]
+内存管理器
+Retain cycles
+In a retain cycle, a number of objects refer each other using strong references cyclically:
+1160
+
+[p.1161]
+内存管理器
+A B
+C
+
+1161
+
+[p.1162]
+内存管理器 Kotlin's tracing GC and Objective-C's ARC handle retain cycles differently. When objects become unreachable, Kotlin's GC can properly reclaim such cycles, while Objective-C's ARC cannot. Therefore, retain cycles of Kotlin objects can be reclaimed, while retain cycles of Swift/Objective-C objects cannot. Consider the case when a retain cycle contains both Objective-C and Kotlin objects:
+1162
+
+[p.1163]
+内存管理器
+Kotlin.A ObjC.B
+
+1163
+
+[p.1164]
+内存管理器
+This involves combining Kotlin's and Objective-C's memory management models that cannot handle (reclaim) retain cycles together. That means if at least one Objective-C object is present, the retain cycle of a whole graph of objects cannot be reclaimed, and it's impossible to break the cycle from the Kotlin side. Unfortunately, no special instruments are currently available to automatically detect retain cycles in Kotlin/Native code. To avoid retain cycles, use weak or unowned references.
+Support for background state and App Extensions
+The current memory manager does not track application state by default and does not integrate with App Extensions out of the box. It means that the memory manager doesn't adjust GC behavior accordingly, which might be harmful in some cases. To change this behavior, add the following Experimental binary option to your gradle.properties :
+kotlin.native.binary.appStateTracking=enabled
+It turns off a timer-based invocation of the garbage collector when the application is in the background, so GC is called only when memory consumption becomes too high.
+下一步做什么
+Learn more about Swift/Objective-C interoperability.
+1164
+
+[p.1165]
+内存管理器
+迁移到新版内存管理器
+Support for the legacy memory manager has been completely removed in Kotlin 1.9.20. Migrate your projects to the current memory model, enabled by default since Kotlin 1.7.20.
+This guide compares the new Kotlin/Native memory manager with the legacy one and describes how to migrate your projects. The most noticeable change in the new memory manager is lifting restrictions on object sharing. You don't need to freeze objects to share them between threads, specifically:
+Top-level properties can be accessed and modified by any thread without using @SharedImmutable . Objects passing through interop can be accessed and modified by any thread without freezing them. Worker.executeAfter no longer requires operations to be frozen. Worker.execute no longer requires producers to return an isolated object subgraph. Reference cycles containing AtomicReference and FreezableAtomicReference do not cause memory leaks. Apart from easy object sharing, the new memory manager also brings other major changes: Global properties are initialized lazily when the file they are defined in is accessed first. Previously global properties were initialized at the program startup. As a workaround, you can mark properties that must be initialized at the program start with the @EagerInitialization annotation. Before using, check its documentation. by lazy {} properties support thread-safety modes and do not handle unbounded recursion. Exceptions that escape operation in Worker.executeAfter are processed like in other runtime parts, by trying to execute a user-defined unhandled exception hook or terminating the program if the hook was not found or failed with an exception itself. Freezing is deprecated and always disabled. Follow these guidelines to migrate your projects from the legacy memory manager:
+Update Kotlin
+The new Kotlin/Native memory manager has been enabled by default since Kotlin 1.7.20. Check the Kotlin version and update to the latest one if necessary.
+1165
+
+[p.1166]
+内存管理器
+
+Update dependencies
+Update to version 1.6.0 or later. Do not use versions with the native-mt suffix.
+There are also some specifics with the new memory manager you should keep in mind:
+Every common primitive (channels, flows, coroutines) works through the Worker boundaries, since freezing is not required. Dispatchers.Default is backed by a pool of Workers on Linux and Windows and by a global queue on Apple targets. Use newSingleThreadContext to create a coroutine dispatcher that is backed by a Worker. Use newFixedThreadPoolContext to create a coroutine dispatcher backed by a pool of N Workers. Dispatchers.Main is backed by the main queue on Darwin and by a standalone Worker on other platforms.
+Update to version 2.0 or later. The majority of libraries should work without any changes, however, there might be exceptions.
+Make sure that you update dependencies to the latest versions, and there is no difference between library versions for the legacy and the new memory manager.
+
+Update your code
+
+To support the new memory manager, remove usages of the affected API:
+
+Old API
+@SharedImmutable
+The FreezableAtomicReference class The FreezingException class The
+InvalidMutabilityException
+class The
+IncorrectDereferenceException
+class The freeze() function
+The isFrozen property
+
+What to do You can remove all usages, though there are no warnings for using this API in the new memory manager. Use AtomicReference instead. Remove all usages.
+Remove all usages.
+Remove all usages.
+Remove all usages. You can remove all usages. Since freezing is deprecated, the property always returns false .
+
+1166
+
+[p.1167]
+内存管理器
+
+The ensureNeverFrozen() function
+The atomicLazy() function
+The MutableData class
+The WorkerBoundReference<out T : Any> class
+The DetachedObjectGraph<T> class
+
+Remove all usages.
+Use lazy() instead. Use any regular collection instead. Use T directly. Use T directly. To pass the value through the C interop, use the StableRef class.
+
+下一步做什么
+Learn more about the new memory manager Check the specifics of integration with Swift/Objective-C ARC Learn how to reference objects safely from different coroutines
+
+1167
+

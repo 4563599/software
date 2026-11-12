@@ -1,0 +1,10 @@
+# 官方库（第 1424-1424 页）
+
+[p.1424]
+官方库
+官方库
+协程（kotlinx.coroutines） 协程指南 协程基础 Kotlin 协程与通道介绍↗ 取消与超时 组合挂起函数 协程上下文与调度器 异步流 通道 协程异常处理 共享的可变状态与并发 select 表达式（实验性的） 使用 IntelliJ IDEA 调试协程——教程 使用 IntelliJ IDEA 调试 Kotlin Flow——教程
+序列化（kotlinx.serialization） Kotlin Metadata JVM（kotlin-metadata-jvm） Lincheck（kotlinx.lincheck）
+Lincheck 指南 用 Lincheck 编写第一个测试 测试策略 操作参数 数据结构约束 进度保证 时序规范 Ktor↗
+1424
+

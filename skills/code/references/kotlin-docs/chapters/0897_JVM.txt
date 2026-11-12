@@ -1,0 +1,10 @@
+# JVM（第 897-897 页）
+
+[p.897]
+JVM
+JVM
+Kotlin/JVM 入门 与 Java 比较 在 Kotlin 中调用 Java 在 Java 中调用 Kotlin Spring
+使用 Spring Boot 创建用到数据库的 RESTful web 服务 Spring Boot 与 Kotlin 入门 创建使用 Kotlin 的 Spring Boot 项目 向 Spring Boot 项目添加数据类 为 Spring Boot 项目添加数据库支持 使用 Spring Data CrudRepository 进行数据库访问
+构建一个使用 Spring AI 基于 Qdrant 中存储的文档来回答问题的 Kotlin 应用——教程 Spring 框架 Kotlin 文档↗ 使用 Spring Boot 与 Kotlin 构建 web 应用程序——教程↗ 使用 Kotlin 协程与 RSocket 创建聊天应用程序——教程↗ 在 JVM 平台中用 JUnit 测试代码——教程 在项目中混用 Java 与 Kotlin——教程 在 Kotlin 中使用 Java 记录类型 从 Java 到 Kotlin 迁移指南 字符串 集合 可空性 标准输入
+897
+

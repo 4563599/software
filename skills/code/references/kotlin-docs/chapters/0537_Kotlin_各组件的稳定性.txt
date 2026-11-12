@@ -1,0 +1,111 @@
+# Kotlin 各组件的稳定性（第 537-540 页）
+
+[p.537]
+Kotlin 各组件的稳定性
+Kotlin 各组件的稳定性
+The Kotlin language and toolset are divided into many components such as the compilers for the JVM, JS and Native targets, the Standard Library, various accompanying tools and so on. Many of these components were officially released as Stable, which means that they were evolved in a backward-compatible way following the principles of Comfortable Updates and Keeping the Language Modern. Following the Feedback Loop principle, we release many things early for the community to try out, so a number of components are not yet released as Stable. Some of them are at a very early stage, some are more mature. We mark them as Experimental, Alpha or Beta depending on how quickly each component evolves and the level of risk users take on when adopting it.
+Stability levels explained
+Here's a quick guide to these stability levels and their meaning: 实验性的 means "try it only in toy projects":
+We are just trying out an idea and want some users to play with it and give feedback. If it doesn't work out, we may drop it any minute. Alpha means "use at your own risk, expect migration issues": We intend to productize this idea, but it hasn't reached its final shape yet. Beta means "you can use it, we'll do our best to minimize migration issues for you": It's almost done, user feedback is especially important now. Still, it's not 100% finished, so changes are possible (including ones based on your own feedback). Watch for deprecation warnings in advance for the best update experience. We collectively refer to Experimental, Alpha and Beta as pre-stable levels. 已稳定 means "use it even in most conservative scenarios": It's done. We will be evolving it according to our strict backward compatibility rules. Please note that stability levels do not say anything about how soon a component will be released as Stable. Similarly, they do not indicate how much a component will be changed before release. They only say how fast a component is changing and how much risk of update issues users are running.
+537
+
+[p.538]
+Kotlin 各组件的稳定性
+GitHub badges for Kotlin components
+The Kotlin GitHub organization hosts different Kotlin-related projects. Some of them we develop full-time, while others are side projects. Each Kotlin project has two GitHub badges describing its stability and support status:
+Stability status. This shows how quickly each project is evolving and how much risk the users are taking when adopting it. The stability status completely coincides with the stability level of the Kotlin language features and its components:
+stands for Experimental stands for Alpha stands for Beta stands for Stable Support status. This shows our commitment to maintaining a project and helping users to solve their problems. The level of support is unified for all JetBrains products.
+See the JetBrains Open Source document for details.
+Stability of subcomponents
+A stable component may have an experimental subcomponent, for example: a stable compiler may have an experimental feature; a stable API may include experimental classes or functions; a stable command-line tool may have experimental options.
+We make sure to document precisely which subcomponents are not Stable. We also do our best to warn users where possible and ask to opt them in explicitly to avoid the accidental use of features that have not been released as stable.
+Current stability of Kotlin components
+By default, all new components have Experimental status.
+538
+
+[p.539]
+Kotlin 各组件的稳定性
+
+Kotlin 编译器
+组件 Kotlin/JVM Kotlin/Native Kotlin/JS Kotlin/Wasm 分析 API
+核心编译器插件
+组件 All-open No-arg SAM-with-receiver kapt Lombok Power-assert
+Kotlin 库
+组件 kotlin-stdlib (JVM) kotlinx-coroutines kotlinx-serialization kotlin-metadata-jvm kotlin-reflect (JVM) kotlinx-datetime kotlinx-io
+Kotlin 多平台
+
+状态 已稳定 已稳定 已稳定 Alpha 已稳定
+
+状态起始版本 1.0.0 1.9.0 1.3.0 1.9.20
+
+状态 已稳定 已稳定 已稳定 已稳定 实验性的 实验性的
+
+状态起始版本 1.3.0 1.3.0 1.3.0 1.3.0 1.5.20 2.0.0
+
+状态 已稳定 已稳定 已稳定 已稳定 Beta Alpha Alpha
+
+状态起始版本 1.0.0 1.3.0 1.0.0 2.0.0 1.0.0 0.2.0 0.2.0
+
+状态起始版本
+
+备注 备注 备注
+539
+
+[p.540]
+Kotlin 各组件的稳定性
+
+状态起始版本
+
+Kotlin 多平台 用于 Android Studio 的 Kotlin 多平台插件
+
+已稳定 Beta
+
+1.9.20 0.8.0
+
+与语言版本独立
+
+Kotlin/Native
+
+组件
+Kotlin/Native 运行时 Kotlin/Native 与 C 语言及 ObjectiveC 互操作 klib 二进制 cinterop klib 二进制 CocoaPods 集成
+
+状态
+已稳 定
+
+状态起始 版本
+1.9.20
+
+Beta 1.3.0
+
+已稳 定
+Beta
+已稳 定
+
+1.9.20 1.3.0 1.9.20
+
+备注
+不包括 cinterop klibs，请参 阅下文
+
+For details about Kotlin/Native targets support, see .
+
+语言工具
+组件 脚本语法与语义 脚本嵌入与扩展 API 脚本 IDE 支持 CLI 脚本
+
+状态 Alpha
+
+状态起始版 本
+1.2.0
+
+备注
+
+Beta 1.5.0
+
+Beta Alpha 1.2.0
+
+Available since IntelliJ IDEA 2023.1 and later
+
+Language features and design proposals
+For language features and new design proposals, see .
+
+540
+

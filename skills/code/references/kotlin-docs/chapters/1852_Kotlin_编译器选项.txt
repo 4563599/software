@@ -1,0 +1,223 @@
+# Kotlin 编译器选项（第 1852-1861 页）
+
+[p.1852]
+Kotlin 编译器选项
+Kotlin 编译器选项
+Each release of Kotlin includes compilers for the supported targets: JVM, JavaScript, and native binaries for supported platforms. These compilers are used by:
+The IDE, when you click the Compile or Run button for your Kotlin project. Gradle, when you call gradle build in a console or in the IDE. Maven, when you call mvn compile or mvn test-compile in a console or in the IDE. You can also run Kotlin compilers manually from the command line as described in the Working with command-line compiler tutorial.
+编译器选项
+Kotlin compilers have a number of options for tailoring the compiling process. Compiler options for different targets are listed on this page together with a description of each one. There are several ways to set the compiler options and their values (compiler arguments):
+In IntelliJ IDEA, write in the compiler arguments in the Additional command line parameters text box in Settings/Preferences | Build, Execution, Deployment | Compiler | Kotlin Compiler. If you're using Gradle, specify the compiler arguments in the compilerOptions property of the Kotlin compilation task. For details, see Gradle compiler options. If you're using Maven, specify the compiler arguments in the <configuration> element of the Maven plugin node. For details, see Maven. If you run a command-line compiler, add the compiler arguments directly to the utility call or write them into an argfile. For example:
+$ kotlinc hello.kt -include-runtime -d hello.jar
+On Windows, when you pass compiler arguments that contain delimiter characters (whitespace, = , ; , , ), surround these arguments with double quotes ( " ).
+$ kotlinc.bat hello.kt -include-runtime -d "My Folder\hello.jar"
+1852
+
+[p.1853]
+Kotlin 编译器选项
+Common options
+The following options are common for all Kotlin compilers.
+-version
+Display the compiler version.
+-nowarn
+Suppress the compiler from displaying warnings during compilation.
+-Werror
+Turn any warnings into a compilation error.
+-Wextra
+Enable additional declaration, expression, and type compiler checks that emit warnings if true.
+-verbose
+Enable verbose logging output which includes details of the compilation process.
+-script
+Evaluate a Kotlin script file. When called with this option, the compiler executes the first Kotlin script ( *.kts ) file among the given arguments.
+-help (-h)
+Display usage information and exit. Only standard options are shown. To show advanced options, use -X .
+-X
+Display information about the advanced options and exit. These options are currently unstable: their names and behavior may be changed without notice.
+1853
+
+[p.1854]
+Kotlin 编译器选项
+-kotlin-home path
+Specify a custom path to the Kotlin compiler used for the discovery of runtime libraries.
+-P plugin:pluginId:optionName=value
+Pass an option to a Kotlin compiler plugin. Core plugins and their options are listed in the Core compiler plugins section of the documentation.
+-language-version version
+Provide source compatibility with the specified version of Kotlin.
+-api-version version
+Allow using declarations only from the specified version of Kotlin bundled libraries.
+-progressive
+Enable the progressive mode for the compiler. In the progressive mode, deprecations and bug fixes for unstable code take effect immediately, instead of going through a graceful migration cycle. Code written in the progressive mode is backwards compatible; however, code written in a non-progressive mode may cause compilation errors in the progressive mode.
+@argfile
+Read the compiler options from the given file. Such a file can contain compiler options with values and paths to the source files. Options and paths should be separated by whitespaces. For example:
+-include-runtime -d hello.jar hello.kt
+To pass values that contain whitespaces, surround them with single (') or double (") quotes. If a value contains quotation marks in it, escape them with a backslash (\).
+-include-runtime -d 'My folder'
+You can also pass multiple argument files, for example, to separate compiler options from source files.
+1854
+
+[p.1855]
+Kotlin 编译器选项
+$ kotlinc @compiler.options @classes
+If the files reside in locations different from the current directory, use relative paths.
+$ kotlinc @options/compiler.options hello.kt
+-opt-in annotation
+Enable usages of API that requires opt-in with a requirement annotation with the given fully qualified name.
+-Xsuppress-warning
+Suppresses specific warnings globally across the whole project, for example:
+kotlinc -Xsuppress-warning=NOTHING_TO_INLINE -Xsuppress-warning=NO_TAIL_CALLS_FOUND ma in.kt
+Kotlin/JVM compiler options
+The Kotlin compiler for JVM compiles Kotlin source files into Java class files. The command-line tools for Kotlin to JVM compilation are kotlinc and kotlinc-jvm . You can also use them for executing Kotlin script files. In addition to the common options, Kotlin/JVM compiler has the options listed below.
+-classpath path (-cp path)
+Search for class files in the specified paths. Separate elements of the classpath with system path separators (; on Windows, : on macOS/Linux). The classpath can contain file and directory paths, ZIP, or JAR files.
+-d path
+Place the generated class files into the specified location. The location can be a directory, a ZIP, or a JAR file.
+-include-runtime
+1855
+
+[p.1856]
+Kotlin 编译器选项
+Include the Kotlin runtime into the resulting JAR file. Makes the resulting archive runnable on any Java-enabled environment.
+-jdk-home path
+Use a custom JDK home directory to include into the classpath if it differs from the default JAVA_HOME .
+-Xjdk-release=version
+Specify the target version of the generated JVM bytecode. Limit the API of the JDK in the classpath to the specified Java version. Automatically sets -jvm-target version . Possible values are 1.8 , 9 , 10 , ..., 21 .
+This option is not guaranteed to be effective for each JDK distribution.
+-jvm-target version
+Specify the target version of the generated JVM bytecode. Possible values are 1.8 , 9 , 10 , ..., 21 . The default value is 1.8 .
+-java-parameters
+Generate metadata for Java 1.8 reflection on method parameters.
+-module-name name (JVM)
+Set a custom name for the generated .kotlin_module file.
+-no-jdk
+Don't automatically include the Java runtime into the classpath.
+-no-reflect
+Don't automatically include the Kotlin reflection ( kotlin-reflect.jar ) into the classpath.
+-no-stdlib (JVM)
+1856
+
+[p.1857]
+Kotlin 编译器选项
+Don't automatically include the Kotlin/JVM stdlib ( kotlin-stdlib.jar ) and Kotlin reflection ( kotlin-reflect.jar ) into the classpath.
+-script-templates classnames[,]
+Script definition template classes. Use fully qualified class names and separate them with commas (,).
+Kotlin/JS compiler options
+The Kotlin compiler for JS compiles Kotlin source files into JavaScript code. The command-line tool for Kotlin to JS compilation is kotlinc-js . In addition to the common options, Kotlin/JS compiler has the options listed below.
+-target {es5|es2015}
+Generate JS files for the specified ECMA version.
+-libraries path
+Paths to Kotlin libraries with .meta.js and .kjsm files, separated by the system path separator.
+-main {call|noCall}
+Define whether the main function should be called upon execution.
+-meta-info
+Generate .meta.js and .kjsm files with metadata. Use this option when creating a JS library.
+-module-kind {umd|commonjs|amd|plain}
+The kind of JS module generated by the compiler: umd - a Universal Module Definition module commonjs - a CommonJS module amd - an Asynchronous Module Definition module plain - a plain JS module
+To learn more about the different kinds of JS module and the distinctions between them, see this article.
+1857
+
+[p.1858]
+Kotlin 编译器选项
+
+-no-stdlib (JS)
+Don't automatically include the default Kotlin/JS stdlib into the compilation dependencies.
+
+-output filepath
+Set the destination file for the compilation result. The value must be a path to a .js file including its name.
+
+-output-postfix filepath
+Add the content of the specified file to the end of the output file.
+
+-output-prefix filepath
+Add the content of the specified file to the beginning of the output file.
+
+-source-map
+Generate the source map.
+
+-source-map-base-dirs path
+Use the specified paths as base directories. Base directories are used for calculating relative paths in the source map.
+
+-source-map-embed-sources {always|never|inlining}
+Embed source files into the source map.
+
+-source-map-names-policy {simple-names|fully-qualified-names|no}
+
+Add variable and function names that you declared in Kotlin code into the source map.
+
+Setting
+simple-names
+fullyqualifiednames
+no
+
+Description
+Variable names and simple function names are added. (Default)
+Variable names and fully qualified function names are added.
+No variable or function names are added.
+
+Example output
+main com.example.kjs.playground.main
+N/A
+
+1858
+
+[p.1859]
+Kotlin 编译器选项
+-source-map-prefix
+Add the specified prefix to paths in the source map.
+Kotlin/Native compiler options
+Kotlin/Native compiler compiles Kotlin source files into native binaries for the supported platforms. The command-line tool for Kotlin/Native compilation is kotlinc-native . In addition to the common options, Kotlin/Native compiler has the options listed below.
+-enable-assertions (-ea)
+Enable runtime assertions in the generated code.
+-g
+Enable emitting debug information. This option lowers the optimization level and should not be combined with the -opt option.
+-generate-test-runner (-tr)
+Produce an application for running unit tests from the project.
+-generate-no-exit-test-runner (-trn)
+Produce an application for running unit tests without an explicit process exit.
+-include-binary path (-ib path)
+Pack external binary within the generated klib file.
+-library path (-l path)
+Link with the library. To learn about using libraries in Kotlin/native projects, see Kotlin/Native libraries.
+-library-version version (-lv version)
+Set the library version.
+1859
+
+[p.1860]
+Kotlin 编译器选项
+-list-targets
+List the available hardware targets.
+-manifest path
+Provide a manifest addend file.
+-module-name name (Native)
+Specify a name for the compilation module. This option can also be used to specify a name prefix for the declarations exported to Objective-C: How do I specify a custom Objective-C prefix/name for my Kotlin framework?
+-native-library path (-nl path)
+Include the native bitcode library.
+-no-default-libs
+Disable linking user code with the prebuilt platform libraries distributed with the compiler.
+-nomain
+Assume the main entry point to be provided by external libraries.
+-nopack
+Don't pack the library into a klib file.
+-linker-option
+Pass an argument to the linker during binary building. This can be used for linking against some native library.
+-linker-options args
+Pass multiple arguments to the linker during binary building. Separate arguments with whitespaces.
+-nostdlib
+1860
+
+[p.1861]
+Kotlin 编译器选项 Don't link with stdlib.
+-opt
+Enable compilation optimizations and produce a binary with better runtime performance. It's not recommended to combine it with the -g option, which lowers the optimization level.
+-output name (-o name)
+Set the name for the output file.
+-entry name (-e name)
+Specify the qualified entry point name.
+-produce output (-p output)
+Specify output file kind:
+program static dynamic framework library bitcode
+-repo path (-r path)
+Library search path. For more information, see Library search sequence.
+-target target
+Set hardware target. To see the list of available targets, use the -list-targets option.
+1861
+

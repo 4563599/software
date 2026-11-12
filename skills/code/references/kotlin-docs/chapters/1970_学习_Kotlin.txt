@@ -1,0 +1,8 @@
+# 学习 Kotlin（第 1970-1970 页）
+
+[p.1970]
+学习 Kotlin
+通过 JetBrains 学院插件学习 Kotlin
+Android Studio 与 IntelliJ IDEA 都提供了 JetBrains 学院插件， 可以通过代码练习任务来学习 Kotlin。 看一看《初学者入门指南（英文）》， 可以帮助开始使用 IntelliJ IDEA 中的 Kotlin 心印课 程。 解决交互式编码难题，并在 IDE 内部获得即时反馈。 如果要使用 JetBrains 学院插件进行教学，请阅读通过 JetBrains 学院插件讲授 Kotlin。
+1970
+

@@ -1,0 +1,287 @@
+# 参考与提示（第 1175-1188 页）
+
+[p.1175]
+参考与提示
+参考与提示
+目标平台支持 改进编译时间 许可证文件 Kotlin/Native FAQ
+1175
+
+[p.1176]
+参考与提示
+
+Kotlin/Native 目标平台支持
+The Kotlin/Native compiler supports a great number of different targets, though it is hard to provide the same level of support for all of them. This document describes which targets Kotlin/Native supports and breaks them into several tiers depending on how well the compiler supports them.
+We can adjust the number of tiers, the list of supported targets, and their features as we go.
+
+Mind the following terms used in tier tables:
+Gradle target name is a target name that is used in the Kotlin Multiplatform Gradle plugin to enable the target. Target triple is a target name according to the <architecture>-<vendor>-<system>-<abi> structure that is commonly used by compilers. Running tests indicates out of the box support for running tests in Gradle and IDE.
+This is only available on a native host for the specific target. For example, you can run macosX64 and iosX64 tests only on macOS x86-64 host.
+
+Tier 1
+
+The target is regularly tested on CI to be able to compile and run. We provide a source and binary compatibility between compiler releases.
+
+Gradle target name Apple macOS hosts only:
+macosX64
+macosArm64
+iosSimulatorArm64
+iosX64
+iosArm64
+
+Target triple
+x86_64-applemacos
+aarch64-applemacos
+aarch64-apple-iossimulator
+x86_64-apple-iossimulator
+aarch64-apple-ios
+
+Running tests
+
+Description
+Apple macOS on x86_64 platforms Apple macOS on Apple Silicon platforms Apple iOS simulator on Apple Silicon platforms Apple iOS simulator on x86-64 platforms Apple iOS and iPadOS on ARM64 platforms
+
+1176
+
+[p.1177]
+参考与提示
+
+Tier 2
+
+The target is regularly tested on CI to be able to compile, but may not be automatically tested to be able to run. We're doing our best to provide a source and binary compatibility between compiler releases.
+
+Gradle target name
+
+Target triple
+
+linuxX64 linuxArm64
+Apple macOS hosts only:
+watchosSimulatorArm64
+
+x86_64-unknownlinux-gnu
+aarch64-unknownlinux-gnu
+aarch64-applewatchos-simulator
+
+watchosX64
+
+x86_64-applewatchos-simulator
+
+watchosArm32 watchosArm64 tvosSimulatorArm64 tvosX64 tvosArm64
+
+armv7k-applewatchos
+arm64_32-applewatchos
+aarch64-appletvos-simulator
+x86_64-appletvos-simulator
+aarch64-appletvos
+
+Running tests
+
+Description
+
+Linux on x86_64 platforms
+
+Linux on ARM64 platforms
+
+Apple watchOS simulator on Apple Silicon platforms
+Apple watchOS 64-bit simulator on x86_64 platforms
+Apple watchOS on ARM32 platforms
+Apple watchOS on ARM64 platforms with ILP32
+Apple tvOS simulator on Apple Silicon platforms
+Apple tvOS simulator on x86_64 platforms
+Apple tvOS on ARM64 platforms
+
+Tier 3
+
+The target is not guaranteed to be tested on CI. We can't promise a source and binary compatibility between different compiler releases, though such changes for these targets are quite rare.
+
+Gradle target name
+androidNativeArm32
+
+Target triple
+arm-unknownlinuxandroideabi
+aarch64-unknown-
+
+Running tests
+
+Description
+Android NDK on ARM32 platforms Android NDK on ARM64
+
+1177
+
+[p.1178]
+参考与提示
+
+androidNativeX86
+androidNativeX64
+mingwX64
+Apple macOS hosts only:
+watchosDeviceArm64
+
+i686-unknownlinux-android
+x86_64-unknownlinux-android
+x86_64-pcwindows-gnu
+aarch64-applewatchos
+
+platforms Android NDK on x86 platforms Android NDK on x86_64 platforms 64-bit Windows 7 and later using MinGW compatibility layer
+Apple watchOS on ARM64 platforms
+
+The linuxArm32Hfp target is deprecated and will be removed in future releases.
+
+For library authors
+We don't recommend library authors to test more targets or provide stricter guarantees than the Kotlin/Native compiler does. You can use the following approach when considering support for native targets:
+Support all the targets from tier 1, 2, and 3. Regularly test targets from tier 1 and 2 that support running tests out of the box.
+The Kotlin team uses this approach in the official Kotlin libraries, for example, kotlinx.coroutines and kotlinx.serialization.
+
+1178
+
+[p.1179]
+参考与提示
+改进编译时间的技巧
+The Kotlin/Native compiler is constantly receiving updates that improve its performance. With the latest Kotlin/Native compiler and a properly configured build environment, you can significantly improve the compilation times of your projects with Kotlin/Native targets. Read on for our tips on how to speed up the Kotlin/Native compilation process.
+General recommendations
+Use the latest version of Kotlin
+This way, you always get the latest performance improvements. The most recent Kotlin version is 2.1.21.
+Avoid creating huge classes
+Try to avoid huge classes that take a long time to compile and load during execution.
+Preserve downloaded and cached components between builds
+When compiling projects, Kotlin/Native downloads the required components and caches some results of its work to the $USER_HOME/.konan directory. The compiler uses this directory for subsequent compilations, making them take less time to complete. When building in containers (such as Docker) or with continuous integration systems, the compiler may have to create the ~/.konan directory from scratch for each build. To avoid this step, configure your environment to preserve ~/.konan between builds. For example, redefine its location using the kotlin.data.dir Gradle property. Alternatively, you can use the -Xkonan-data-dir compiler option to configure your custom path to the directory via the cinterop and konanc tools.
+Gradle configuration
+The first compilation with Gradle usually takes more time than subsequent ones due to the need to download the dependencies, build caches, and perform additional steps. You should build your project at least twice to get an accurate reading of the actual compilation times.
+1179
+
+[p.1180]
+参考与提示
+Below are some recommendations for configuring Gradle for better compilation performance.
+Increase Gradle heap size
+To increase the Gradle heap size, add org.gradle.jvmargs=-Xmx3g to your gradle.properties file. If you use parallel builds, you might need to choose the right number of workers with the org.gradle.workers.max property or the --max-workers command-line option. The default value is the number of CPU processors.
+Build only necessary binaries
+Don't run Gradle tasks that build the whole project, such as build or assemble , unless you really need to. These tasks build the same code more than once, increasing the compilation times. In typical cases, such as running tests from IntelliJ IDEA or starting the app from Xcode, the Kotlin tooling avoids executing unnecessary tasks. If you have a non-typical case or build configuration, you might need to choose the task yourself:
+linkDebug* . To run your code during development, you usually need only one binary, so running the corresponding linkDebug* task should be enough. embedAndSignAppleFrameworkForXcode . Since iOS simulators and devices have different processor architectures, it's a common approach to distribute a Kotlin/Native binary as a universal (fat) framework. However, during local development, it's faster to build the .framework file only for the platform you're using. To build a platform-specific framework, use the embedAndSignAppleFrameworkForXcode task.
+Build only for necessary targets
+Similarly to the recommendation above, don't build a binary for all native platforms at once. For example, compiling an XCFramework (using an *XCFramework task) builds the same code for all targets, which takes proportionally more time than building for a single target. If you do need XCFrameworks for your setup, you can reduce the number of targets. For example, you don't need iosX64 if you don't run this project on iOS simulators on Intel-based Macs.
+Binaries for different targets are built with linkDebug*$Target and linkRelease*$Target Gradle tasks. You can look for the executed tasks in the build log or in the Gradle build scan by running a Gradle build with the --scan option.
+1180
+
+[p.1181]
+参考与提示
+Don't build unnecessary release binaries
+Kotlin/Native supports two build modes, debug and release. Release is highly optimized, and this takes a lot of time: compilation of release binaries takes an order of magnitude more time than debug binaries. Apart from an actual release, all these optimizations might be unnecessary in a typical development cycle. If you use a task with Release in its name during the development process, consider replacing it with Debug . Similarly, instead of running assembleXCFramework , you can run assembleSharedDebugXCFramework , for example.
+Release binaries are built with linkRelease* Gradle tasks. You can check for them in the build log or in the Gradle build scan by running a Gradle build with the --scan option.
+Don't disable Gradle daemon
+Don't disable the Gradle daemon without having a good reason. By default, Kotlin/Native runs from the Gradle daemon. When it's enabled, the same JVM process is used, and there is no need to warm it up for each compilation.
+Don't use transitive export
+Using transitiveExport = true disables dead code elimination in many cases, so the compiler has to process a lot of unused code. It increases the compilation time. Instead, use the export method explicitly for exporting the required projects and dependencies.
+Don't export modules too much
+Try to avoid unnecessary module export. Each exported module negatively affects compilation time and binary size.
+Use Gradle build caching
+Enable the Gradle build cache feature: Local build cache. For local caching, add org.gradle.caching=true to your gradle.properties file or run the build with the --build-cache option in the command line. Remote build cache. Learn how to configure the remote build cache for continuous integration environments.
+Use Gradle configuration cache
+1181
+
+[p.1182]
+参考与提示
+To use the Gradle configuration cache, add org.gradle.configuration-cache=true to your gradle.properties file.
+Configuration cache also enables running link* tasks in parallel which could heavily load the machine, specifically with a lot of CPU cores. This issue will be fixed in KT-70915.
+Enable previously disabled features
+There are Kotlin/Native properties that disable the Gradle daemon and compiler caches:
+kotlin.native.disableCompilerDaemon=true kotlin.native.cacheKind=none
+kotlin.native.cacheKind.$target=none , where $target is a Kotlin/Native compilation target, for example iosSimulatorArm64 . If you had issues with these features before and added these lines to your gradle.properties file or Gradle arguments, remove them and check whether the build completes successfully. It is possible that these properties were added previously to work around issues that have already been fixed.
+Try incremental compilation of klib artifacts
+With incremental compilation, if only a part of the klib artifact produced by the project module changes, just a part of klib is further recompiled into a binary. This feature is Experimental. To enable it, add the kotlin.incremental.native=true option to your gradle.properties file. If you face any problems, create an issue in YouTrack.
+Windows configuration
+Windows Security may slow down the Kotlin/Native compiler. You can avoid this by adding the .konan directory, which is located in %\USERPROFILE% by default, to Windows Security exclusions. Learn how to add exclusions to Windows Security.
+1182
+
+[p.1183]
+参考与提示
+
+Kotlin/Native 二进制文件的许可证文件
+Like many other open-source projects, Kotlin relies on third-party code, meaning that the Kotlin project includes some code not developed by JetBrains or the Kotlin programming language contributors. Sometimes it is derived work, such as code rewritten from C++ to Kotlin.
+You can find licenses for the third-party work used in Kotlin in our GitHub repository:
+Kotlin compiler Kotlin/Native
+
+In particular, the Kotlin/Native compiler produces binaries that can include third-party code, data, or derived work. This means that the Kotlin/Native-compiled binaries are subject to the terms and conditions of the third-party licenses.
+In practice, if you distribute a Kotlin/Native-compiled final binary, you should always include necessary license files in your binary distribution. The files should be accessible to users of your distribution in a readable form.
+Always include the following license files for the corresponding projects:
+
+Project Kotlin Apache Harmony GWT Guava libbacktrace
+mimalloc
+
+Files to be included
+Apache license 2.0 Apache Harmony copyright notice
+3-clause BSD license with copyright notice MIT license Include in case you use the mimalloc memory allocator instead of the default one (the -Xallocator=mimalloc compiler option is set).
+
+Unicode character database
+Multi-producer/multiconsumer bounded queue
+
+Unicode license Copyright notice
+
+The mingwX64 target requires additional license files:
+
+1183
+
+[p.1184]
+参考与提示
+
+Project MinGW-w64 headers and runtime libraries
+
+Files to be included
+MinGW-w64 runtime license Winpthreads license
+
+None of these libraries require the distributed Kotlin/Native binaries to be open-sourced.
+
+1184
+
+[p.1185]
+参考与提示
+Kotlin/Native FAQ
+How do I run my program?
+Define a top-level function fun main(args: Array<String>) or just fun main() if you are not interested in passed arguments, please ensure it's not in a package. Also, compiler switch -entry could be used to make any function taking Array<String> or no arguments and return Unit as an entry point.
+What is Kotlin/Native memory management model?
+Kotlin/Native uses an automated memory management scheme that is similar to what Java or Swift provide. Learn about the Kotlin/Native memory manager
+How do I create a shared library?
+Use the -produce dynamic compiler option or binaries.sharedLib() in your Gradle build file:
+kotlin { iosArm64("mylib") { binaries.sharedLib() }
+}
+It produces a platform-specific shared object ( .so on Linux, .dylib on macOS, and .dll on Windows targets) and a C language header, allowing the use of all public APIs available in your Kotlin/Native program from C/C++ code. Complete the Kotlin/Native as a dynamic library tutorial
+How do I create a static library or an object file?
+Use the -produce static compiler option or binaries.staticLib() in your Gradle build file:
+kotlin {
+1185
+
+[p.1186]
+参考与提示
+iosArm64("mylib") { binaries.staticLib()
+} }
+It produces a platform-specific static object ( .a library format) and a C language header, allowing you to use all the public APIs available in your Kotlin/Native program from C/C++ code.
+How do I run Kotlin/Native behind a corporate proxy?
+As Kotlin/Native needs to download a platform specific toolchain, you need to specify Dhttp.proxyHost=xxx -Dhttp.proxyPort=xxx as the compiler's or gradlew arguments, or set it via the JAVA_OPTS environment variable.
+How do I specify a custom Objective-C prefix/name for my Kotlin framework?
+Use the -module-name compiler option or matching Gradle DSL statement.
+【Kotlin】
+kotlin { iosArm64("myapp") { binaries.framework { freeCompilerArgs += listOf("-module-name", "TheName") } }
+}
+
+【Groovy】
+kotlin { iosArm64("myapp") { binaries.framework { freeCompilerArgs += ["-module-name", "TheName"] } }
+}
+
+1186
+
+[p.1187]
+参考与提示
+How do I rename the iOS framework?
+The default name is for an iOS framework is <project name>.framework . To set a custom name, use the baseName option. This will also set the module name.
+kotlin { iosArm64("myapp") { binaries { framework { baseName = "TheName" } } }
+}
+How do I enable bitcode for my Kotlin framework?
+Bitcode embedding was deprecated in Xcode 14 and removed in Xcode 15 for all Apple targets. The Kotlin/Native compiler does not support bitcode embedding since Kotlin 2.0.20. If you're using earlier versions of Xcode but want to upgrade to Kotlin 2.0.20 or later versions, disable bitcode embedding in your Xcode projects.
+How do I reference objects safely from different coroutines?
+To safely access or update an object across multiple coroutines in Kotlin/Native, consider using concurrency-safe constructs, such as @Volatile and AtomicReference . Use @Volatile to annotate a var property. This makes all reads and writes to the property's backing field atomic. In addition, writes become immediately visible to other threads. When another thread accesses this property, it observes not only the updated value but also the changes that happened before the update. Alternatively, use AtomicReference, which supports atomic reads and updates. On Kotlin/Native, it wraps a volatile variable and performs atomic operations. Kotlin also provides a set of types for atomic operations tailored to specific data types. You can use AtomicInt , AtomicLong , AtomicBoolean , AtomicArray , as well as AtomicIntArray and AtomicLongArray .
+1187
+
+[p.1188]
+参考与提示 For more information about access to shared mutable state, see the Coroutines documentation.
+How can I compile my project with unreleased versions of Kotlin/Native?
+First, please consider trying preview versions. In case you need an even more recent development version, you can build Kotlin/Native from source code: clone Kotlin repository and follow these steps.
+1188
+

@@ -1,0 +1,79 @@
+# 在 JVM 平台中用 JUnit 测试代码——教程（第 988-994 页）
+
+[p.988]
+在 JVM 平台中用 JUnit 测试代码——教程
+在 JVM 平台中用 JUnit 测试代码——教程
+This tutorial shows you how to write a simple unit test in a Kotlin/JVM project and run it with the Gradle build tool. In this project, you'll use the kotlin.test library and run the test using JUnit. If you're working on a multiplatform app, see the Kotlin Multiplatform tutorial. To get started, first download and install the latest version of IntelliJ IDEA.
+Add dependencies
+1. Open a Kotlin project in IntelliJ IDEA. If you don't have a project, create one. 2. Open the build.gradle(.kts) file and check that the testImplementation dependency is
+present. This dependency allows you to work with kotlin.test and JUnit :
+【Kotlin】
+dependencies { // Other dependencies. testImplementation(kotlin("test"))
+}
+【Groovy】
+dependencies { // Other dependencies. testImplementation 'org.jetbrains.kotlin:kotlin-test'
+}
+1. Add the test task to the build.gradle(.kts) file:
+【Kotlin】
+988
+
+[p.989]
+在 JVM 平台中用 JUnit 测试代码——教程
+tasks.test { useJUnitPlatform()
+}
+【Groovy】
+test { useJUnitPlatform()
+}
+If you use the useJUnitPlatform() function in your build script, the kotlin-test library automatically includes JUnit 5 as a dependency. This setup enables access to all JUnit 5 APIs, along with the kotlin-test API, in JVM-only projects and JVM tests of Kotlin Multiplatform (KMP) projects.
+Here's a complete code for the build.gradle.kts :
+plugins { kotlin("jvm") version "2.1.21"
+} group = "org.example" version = "1.0-SNAPSHOT" repositories {
+mavenCentral() } dependencies {
+testImplementation(kotlin("test")) } tasks.test {
+useJUnitPlatform() }
+Add the code to test it
+1. Open the Main.kt file in src/main/kotlin .
+989
+
+[p.990]
+在 JVM 平台中用 JUnit 测试代码——教程 The src directory contains Kotlin source files and resources. The Main.kt file contains sample code that prints Hello, World! .
+2. Create the Sample class with the sum() function that adds two integers together:
+class Sample() { fun sum(a: Int, b: Int): Int { return a + b }
+}
+Create a test
+1. In IntelliJ IDEA, select Code | Generate | Test... for the Sample class:
+2. Specify the name of the test class. For example, SampleTest :
+990
+
+[p.991]
+在 JVM 平台中用 JUnit 测试代码——教程
+IntelliJ IDEA creates the SampleTest.kt file in the test directory. This directory contains Kotlin test source files and resources.
+You can also manually create a *.kt file for tests in src/test/kotlin . 3. Add the test code for the sum() function in SampleTest.kt :
+Define the test testSum() function using the @Test annotation. Check that the sum() function returns the expected value by using the assertEquals() function.
+import org.example.Sample import org.junit.jupiter.api.Assertions.* import kotlin.test.Test class SampleTest {
+private val testSample: Sample = Sample()
+991
+
+[p.992]
+在 JVM 平台中用 JUnit 测试代码——教程
+@Test fun testSum() {
+val expected = 42 assertEquals(expected, testSample.sum(40, 2)) } }
+Run a test
+1. Run the test using the gutter icon:
+You can also run all project tests via the command-line interface using the ./gradlew check command. 2. Check the result in the Run tool window:
+992
+
+[p.993]
+在 JVM 平台中用 JUnit 测试代码——教程
+The test function was executed successfully. 3. Make sure that the test works correctly by changing the expected variable value to 43:
+@Test fun testSum() {
+val expected = 43 assertEquals(expected, classForTesting.sum(40, 2)) }
+4. Run the test again and check the result:
+The test execution failed.
+下一步做什么
+Once you've finished your first test, you can: Write more tests using other kotlin.test functions. For example, use the assertNotEquals() function. Improve your test output with the Kotlin Power-assert compiler plugin. The plugin enriches the 993
+
+[p.994]
+在 JVM 平台中用 JUnit 测试代码——教程 test output with contextual information. Create your first server-side application with Kotlin and Spring Boot.
+994
+

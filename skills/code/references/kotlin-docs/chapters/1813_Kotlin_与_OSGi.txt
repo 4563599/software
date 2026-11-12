@@ -1,0 +1,44 @@
+# Kotlin 与 OSGi（第 1813-1815 页）
+
+[p.1813]
+Kotlin 与 OSGi
+
+Kotlin 与 OSGi
+如果想要在项目中启用 Kotlin OSGi 支持，需要引入 kotlin-osgi-bundle 而不是常规的 Kotlin 库。 建议删除 kotlin-runtime 、 kotlin-stdlib 与 kotlin-reflect 依赖， 因为 kotlinosgi-bundle 已经包含了所有这些。当引入外部 Kotlin 库时也应该注意。 大多数常规 Kotlin 依赖不是 OSGi-就绪的，所以不应该使用且应从项目中删除。
+Maven
+将 Kotlin OSGi 包引入到 Maven 项目中：
+<dependencies> <dependency> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-osgi-bundle</artifactId> <version>${kotlin.version}</version> </dependency>
+</dependencies>
+从外部库中排除标准库（注意“星排除”只在 Maven 3 中有效）：
+<dependency> <groupId>some.group.id</groupId> <artifactId>some.library</artifactId> <version>some.library.version</version>
+<exclusions> <exclusion> <groupId>org.jetbrains.kotlin</groupId> <artifactId>*</artifactId> </exclusion>
+</exclusions> </dependency>
+Gradle
+将 kotlin-osgi-bundle 引入到 Gradle 项目中：
+
+【Kotlin】
+
+1813
+
+[p.1814]
+Kotlin 与 OSGi
+dependencies { implementation(kotlin("osgi-bundle"))
+}
+【Groovy】
+dependencies { implementation "org.jetbrains.kotlin:kotlin-osgi-bundle:2.1.21"
+}
+要排除作为传递依赖的默认 Kotlin 库，你可以使用以下方法：
+【Kotlin】
+dependencies { implementation("some.group.id:some.library:someversion") { exclude(group = "org.jetbrains.kotlin") }
+}
+【Groovy】
+dependencies { implementation('some.group.id:some.library:someversion') { exclude group: 'org.jetbrains.kotlin' }
+}
+FAQ
+为什么不只是添加必需的清单选项到所有 Kotlin 库
+1814
+
+[p.1815]
+Kotlin 与 OSGi 尽管它是提供 OSGi 支持的最好的方式，遗憾的是现在做不到，是因为不能轻易消除的所谓的 “包拆分”问题并且这么大的变化不可能现在规划。有 Require-Bundle 功能，但它也不是最好 的选择，不推荐使用。 所以决定为 OSGi 做一个单独的构件。
+1815
+

@@ -1,0 +1,8 @@
+# 概述（第 23-23 页）
+
+[p.23]
+概述
+概述
+Kotlin 多平台 Kotlin 用于服务器端开发 Kotlin 用于 Android 开发 Kotlin Wasm Kotlin 原生 Kotlin 用于 JavaScript 开发 Kotlin 用于数据分析 Kotlin 用于 AI 驱动的应用开发 Kotlin 用于竞技程序设计
+23
+

@@ -1,0 +1,678 @@
+# Spring（第 937-987 页）
+
+[p.937]
+Spring
+Spring
+使用 Spring Boot 创建用到数据库的 RESTful web 服务 Spring Boot 与 Kotlin 入门 创建使用 Kotlin 的 Spring Boot 项目 向 Spring Boot 项目添加数据类 为 Spring Boot 项目添加数据库支持 使用 Spring Data CrudRepository 进行数据库访问
+构建一个使用 Spring AI 基于 Qdrant 中存储的文档来回答问题的 Kotlin 应用——教程 Spring 框架 Kotlin 文档↗ 使用 Spring Boot 与 Kotlin 构建 web 应用程序——教程↗ 使用 Kotlin 协程与 RSocket 创建聊天应用程序——教程↗
+937
+
+[p.938]
+Spring
+使用 Spring Boot 创建用到数据库的 RESTful web 服务
+Spring Boot 与 Kotlin 入门 创建使用 Kotlin 的 Spring Boot 项目 向 Spring Boot 项目添加数据类 为 Spring Boot 项目添加数据库支持 使用 Spring Data CrudRepository 进行数据库访问
+938
+
+[p.939]
+Spring
+Spring Boot 与 Kotlin 入门
+Get started with Spring Boot and Kotlin by completing this tutorial: it walks you through the process of creating a simple application with Spring Boot and adding a database to store the information. Going through these four steps, you'll learn a lot of essential features of the Kotlin language:
+Create a Spring Boot project Add a data class to Spring Boot project Add database support for the Spring Boot project Use Spring Data CrudRepository for database access
+Next step
+Start by creating a Spring Boot project with Kotlin using IntelliJ IDEA.
+See also
+Look through our Java to Kotlin (J2K) interop and migration guides: Calling Java from Kotlin and Calling Kotlin from Java Collections in Java and Kotlin Strings in Java and Kotlin
+Join the community
+Kotlin slack: get an invitation and join the #spring and #server channels Stack Overflow: subscribe to the "kotlin", "spring-kotlin", or "ktor" tags Kotlin YouTube channel: subscribe and watch videos about Kotlin with Spring
+939
+
+[p.940]
+Spring
+创建使用 Kotlin 的 Spring Boot 项目
+This is the first part of the Get started with Spring Boot and Kotlin tutorial:
+Create a Spring Boot project with Kotlin
+Add a data class to the Spring Boot project
+Add database support for the Spring Boot project
+Use Spring Data CrudRepository for database access
+The first part of the tutorial shows how to create a Spring Boot project with Gradle in IntelliJ IDEA using the Project Wizard.
+This tutorial doesn't require using Gradle as the build system. You can follow the same steps if you use Maven.
+Before you start
+Download and install the latest version of IntelliJ IDEA Ultimate Edition. If you use IntelliJ IDEA Community Edition or another IDE, you can generate a Spring Boot project using a web-based project generator. 940
+
+[p.941]
+Spring
+Create a Spring Boot project
+Create a new Spring Boot project with Kotlin by using the Project Wizard in IntelliJ IDEA Ultimate Edition:
+1. In IntelliJ IDEA, select File | New | Project. 2. In the panel on the left, select New Project | Spring Boot. 3. Specify the following fields and options in the New Project window:
+Name: demo Language: Kotlin Type: Gradle - Kotlin
+This option specifies the build system and the DSL. Package name: com.example.demo JDK: Java JDK
+This tutorial uses Amazon Corretto version 23. If you don't have a JDK installed, you can download it from the dropdown list. Java: 17
+941
+
+[p.942]
+Spring
+4. Ensure that you have specified all the fields and click Next. 5. Select the following dependencies that will be required for the tutorial:
+Web | Spring Web SQL | Spring Data JDBC SQL | H2 Database
+942
+
+[p.943]
+Spring
+6. Click Create to generate and set up the project. The IDE will generate and open a new project. It may take some time to download and import the project dependencies.
+7. After this, you can observe the following structure in the Project view: 943
+
+[p.944]
+Spring
+The generated Gradle project corresponds to the Maven's standard directory layout: There are packages and classes under the main/kotlin folder that belong to the application. The entry point to the application is the main() method of the DemoApplication.kt file.
+Explore the project Gradle build file
+Open the build.gradle.kts file: it is the Gradle Kotlin build script, which contains a list of the dependencies required for the application. The Gradle file is standard for Spring Boot, but it also contains necessary Kotlin dependencies, including the kotlin-spring Gradle plugin – kotlin("plugin.spring") . Here is the full script with the explanation of all parts and dependencies:
+944
+
+[p.945]
+Spring
+// build.gradle.kts plugins {
+kotlin("jvm") version "1.9.25" // The version of Kotlin to use kotlin("plugin.spring") version "1.9.25" // The Kotlin Spring plugin id("org.springframework.boot") version "3.4.5" id("io.spring.dependency-management") version "1.1.7" }
+group = "com.example" version = "0.0.1-SNAPSHOT"
+java { toolchain { languageVersion = JavaLanguageVersion.of(17) }
+}
+repositories { mavenCentral()
+}
+dependencies { implementation("org.springframework.boot:spring-boot-starter-data-jdbc") implementation("org.springframework.boot:spring-boot-starter-web") implementation("com.fasterxml.jackson.module:jackson-module-kotlin") // Jackson ex
+tensions for Kotlin for working with JSON implementation("org.jetbrains.kotlin:kotlin-reflect") // Kotlin reflection library
+, required for working with Spring runtimeOnly("com.h2database:h2") testImplementation("org.springframework.boot:spring-boot-starter-test") testImplementation("org.jetbrains.kotlin:kotlin-test-junit5") testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+kotlin { compilerOptions { freeCompilerArgs.addAll("-Xjsr305=strict") // `-Xjsr305=strict` enables the st
+rict mode for JSR-305 annotations }
+}
+tasks.withType<Test> { useJUnitPlatform()
+}
+As you can see, there are a few Kotlin-related artifacts added to the Gradle build file:
+1. In the plugins block, there are two Kotlin artifacts:
+kotlin("jvm") – the plugin defines the version of Kotlin to be used in the project kotlin("plugin.spring") – Kotlin Spring compiler plugin for adding the open modifier
+945
+
+[p.946]
+Spring
+to Kotlin classes in order to make them compatible with Spring Framework features 2. In the dependencies block, a few Kotlin-related modules listed:
+com.fasterxml.jackson.module:jackson-module-kotlin – the module adds support for serialization and deserialization of Kotlin classes and data classes org.jetbrains.kotlin:kotlin-reflect – Kotlin reflection library 3. After the dependencies section, you can see the kotlin plugin configuration block. This is where you can add extra arguments to the compiler to enable or disable various language features. Learn more about the Kotlin compiler options in .
+Explore the generated Spring Boot application
+Open the DemoApplication.kt file:
+// DemoApplication.kt package com.example.demo
+import org.springframework.boot.autoconfigure.SpringBootApplication import org.springframework.boot.runApplication
+@SpringBootApplication class DemoApplication
+fun main(args: Array<String>) { runApplication<DemoApplication>(*args)
+}
+Right after package declaration and import statements you can see the first class declaration, class DemoApplication . In Kotlin, if a class doesn't include any members (properties or functions), you can omit the class body ( {} ) for good. @SpringBootApplication annotation is a convenience annotation in a Spring Boot application. It enables Spring Boot's auto-configuration, component scan, and be able to define an extra configuration on their "application class". The main() function is the entry point to the application. It is declared as a top-level function outside the DemoApplication class. The main() function invokes the Spring's runApplication(*args) function to start the application with the Spring Framework.
+946
+
+[p.947]
+Spring
+If you check the declaration of the runApplication() function, you will see that the parameter of the function is marked with vararg modifier: vararg args: String . This means that you can pass a variable number of String arguments to the function. The args is a parameter to the main() function declared as an array of Strings. Since there is an array of strings, and you want to pass its content to the function, use the spread operator (prefix the array with a star sign * ).
+Create a controller
+The application is ready to run, but let's update its logic first. In the Spring application, a controller is used to handle the web requests. In the same package, next to the DemoApplication.kt file, create the MessageController.kt file with the MessageController class as follows:
+// MessageController.kt package com.example.demo
+import org.springframework.web.bind.annotation.GetMapping import org.springframework.web.bind.annotation.RequestParam import org.springframework.web.bind.annotation.RestController
+@RestController class MessageController {
+@GetMapping("/") fun index(@RequestParam("name") name: String) = "Hello, $name!" }
+You need to tell Spring that MessageController is a REST Controller, so you should mark it with the @RestController annotation. This annotation means this class will be picked up by the component scan because it's in the same package as our DemoApplication class. @GetMapping marks the functions of the REST controller that implement the endpoints corresponding to HTTP GET calls: @GetMapping("/") fun index(@RequestParam("name") name: String) = "Hello, $name!" The function parameter name is marked with @RequestParam annotation. This annotation indicates that a method parameter should be bound to a web request parameter. Hence, if you access the application at the root and supply a request parameter called "name", like /? name=<your-value> , the parameter value will be used as an argument for invoking the index() function.
+947
+
+[p.948]
+Spring Since the index() function contains only one statement you can declare it as a single-expression function. This means the curly braces can be omitted and the body is specified after the equals sign = . The index() function does not declare the return type explicitly. Instead, the compiler infers the return type by looking at the result of the statement on the right-hand side from the equals sign = . The type of Hello, $name! expression is String , hence the return type of the function is also String . Hello, $name! expression is called a String template in Kotlin. String templates are String literals that contain embedded expressions. This is a convenient replacement for String concatenation operations.
+Run the application
+The Spring application is now ready to run: 1. In the DemoApplication.kt file, click the green Run icon in the gutter beside the main() method:
+You can also run the ./gradlew bootRun command in the terminal. This starts the local server on your computer.
+948
+
+[p.949]
+Spring 2. Once the application starts, open the following URL:
+http://localhost:8080?name=John
+You should see "Hello, John!" printed as a response:
+Next step
+In the next part of the tutorial, you'll learn about Kotlin data classes and how you can use them in your application. Proceed to the next chapter
+949
+
+[p.950]
+Spring
+向 Spring Boot 项目添加数据类
+This is the second part of the Getting started with Spring Boot and Kotlin tutorial. Before proceeding, make sure you've completed previous steps:
+Create a Spring Boot project with Kotlin
+Add a data class to the Spring Boot project
+Add database support for Spring Boot project
+Use Spring Data CrudRepository for database access In this part of the tutorial, you'll add some more functionality to the application and discover more Kotlin language features, such as data classes. It requires changing the MessageController class to respond with a JSON document containing a collection of serialized objects.
+Update your application
+1. In the same package, next to the DemoApplication.kt file, create a Message.kt file. 2. In the Message.kt file, create a data class with two properties: id and text :
+// Message.kt package com.example.demo data class Message(val id: String?, val text: String)
+950
+
+[p.951]
+Spring
+Message class will be used for data transfer: a list of serialized Message objects will make up the JSON document that the controller is going to respond to the browser request.
+The main purpose of data classes in Kotlin is to hold data. Such classes are marked with the data keyword, and some standard functionality and some utility functions are often mechanically derivable from the class structure.
+In this example, you declared Message as a data class as its main purpose is to store the data. Properties in Kotlin classes can be declared either as:
+mutable, using the var keyword read-only, using the val keyword The Message class declares two properties using val keyword, the id and text . The compiler will automatically generate the getters for both of these properties. It will not be possible to reassign the values of these properties after an instance of the Message class is created.
+Kotlin provides built-in support for nullable types. In Kotlin, the type system distinguishes between references that can hold null (nullable references) and those that cannot (nonnullable references).
+For example, a regular variable of type String cannot hold null . To allow nulls, you can declare a variable as a nullable string by writing String? .
+The id property of the Message class is declared as a nullable type this time. Hence, it is possible to create an instance of Message class by passing null as a value for id :
+Message(null, "Hello!") 3. In the MessageController.kt file, instead of the index() function, create the
+listMessages() function returning a list of Message objects:
+// MessageController.kt package com.example.demo
+import org.springframework.web.bind.annotation.GetMapping import org.springframework.web.bind.annotation.RequestMapping import org.springframework.web.bind.annotation.RestController
+@RestController @RequestMapping("/") class MessageController {
+@GetMapping fun listMessages() = listOf(
+Message("1", "Hello!"),
+951
+
+[p.952]
+Spring
+Message("2", "Bonjour!"), Message("3", "Privet!"), ) }
+The Kotlin Standard Library provides implementations for basic collection types: sets, lists, and maps.
+Each collection type can be read-only or mutable: A read-only collection comes with operations for accessing collection elements. A mutable collection comes also with write operations for adding, removing, and updating its elements.
+The corresponding factory functions are also provided by the Kotlin Standard Library to create instances of such collections. In this tutorial, you use the listOf() function to create a list of Message objects. This is the factory function to create a read-only list of objects: you can't add or remove elements from the list.
+If it is required to perform write operations on the list, call the mutableListOf() function to create a mutable list instance. A trailing comma is a comma symbol after the last item of a series of elements: Message("3", "Privet!"), This is a convenient feature of Kotlin syntax and is entirely optional – your code will still work without them. In the example above, creating a list of Message objects includes the trailing comma after the last listOf() function argument. The response from MessageController will now be a JSON document containing a collection of Message objects. Any controller in the Spring application renders JSON response by default if Jackson library is on the classpath. As you specified the spring-boot-starter-web dependency in the build.gradle.kts file, you received Jackson as a transitive dependency. Hence, the application responds with a JSON document if the endpoint returns a data structure that can be serialized to JSON.
+952
+
+[p.953]
+Spring
+Here is a complete code of the DemoApplication.kt , MessageController.kt , and Message.kt files:
+// DemoApplication.kt package com.example.demo
+import org.springframework.boot.autoconfigure.SpringBootApplication import org.springframework.boot.runApplication
+@SpringBootApplication class DemoApplication
+fun main(args: Array<String>) { runApplication<DemoApplication>(*args)
+}
+// MessageController.kt package com.example.demo
+import org.springframework.web.bind.annotation.GetMapping import org.springframework.web.bind.annotation.RequestMapping import org.springframework.web.bind.annotation.RestController
+@RestController @RequestMapping("/") class MessageController {
+@GetMapping fun listMessages() = listOf(
+Message("1", "Hello!"), Message("2", "Bonjour!"), Message("3", "Privet!"), ) }
+// Message.kt package com.example.demo
+data class Message(val id: String?, val text: String)
+Run the application
+The Spring application is ready to run: 1. Run the application again.
+953
+
+[p.954]
+Spring 2. Once the application starts, open the following URL:
+http://localhost:8080
+You will see a page with a collection of messages in JSON format:
+Next step
+In the next part of the tutorial, you'll add and configure a database to your project, and make HTTP requests. Proceed to the next chapter
+954
+
+[p.955]
+Spring
+为 Spring Boot 项目添加数据库支持
+This is the third part of the Getting started with Spring Boot and Kotlin tutorial. Before proceeding, make sure you've completed previous steps:
+Create a Spring Boot project with Kotlin
+Add a data class to the Spring Boot project
+Add database support for Spring Boot project
+Use Spring Data CrudRepository for database access In this part of the tutorial, you'll add and configure a database to your project using Java Database Connectivity (JDBC). In JVM applications, you use JDBC to interact with databases. For convenience, the Spring Framework provides the JdbcTemplate class that simplifies the use of JDBC and helps to avoid common errors.
+Add database support
+The common practice in Spring Framework based applications is to implement the database access logic within the so-called service layer – this is where business logic lives. In Spring, you should mark classes with the @Service annotation to imply that the class belongs to the service layer of the application. In this application, you will create the MessageService class for this purpose. In the same package, create the MessageService.kt file and the MessageService class as follows:
+// MessageService.kt
+955
+
+[p.956]
+Spring
+package com.example.demo
+import org.springframework.stereotype.Service import org.springframework.jdbc.core.JdbcTemplate import java.util.*
+@Service class MessageService(private val db: JdbcTemplate) {
+fun findMessages(): List<Message> = db.query("select * from messages") { response, _ ->
+Message(response.getString("id"), response.getString("text")) }
+fun save(message: Message): Message { db.update( "insert into messages values ( ?, ? )", message.id, message.text ) return message
+} }
+A class in Kotlin has a primary constructor. It can also have one or more secondary constructors. The primary constructor is a part of the class header, and it goes after the class name and optional type parameters. In our case, the constructor is (val db: JdbcTemplate) . val db: JdbcTemplate is the constructor's argument: @Service class MessageService(private val db: JdbcTemplate) The findMessages() function calls the query() function of the JdbcTemplate class. The query() function takes two arguments: an SQL query as a String instance, and a callback that will map one object per row: db.query("...", RowMapper { ... } )
+The RowMapper interface declares only one method, so it is possible to implement it via lambda expression by omitting the name of the interface. The Kotlin compiler knows the interface that the lambda expression needs to be converted to because you use it as a parameter for the function call. This is known as SAM conversion in Kotlin: db.query("...", { ... } )
+956
+
+[p.957]
+Spring
+After the SAM conversion, the query function ends up with two arguments: a String at the first position, and a lambda expression at the last position. According to the Kotlin convention, if the last parameter of a function is a function, then a lambda expression passed as the corresponding argument can be placed outside the parentheses. Such syntax is also known as trailing lambda:
+db.query("...") { ... } For a lambda with multiple parameters, you can use the underscore _ character to replace the names of the parameters you don't use.
+Hence, the final syntax for query function call looks like this:
+db.query("select * from messages") { response, _ -> Message(response.getString("id"), response.getString("text")) }
+Update the MessageController class
+Update MessageController.kt to use the new MessageService class:
+// MessageController.kt package com.example.demo
+import org.springframework.http.ResponseEntity import org.springframework.web.bind.annotation.GetMapping import org.springframework.web.bind.annotation.PostMapping import org.springframework.web.bind.annotation.RequestBody import org.springframework.web.bind.annotation.RequestMapping import org.springframework.web.bind.annotation.RestController import java.net.URI
+@RestController @RequestMapping("/") class MessageController(private val service: MessageService) {
+@GetMapping fun listMessages() = service.findMessages()
+@PostMapping fun post(@RequestBody message: Message): ResponseEntity<Message> {
+val savedMessage = service.save(message) return ResponseEntity.created(URI("/${savedMessage.id}")).body(savedMessage) } }
+The method responsible for handling HTTP POST requests needs to be annotated with @PostMapping annotation. To be able to convert the JSON sent as HTTP Body content into an object, you need to use the @RequestBody annotation for the method argument. Thanks to having Jackson library in the classpath of the application, the conversion happens automatically.
+957
+
+[p.958]
+Spring
+ResponseEntity represents the whole HTTP response: status code, headers, and body.
+Using the created() method you configure the response status code (201) and set the location header indicating the context path for the created resource.
+Update the MessageService class
+The id for Message class was declared as a nullable String:
+data class Message(val id: String?, val text: String)
+It would not be correct to store the null as an id value in the database though: you need to handle this situation gracefully. Update your code of the MessageService.kt file to generate a new value when the id is null while storing the messages in the database:
+// MessageService.kt package com.example.demo
+import org.springframework.stereotype.Service import org.springframework.jdbc.core.JdbcTemplate import org.springframework.jdbc.core.query import java.util.UUID
+@Service class MessageService(private val db: JdbcTemplate) {
+fun findMessages(): List<Message> = db.query("select * from messages") { response, _ ->
+Message(response.getString("id"), response.getString("text")) }
+fun save(message: Message): Message { val id = message.id ?: UUID.randomUUID().toString() // Generate new id if it i
+s null db.update( "insert into messages values ( ?, ? )", id, message.text ) return message.copy(id = id) // Return a copy of the message with the new id
+} }
+The code message.id ?: UUID.randomUUID().toString() uses the Elvis operator (if-not-null-else shorthand) ?: . If the expression to the left of ?: is not null , the Elvis operator returns it; otherwise, it returns the expression to the right. Note that the expression on the right-hand side is
+958
+
+[p.959]
+Spring
+evaluated only if the left-hand side is null . The application code is ready to work with the database. It is now required to configure the data source.
+Configure the database
+Configure the database in the application: 1. Create schema.sql file in the src/main/resources directory. It will store the database object definitions:
+
+2. Update the src/main/resources/schema.sql file with the following code:
+
+-- schema.sql
+
+CREATE TABLE IF NOT EXISTS messages (
+
+id
+
+VARCHAR(60) PRIMARY KEY,
+
+text
+
+VARCHAR
+
+NOT NULL
+
+);
+
+It creates the messages table with two columns: id and text . The table structure matches the structure of the Message class.
+3. Open the application.properties file located in the src/main/resources folder and add the following application properties:
+spring.application.name=demo spring.datasource.driver-class-name=org.h2.Driver spring.datasource.url=jdbc:h2:file:./data/testdb spring.datasource.username=name spring.datasource.password=password
+
+959
+
+[p.960]
+Spring
+spring.sql.init.schema-locations=classpath:schema.sql spring.sql.init.mode=always
+These settings enable the database for the Spring Boot application.
+See the full list of common application properties in the Spring documentation.
+Add messages to database via HTTP request
+You should use an HTTP client to work with previously created endpoints. In IntelliJ IDEA, use the embedded HTTP client:
+1. Run the application. Once the application is up and running, you can execute POST requests to store messages in the database.
+2. Create the requests.http file in the project root folder and add the following HTTP requests: ```http request
+Post "Hello!"
+POST http://localhost:8080/ Content-Type: application/json { "text": "Hello!" }
+Post "Bonjour!"
+POST http://localhost:8080/ Content-Type: application/json { "text": "Bonjour!" }
+Post "Privet!"
+POST http://localhost:8080/ Content-Type: application/json { "text": "Privet!" }
+Get all the messages
+GET http://localhost:8080/ ```
+960
+
+[p.961]
+Spring 3. Execute all POST requests. Use the green Run icon in the gutter next to the request declaration. These requests write the text messages to the database:
+4. Execute the GET request and see the result in the Run tool window:
+Alternative way to execute requests
+You can also use any other HTTP client or the cURL command-line tool. For example, run the following commands in the terminal to get the same result:
+961
+
+[p.962]
+Spring
+curl -X POST --location "http://localhost:8080" -H "Content-Type: application/json" -d "{ \"text\": \"Hello!\" }"
+curl -X POST --location "http://localhost:8080" -H "Content-Type: application/json" -d "{ \"text\": \"Bonjour!\" }"
+curl -X POST --location "http://localhost:8080" -H "Content-Type: application/json" -d "{ \"text\": \"Privet!\" }"
+curl -X GET --location "http://localhost:8080"
+Retrieve messages by id
+Extend the functionality of the application to retrieve the individual messages by id.
+1. In the MessageService class, add the new function findMessageById(id: String) to retrieve the individual messages by id:
+// MessageService.kt package com.example.demo
+import org.springframework.stereotype.Service import org.springframework.jdbc.core.JdbcTemplate import org.springframework.jdbc.core.query import java.util.*
+@Service class MessageService(private val db: JdbcTemplate) {
+fun findMessages(): List<Message> = db.query("select * from messages") { resp onse, _ ->
+Message(response.getString("id"), response.getString("text")) }
+fun findMessageById(id: String): Message? = db.query("select * from messages where id = ?", id) { response, _ ->
+Message(response.getString("id"), response.getString("text")) }.singleOrNull()
+fun save(message: Message): Message { val id = message.id ?: UUID.randomUUID().toString() // Generate new id if
+it is null db.update( "insert into messages values ( ?, ? )", id, message.text ) return message.copy(id = id) // Return a copy of the message with the new
+id }
+962
+
+[p.963]
+Spring
+}
+The query() function takes three arguments:
+SQL query string that requires a parameter to run id , which is a parameter of type String RowMapper instance, which implemented by a lambda expression The second parameter for the query() function is declared as a variable argument ( vararg ). In Kotlin, the position of the variable arguments parameter is not required to be the last in the parameters list.
+The singleOrNull() function returns a single element, or null if the array is empty or has more than one element with the same value.
+The .query() function that is used to fetch the message by its id is a Kotlin extension function provided by the Spring Framework. It requires an additional import import org.springframework.jdbc.core.query as demonstrated in the code above.
+2. Add the new index(...) function with the id parameter to the MessageController class:
+// MessageController.kt package com.example.demo
+import org.springframework.http.ResponseEntity import org.springframework.web.bind.annotation.GetMapping import org.springframework.web.bind.annotation.PathVariable import org.springframework.web.bind.annotation.PostMapping import org.springframework.web.bind.annotation.RequestBody import org.springframework.web.bind.annotation.RequestMapping import org.springframework.web.bind.annotation.RestController import java.net.URI
+@RestController @RequestMapping("/") class MessageController(private val service: MessageService) {
+@GetMapping fun listMessages() = ResponseEntity.ok(service.findMessages())
+@PostMapping fun post(@RequestBody message: Message): ResponseEntity<Message> {
+val savedMessage = service.save(message) return ResponseEntity.created(URI("/${savedMessage.id}")).body(savedMessa ge) }
+@GetMapping("/{id}") fun getMessage(@PathVariable id: String): ResponseEntity<Message> =
+963
+
+[p.964]
+Spring
+service.findMessageById(id).toResponseEntity()
+private fun Message?.toResponseEntity(): ResponseEntity<Message> = // If the message is null (not found), set response code to 404 this?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
+}
+The message id is retrieved from the context path by the Spring Framework as you annotated the new function by @GetMapping("/{id}") . By annotating the function argument with @PathVariable , you tell the framework to use the retrieved value as a function argument. The new function makes a call to MessageService to retrieve the individual message by its id. Extensions can be defined with a nullable receiver type. If the receiver is null , then this is also null . So when defining an extension with a nullable receiver type, it is recommended performing a this == null check inside the function body. You can also use the null-safe invocation operator ( ?. ) to perform the null check as in the toResponseEntity() function above: this?.let { ResponseEntity.ok(it) } ResponseEntity represents the HTTP response, including the status code, headers, and body. It is a generic wrapper that allows you to send customized HTTP responses back to the client with more control over the content. Here is a complete code of the application:
+// DemoApplication.kt package com.example.demo
+import org.springframework.boot.autoconfigure.SpringBootApplication import org.springframework.boot.runApplication
+@SpringBootApplication class DemoApplication
+fun main(args: Array<String>) { runApplication<DemoApplication>(*args)
+}
+// Message.kt package com.example.demo
+data class Message(val id: String?, val text: String)
+// MessageService.kt package com.example.demo
+964
+
+[p.965]
+Spring
+import org.springframework.stereotype.Service import org.springframework.jdbc.core.JdbcTemplate import org.springframework.jdbc.core.query import java.util.*
+@Service class MessageService(private val db: JdbcTemplate) {
+fun findMessages(): List<Message> = db.query("select * from messages") { response, _ ->
+Message(response.getString("id"), response.getString("text")) }
+fun findMessageById(id: String): Message? = db.query("select * from messages where id = ?", id) { response, _ ->
+Message(response.getString("id"), response.getString("text")) }.singleOrNull()
+fun save(message: Message): Message { val id = message.id ?: UUID.randomUUID().toString() db.update( "insert into messages values ( ?, ? )", id, message.text ) return message.copy(id = id)
+} }
+// MessageController.kt package com.example.demo
+import org.springframework.http.ResponseEntity import org.springframework.web.bind.annotation.GetMapping import org.springframework.web.bind.annotation.PathVariable import org.springframework.web.bind.annotation.PostMapping import org.springframework.web.bind.annotation.RequestBody import org.springframework.web.bind.annotation.RequestMapping import org.springframework.web.bind.annotation.RestController import java.net.URI
+@RestController @RequestMapping("/") class MessageController(private val service: MessageService) {
+@GetMapping fun listMessages() = ResponseEntity.ok(service.findMessages())
+@PostMapping fun post(@RequestBody message: Message): ResponseEntity<Message> {
+val savedMessage = service.save(message) return ResponseEntity.created(URI("/${savedMessage.id}")).body(savedMessage) }
+965
+
+[p.966]
+Spring
+@GetMapping("/{id}") fun getMessage(@PathVariable id: String): ResponseEntity<Message> =
+service.findMessageById(id).toResponseEntity() private fun Message?.toResponseEntity(): ResponseEntity<Message> =
+this?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build() }
+Run the application
+The Spring application is ready to run: 1. Run the application again. 2. Open the requests.http file and add the new GET request: ```http request
+Get the message by its id
+GET http://localhost:8080/id ``` 3. Execute the GET request to retrieve all the messages from the database. 4. In the Run tool window copy one of the ids and add it to the request, like this:
+```http request
+Get the message by its id
+GET http://localhost:8080/f910aa7e-11ee-4215-93ed-1aeeac822707 ``` Put your message id instead of the mentioned above.
+5. Execute the GET request and see the result in the Run tool window:
+966
+
+[p.967]
+Spring
+Next step
+The final step shows you how to use more popular connection to database using Spring Data. Proceed to the next chapter
+967
+
+[p.968]
+Spring
+使用 Spring Data CrudRepository 进行数据库 访问
+This is the final part of the Getting started with Spring Boot and Kotlin tutorial. Before proceeding, make sure you've completed previous steps:
+Create a Spring Boot project with Kotlin
+Add a data class to the Spring Boot project
+Add database support for Spring Boot project
+Use Spring Data CrudRepository for database access In this part, you will migrate the service layer to use the Spring Data CrudRepository instead of JdbcTemplate for database access. CrudRepository is a Spring Data interface for generic CRUD operations on a repository of a specific type. It provides several methods out of the box for interacting with a database.
+Update your application
+First, you need to adjust the Message class for work with the CrudRepository API: 1. Add the @Table annotation to the Message class to declare mapping to a database table.
+968
+
+[p.969]
+Spring
+Add the @Id annotation before the id field. These annotations also require additional imports.
+// Message.kt package com.example.demo import org.springframework.data.annotation.Id import org.springframework.data.relational.core.mapping.Table @Table("MESSAGES") data class Message(@Id val id: String?, val text: String)
+In addition, to make the use of the Message class more idiomatic, you can set the default value for id property to null and flip the order of the data class properties:
+@Table("MESSAGES") data class Message(val text: String, @Id val id: String? = null)
+Now if you need to create a new instance of the Message class, you can only specify the text property as a parameter:
+val message = Message("Hello") // id is null
+2. Declare an interface for the CrudRepository that will work with the Message data class. Create the MessageRepository.kt file and add the following code to it:
+// MessageRepository.kt package com.example.demo import org.springframework.data.repository.CrudRepository interface MessageRepository : CrudRepository<Message, String>
+3. Update the MessageService class. It will now use the MessageRepository instead of executing SQL queries:
+// MessageService.kt package com.example.demo import org.springframework.data.repository.findByIdOrNull import org.springframework.stereotype.Service
+969
+
+[p.970]
+Spring
+
+@Service class MessageService(private val db: MessageRepository) {
+fun findMessages(): List<Message> = db.findAll().toList()
+fun findMessageById(id: String): Message? = db.findByIdOrNull(id)
+fun save(message: Message): Message = db.save(message) }
+
+The findByIdOrNull() function is an extension function for CrudRepository interface in Spring Data JDBC.
+This function works with an assumption that the new object doesn't have an id in the database. Hence, the id should be null for insertion.
+If the id isn't null, CrudRepository assumes that the object already exists in the database and this is an update operation as opposed to an insert operation. After the insert operation, the id will be generated by the data store and assigned back to the Message instance. This is why the id property should be declared using the var keyword.
+4. Update the messages table definition to generate the ids for the inserted objects. Since id is a string, you can use the RANDOM_UUID() function to generate the id value by default:
+
+-- schema.sql
+
+CREATE TABLE IF NOT EXISTS messages (
+
+id
+
+VARCHAR(60) DEFAULT RANDOM_UUID() PRIMARY KEY,
+
+text VARCHAR
+
+NOT NULL
+
+);
+
+5. Update the name of the database in the application.properties file located in the src/main/resources folder:
+spring.application.name=demo spring.datasource.driver-class-name=org.h2.Driver spring.datasource.url=jdbc:h2:file:./data/testdb2 spring.datasource.username=name spring.datasource.password=password spring.sql.init.schema-locations=classpath:schema.sql spring.sql.init.mode=always
+
+Here is the complete code of the application:
+// DemoApplication.kt package com.example.demo
+
+970
+
+[p.971]
+Spring
+import org.springframework.boot.autoconfigure.SpringBootApplication import org.springframework.boot.runApplication @SpringBootApplication class DemoApplication fun main(args: Array<String>) {
+runApplication<DemoApplication>(*args) }
+// Message.kt package com.example.demo import org.springframework.data.annotation.Id import org.springframework.data.relational.core.mapping.Table @Table("MESSAGES") data class Message(val text: String, @Id val id: String? = null)
+// MessageRepository.kt package com.example.demo import org.springframework.data.repository.CrudRepository interface MessageRepository : CrudRepository<Message, String>
+// MessageService.kt package com.example.demo import org.springframework.data.repository.findByIdOrNull import org.springframework.stereotype.Service @Service class MessageService(private val db: MessageRepository) {
+fun findMessages(): List<Message> = db.findAll().toList() fun findMessageById(id: String): Message? = db.findByIdOrNull(id) fun save(message: Message): Message = db.save(message) }
+// MessageController.kt package com.example.demo import org.springframework.http.ResponseEntity import org.springframework.web.bind.annotation.GetMapping import org.springframework.web.bind.annotation.PathVariable
+
+971
+
+[p.972]
+Spring
+import org.springframework.web.bind.annotation.PostMapping import org.springframework.web.bind.annotation.RequestBody import org.springframework.web.bind.annotation.RequestMapping import org.springframework.web.bind.annotation.RestController import java.net.URI
+@RestController @RequestMapping("/") class MessageController(private val service: MessageService) {
+@GetMapping fun listMessages() = ResponseEntity.ok(service.findMessages())
+@PostMapping fun post(@RequestBody message: Message): ResponseEntity<Message> {
+val savedMessage = service.save(message) return ResponseEntity.created(URI("/${savedMessage.id}")).body(savedMessage) }
+@GetMapping("/{id}") fun getMessage(@PathVariable id: String): ResponseEntity<Message> =
+service.findMessageById(id).toResponseEntity()
+private fun Message?.toResponseEntity(): ResponseEntity<Message> = // If the message is null (not found), set response code to 404 this?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
+}
+Run the application
+Congratulations! The application is ready to run again. After replacing JdbcTemplate with CrudRepository , the functionality remains the same, so the application works just as before. You can now run the POST and GET HTTP requests from the requests.http file and get the same results.
+下一步做什么
+Get your personal language map to help you navigate Kotlin features and track your progress in studying the language:
+Learn more about Calling Java from Kotlin code and Calling Kotlin from Java code. Learn how to convert existing Java code to Kotlin with the Java-to-Kotlin converter.
+972
+
+[p.973]
+Spring Check out our Java to Kotlin migration guides: Strings in Java and Kotlin. Collections in Java and Kotlin. Nullability in Java and Kotlin.
+973
+
+[p.974]
+Spring
+构建一个使用 Spring AI 基于 Qdrant 中存储的 文档来回答问题的 Kotlin 应用——教程
+In this tutorial, you'll learn how to build a Kotlin app that uses Spring AI to connect to an LLM, store documents in a vector database, and answer questions using context from those documents. You will use the following tools during this tutorial:
+Spring Boot as the base to configure and run the web application. Spring AI to interact with the LLM and perform context-based retrieval. IntelliJ IDEA to generate the project and implement the application logic. Qdrant as the vector database for similarity search. Docker to run Qdrant locally. OpenAI as the LLM provider.
+开始之前
+1. Download and install the latest version of IntelliJ IDEA Ultimate Edition. If you use IntelliJ IDEA Community Edition or another IDE, you can generate a Spring Boot project using a web-based project generator.
+2. Create an OpenAI API key on the OpenAI platform to access the API. 3. Install Docker to run the Qdrant vector database locally. 4. After installing Docker, open your terminal and run the following command to start the
+container:
+docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
+创建项目
+You can use Spring Boot web-based project generator as an alternative to generate your project.
+Create a new Spring Boot project in IntelliJ IDEA Ultimate Edition:
+974
+
+[p.975]
+Spring 1. In IntelliJ IDEA, select File | New | Project. 2. In the panel on the left, select New Project | Spring Boot. 3. Specify the following fields and options in the New Project window: Name: springAIDemo Language: Kotlin Type: Gradle - Kotlin This option specifies the build system and the DSL. Package name: com.example.springaidemo JDK: Java JDK This tutorial uses Oracle OpenJDK version 21.0.1. If you don't have a JDK installed, you can download it from the dropdown list. Java: 17
+975
+
+[p.976]
+Spring
+4. Make sure that you have specified all the fields and click Next. 5. Select the latest stable Spring Boot version in the Spring Boot field. 6. Select the following dependencies required for this tutorial:
+Web | Spring Web AI | OpenAI SQL | Qdrant Vector Database
+976
+
+[p.977]
+Spring
+7. Click Create to generate and set up the project. The IDE will generate and open a new project. It may take some time to download and import the project dependencies.
+After this, you can see the following structure in the Project view:
+977
+
+[p.978]
+Spring
+The generated Gradle project corresponds to the Maven's standard directory layout: There are packages and classes under the main/kotlin folder that belong to the application. The entry point to the application is the main() method of the SpringAiDemoApplication.kt file.
+更新项目配置
+1. Update your build.gradle.kts Gradle build file with the following:
+plugins {
+978
+
+[p.979]
+Spring
+kotlin("jvm") version "2.1.21" kotlin("plugin.spring") version "2.1.21" // Rest of the plugins }
+2. Update your springAiVersion to 1.0.0-M6 :
+extra["springAiVersion"] = "1.0.0-M6"
+3. Click the Sync Gradle Changes button to synchronize the Gradle files. 4. Update your src/main/resources/application.properties file with the following:
+# OpenAI spring.ai.openai.api-key=YOUR_OPENAI_API_KEY spring.ai.openai.chat.options.model=gpt-4o-mini spring.ai.openai.embedding.options.model=text-embedding-ada-002 # Qdrant spring.ai.vectorstore.qdrant.host=localhost spring.ai.vectorstore.qdrant.port=6334 spring.ai.vectorstore.qdrant.collection-name=kotlinDocs spring.ai.vectorstore.qdrant.initialize-schema=true
+Set your OpenAI API key to the spring.ai.openai.api-key property.
+5. Run the SpringAiDemoApplication.kt file to start the Spring Boot application. Once it's running, open the Qdrant collections page in your browser to see the result:
+979
+
+[p.980]
+Spring
+创建一个 controller 来加载并搜索文档
+Create a Spring @RestController to search documents and store them in the Qdrant collection:
+1. In the src/main/kotlin/org/example/springaidemo directory, create a new file named KotlinSTDController.kt , and add the following code:
+package org.example.springaidemo
+// Imports the required Spring and utility classes import org.slf4j.LoggerFactory import org.springframework.ai.document.Document import org.springframework.ai.vectorstore.SearchRequest import org.springframework.ai.vectorstore.VectorStore import org.springframework.web.bind.annotation.GetMapping import org.springframework.web.bind.annotation.PostMapping import org.springframework.web.bind.annotation.RequestMapping import org.springframework.web.bind.annotation.RequestParam import org.springframework.web.bind.annotation.RestController import org.springframework.web.client.RestTemplate import kotlin.uuid.ExperimentalUuidApi import kotlin.uuid.Uuid
+// Data class representing the chat request payload data class ChatRequest(val query: String, val topK: Int = 3)
+@RestController @RequestMapping("/kotlin") class KotlinSTDController( private val restTemplate: RestTemplate, private val vectorStore: VectorStore, ){ private val logger = LoggerFactory.getLogger(this::class.java)
+@OptIn(ExperimentalUuidApi::class) @PostMapping("/load-docs") fun load() {
+// Loads a list of documents from the Kotlin documentation val kotlinStdTopics = listOf(
+"collections-overview", "constructing-collections", "iterators", "ran ges", "sequences",
+"collection-operations", "collection-transformations", "collection-fi ltering", "collection-plus-minus",
+"collection-grouping", "collection-parts", "collection-elements", "co llection-ordering",
+"collection-aggregate", "collection-write", "list-operations", "set-o perations",
+"map-operations", "read-standard-input", "opt-in-requirements", "scop e-functions", "time-measurement",
+) // Base URL for the documents
+980
+
+[p.981]
+Spring
+val url = "https://raw.githubusercontent.com/JetBrains/kotlin-web-site/re fs/heads/master/docs/topics/"
+// Retrieves each document from the URL and adds it to the vector store kotlinStdTopics.forEach { topic ->
+val data = restTemplate.getForObject("$url$topic.md", String::class.j ava)
+data?.let { it -> val doc = Document.builder() // Builds a document with a random UUID .id(Uuid.random().toString()) .text(it) .metadata("topic", topic) .build() vectorStore.add(listOf(doc)) logger.info("Document $topic loaded.")
+} ?: logger.warn("Failed to load document for topic: $topic") } }
+@GetMapping("docs") fun query(
+@RequestParam query: String = "operations, filtering, and transformations" ,
+@RequestParam topK: Int = 2 ): List<Document>? {
+val searchRequest = SearchRequest.builder() .query(query) .topK(topK) .build()
+val results = vectorStore.similaritySearch(searchRequest) logger.info("Found ${results?.size ?: 0} documents for query: '$query'") return results } }
+{collapsible="true"}
+2. Update the SpringAiDemoApplication.kt file to declare a RestTemplate bean:
+package org.example.springaidemo
+import org.springframework.boot.autoconfigure.SpringBootApplication import org.springframework.boot.runApplication import org.springframework.context.annotation.Bean import org.springframework.web.client.RestTemplate
+@SpringBootApplication class SpringAiDemoApplication {
+@Bean fun restTemplate(): RestTemplate = RestTemplate()
+981
+
+[p.982]
+Spring
+} fun main(args: Array<String>) {
+runApplication<SpringAiDemoApplication>(*args) }
+{collapsible="true"} 3. Run the application. 4. In the terminal, send a POST request to the /kotlin/load-docs endpoint to load the
+documents:
+curl -X POST http://localhost:8080/kotlin/load-docs
+5. Once the documents are loaded, you can search for them with a GET request:
+curl -X GET http://localhost:8080/kotlin/docs
+You can also view the results on the Qdrant collections page.
+实现 AI 聊天端点
+Once the documents are loaded, the final step is to add an endpoint that answers questions using the documents in Qdrant through Spring AI's Retrieval-Augmented Generation (RAG) support:
+1. Open the KotlinSTDController.kt file, and import the following classes:
+import org.springframework.ai.chat.client.ChatClient import org.springframework.ai.chat.client.advisor.RetrievalAugmentationAdvisor import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor import org.springframework.ai.chat.prompt.Prompt import org.springframework.ai.chat.prompt.PromptTemplate import org.springframework.ai.rag.preretrieval.query.transformation.RewriteQueryTr ansformer
+982
+
+[p.983]
+Spring
+
+import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever import org.springframework.web.bind.annotation.RequestBody
+
+2. Add ChatClient.Builder to the controller's constructor parameters:
+class KotlinSTDController( private val chatClientBuilder: ChatClient.Builder, private val restTemplate: RestTemplate, private val vectorStore: VectorStore,
+)
+
+3. Inside the controller class, create a ChatClient instance and a query transformer:
+// Builds the chat client with a simple logging advisor private val chatClient = chatClientBuilder.defaultAdvisors(SimpleLoggerAdvisor()). build() // Builds the query transformer used to rewrite the input query private val rqtBuilder = RewriteQueryTransformer.builder().chatClientBuilder(chatC lientBuilder)
+
+4. At the bottom of your KotlinSTDController.kt file, add a new chatAsk() endpoint, with the following logic:
+
+@PostMapping("/chat/ask") fun chatAsk(@RequestBody request: ChatRequest): String? {
+// Defines the prompt template with placeholders val promptTemplate = PromptTemplate(
+""" {query}. Please provide a concise answer based on the {target} documentation. """.trimIndent() )
+
+// Creates the prompt by substituting placeholders with actual values val prompt: Prompt =
+promptTemplate.create(mapOf("query" to request.query, "target" to "Kot lin standard library"))
+
+uments
+
+// Configures the retrieval advisor to augment the query with relevant doc
+val retrievalAdvisor = RetrievalAugmentationAdvisor.builder() .documentRetriever( VectorStoreDocumentRetriever.builder() .similarityThreshold(0.7) .topK(request.topK) .vectorStore(vectorStore) .build() )
+
+983
+
+[p.984]
+Spring
+
+.queryTransformers(rqtBuilder.promptTemplate(promptTemplate).build()) .build()
+
+onse }
+
+// Sends the prompt to the LLM with the retrieval advisor and get the resp
+val response = chatClient.prompt(prompt) .advisors(retrievalAdvisor) .call() .content()
+logger.info("Chat response generated for query: '${request.query}'") return response
+
+5. Run the application.
+6. In the terminal, send a POST request to the new endpoint to see the results:
+curl -X POST "http://localhost:8080/kotlin/chat/ask" \ -H "Content-Type: application/json" \ -d '{"query": "What are the performance implications of using lazy sequences
+in Kotlin for large datasets?", "topK": 3}'
+
+Congratulations! You now have a Kotlin app that connects to OpenAI and answers questions using context retrieved from documentation stored in Qdrant. Try experimenting with different queries or importing other documents to explore more possibilities.
+You can view the completed project in the Spring AI demo GitHub repository, or explore other Spring AI examples in Kotlin AI Examples.
+
+984
+
+[p.985]
+Spring
+Spring 框架 Kotlin 文档
+Spring 框架 Kotlin 文档
+985
+
+[p.986]
+Spring
+使用 Spring Boot 与 Kotlin 构建 web 应用程序 ——教程
+使用 Spring Boot 与 Kotlin 构建 web 应用程序——教程
+986
+
+[p.987]
+Spring
+使用 Kotlin 协程与 RSocket 创建聊天应用程序 ——教程
+使用 Kotlin 协程与 RSocket 创建聊天应用程序——教程
+987
+

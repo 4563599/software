@@ -1,0 +1,23 @@
+# 模块文档（第 1776-1777 页）
+
+[p.1776]
+模块文档
+模块文档
+Documentation for a module as a whole, as well as packages in that module, can be provided as separate Markdown files.
+File format
+Inside the Markdown file, the documentation for the module as a whole and for individual packages is introduced by the corresponding first-level headings. The text of the heading must be Module <module name> for a module, and Package <package qualified name> for a package. The file doesn't have to contain both module and package documentation. You can have files that contain only package or module documentation. You can even have a Markdown file per module or package. Using Markdown syntax, you can add:
+Headings up to level 6 Emphasis with bold or italic formatting Links Inline code Code blocks Blockquotes Here's an example file containing both module and package documentation:
+# Module kotlin-demo This content appears under your module name. # Package org.jetbrains.kotlin.demo This content appears under your package name in the packages list. It also appears under the first-level heading on your package's page. ## Level 2 heading for package org.jetbrains.kotlin.demo Content after this heading is also part of documentation for `org.jetbrains.kotlin.dem o` # Package org.jetbrains.kotlin.demo2 This content appears under your package name in the packages list. It also appears under the first-level heading on your package's page.
+1776
+
+[p.1777]
+模块文档
+## Level 2 heading for package org.jetbrains.kotlin.demo2 Content after this heading is also part of documentation for `org.jetbrains.kotlin.dem o2`
+To explore an example project with Gradle, see Dokka gradle example.
+Pass files to Dokka
+To pass these files to Dokka, you need to use the relevant includes option for Gradle, Maven, or CLI: 【Gradle】
+Use the includes option in Source set configuration. 【Maven】
+Use the includes option in General configuration. 【CLI】
+If you are using command line configuration, use the includes option in Source set options. If you are using JSON configuration, use the includes option in General configuration.
+1777
+

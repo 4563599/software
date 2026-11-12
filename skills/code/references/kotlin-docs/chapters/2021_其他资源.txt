@@ -1,0 +1,10 @@
+# 其他资源（第 2021-2021 页）
+
+[p.2021]
+其他资源
+其他资源
+FAQ Kotlin 兼容性指南
+Kotlin 2.1 的兼容性指南 Kotlin 2.0 的兼容性指南 Kotlin 1.9 的兼容性指南 Kotlin 1.8 的兼容性指南 Kotlin 1.7.20 的兼容性指南 Kotlin 1.7 的兼容性指南 Kotlin 1.6 的兼容性指南 Kotlin 1.5 的兼容性指南 Kotlin 1.4 的兼容性指南 Kotlin 1.3 的兼容性指南 兼容模式 Kotlin 基金会 Kotlin 基金会↗ 语言委员会准则↗ 提交不兼容变更指南↗ Kotlin 品牌用途准则↗ Kotlin 基金会 FAQ↗ Google Summer of Code 概述 Google Summer of Code with Kotlin 2025↗ Google Summer of Code with Kotlin 2024↗ Google Summer of Code with Kotlin 2023↗ 安全 社区 贡献力量 KUG 准则 Kotlin 之夜准则 Kotlin Slack 的行为准则与指南 Kotlin 品牌素材 宣传资料↗
+
+2021
+

@@ -1,0 +1,190 @@
+# 函数（第 761-769 页）
+
+[p.761]
+函数
+函数
+函数 lambda 表达式 内联函数 操作符重载 构建器
+类型安全的构建器 使用带有构建器类型推断的构建器
+761
+
+[p.762]
+函数
+函数
+Kotlin 函数使用 fun 关键字声明：
+fun double(x: Int): Int { return 2 * x
+}
+函数用法
+使用常规方式来调用函数：
+val result = double(2)
+调用成员函数使用点表示法：
+Stream().read() // 创建类 Stream 实例并调用 read()
+参数
+函数参数使用 Pascal 表示法定义——name: type。参数用逗号隔开， 每个参数必须有显式类 型：
+fun powerOf(number: Int, exponent: Int): Int { /*……*/ }
+在声明函数参数的时候，你也可以使用尾部逗号：
+fun powerOf( number: Int, exponent: Int, // 尾部逗号
+) { /*……*/ }
+默认实参
+函数参数可以有默认值，当省略相应的参数时使用默认值。这可以减少重载数量：
+fun read( b: ByteArray,
+762
+
+[p.763]
+函数
+
+off: Int = 0, len: Int = b.size, ) { /*……*/ }
+
+通过在类型的后面添加 = 符号来设置参数的默认值。
+覆盖方法总是使用与基类型方法相同的默认实参值。 当覆盖一个有默认实参值的方法时，必 须从签名中省略默认实参值：
+
+open class A { open fun foo(i: Int = 10) { /*……*/ }
+}
+
+class B : A() { override fun foo(i: Int) { /*……*/ }
+}
+
+// 不能有默认值
+
+如果一个有默认值参数在一个无默认值的参数之前，那么该默认值只能通过使用具名实参调 用该函数来使用：
+fun foo( bar: Int = 0, baz: Int,
+) { /*……*/ }
+foo(baz = 1) // 使用默认值 bar = 0
+
+如果在默认实参之后的最后一个参数是 lambda 表达式，那么它既可以作为具名实参在括号内 传入，也可以在括号外传入：
+
+fun foo( bar: Int = 0, baz: Int = 1, qux: () -> Unit,
+) { /*……*/ }
+
+foo(1) { println("hello") }
+
+// 使用默认值 baz = 1
+
+foo(qux = { println("hello") }) // 使用两个默认值 bar = 0 与 baz = 1
+
+foo { println("hello") }
+
+// 使用两个默认值 bar = 0 与 baz = 1
+
+具名实参
+在调用函数的时候可以指明一个或多个参数，这对于包含多个参数的函数是十分有帮助的， 尤其是在传入 null 或者布尔值的情况下很难联想到参数的含义。
+
+763
+
+[p.764]
+函数
+在调用函数的过程中使用具名实参时，你可以随意修改参数的顺序。如果想要使用某些参数 的默认值，只需要在传参的时候省略掉这些参数即可。 以 reformat() 函数为例，该函数包含 4 个有默认值的参数。
+fun reformat( str: String, normalizeCase: Boolean = true, upperCaseFirstLetter: Boolean = true, divideByCamelHumps: Boolean = false, wordSeparator: Char = ' ',
+) { /*……*/ }
+当调用这个函数时，不需要让其所有参数都具名：
+reformat( "String!", false, upperCaseFirstLetter = false, divideByCamelHumps = true, '_'
+)
+你也可以省略所有有默认值的参数：
+reformat("This is a long String!")
+除了省略掉所有有默认值的参数，你也可以选择只省略某些特定的有默认值的参数。 但是你 需要在跳过第一个参数后，对后续的所有参数都使用具名实参：
+reformat("This is a short String!", upperCaseFirstLetter = false, wordSeparator = '_')
+可以通过具名实参与展开操作符（数组前加 * ）来传入可变实参（ vararg ）：
+fun foo(vararg strings: String) { /*……*/ } foo(strings = *arrayOf("a", "b", "c"))
+在 JVM 平台中调用 Java 函数时不能使用具名实参语法，因为 Java 字节码并不总是保留 函数参数的名称。
+返回 Unit 的函数
+764
+
+[p.765]
+函数
+如果一个函数并不返回有用的值，其返回类型是 Unit 。 Unit 是一种只有一个值—— Unit 的类型。 这个值不需要显式返回：
+fun printHello(name: String?): Unit { if (name != null) println("Hello $name") else println("Hi there!") // `return Unit` 或者 `return` 是可选的
+}
+Unit 返回类型声明也是可选的。上面的代码等同于：
+fun printHello(name: String?) { …… }
+单表达式函数
+当函数体由单个表达式构成时，可以省略花括号并且在 = 符号之后指定代码体即可：
+fun double(x: Int): Int = x * 2
+当返回值类型可由编译器推断时，显式声明返回类型是可选的：
+fun double(x: Int) = x * 2
+显式返回类型
+具有块代码体的函数必须始终显式指定返回类型，除非他们旨在返回 Unit ， 在这种情况下 指定返回值类型是可选的。 Kotlin 不推断具有块代码体的函数的返回类型，因为这样的函数在代码体中可能有复杂的控制 流， 并且返回类型对于读者（有时甚至对于编译器）是不明显的。
+可变数量的参数（varargs）
+函数的参数（通常是最后一个）可以用 vararg 修饰符标记：
+fun <T> asList(vararg ts: T): List<T> { val result = ArrayList<T>() for (t in ts) // ts 是一个数组 result.add(t) return result
+}
+765
+
+[p.766]
+函数
+在本例中，可以将可变数量的参数传递给函数：
+val list = asList(1, 2, 3)
+在函数内部，类型 T 的 vararg 参数的可见方式是作为 T 数组，如上例中的 ts 变量具 有类型 Array <out T> 。 只有一个参数可以标注为 vararg 。如果 vararg 参数不是列表中的最后一个参数， 必须使 用具名实参语法传递其后的参数的值，或者，如果参数具有函数类型，则通过在括号外部传 一个 lambda。 当调用 vararg -函数时，可以逐个传参，例如 asList(1, 2, 3) 。如果已经有一个数组并希 望将其内容传给该函数，那么使用展开操作符（在数组前面加 * ）：
+val a = arrayOf(1, 2, 3) val list = asList(-1, 0, *a, 4)
+如果你想传入一个原生类型数组到 vararg 中，你需要先通过 toTypedArray() 函数将其转换 为常规的类型化数组：
+val a = intArrayOf(1, 2, 3) // IntArray 是一种原生类型数组 val list = asList(-1, 0, *a.toTypedArray(), 4)
+中缀表示法
+标有 infix 关键字的函数也可以使用中缀表示法（忽略该调用的点与圆括号）调用。 中缀函 数必须满足以下要求：
+它们必须是成员函数或扩展函数。 它们必须只有一个参数。 其参数不得接受可变数量的参数且不能有默认值。
+infix fun Int.shl(x: Int): Int { …… } // 用中缀表示法调用该函数 1 shl 2 // 等同于这样 1.shl(2)
+中缀函数调用的优先级低于算术操作符、类型转换以及 rangeTo 操作符。 以下表达式是 等价的：
+766
+
+[p.767]
+函数
+1 shl 2 + 3 等价于 1 shl (2 + 3) 0 until n * 2 等价于 0 until (n * 2) xs union ys as Set<*> 等价于 xs union (ys as Set<*>) 另一方面，中缀函数调用的优先级高于布尔操作符 && 与 || 、 is- 与 in- 检测以及 其他一些操作符。这些表达式也是等价的： a && b xor c 等价于 a && (b xor c) a xor b in c 等价于 (a xor b) in c
+
+请注意，中缀函数总是要求指定接收者与参数。当使用中缀表示法在当前接收者上调用方法 时，需要显式使用 this 。这是确保非模糊解析所必需的。
+
+class MyStringCollection { infix fun add(s: String) { /*……*/ }
+
+fun build() {
+
+this add "abc" // 正确
+
+add("abc")
+
+// 正确
+
+//add "abc"
+
+// 错误：必须指定接收者
+
+}
+
+}
+
+函数作用域
+Kotlin 函数可以在文件顶层声明，这意味着你不需要像一些语言如 Java、C# 与 Scala (在 Scala 3 之后新增了顶层作用域的支持) 那样需要创建一个类来保存一个函数。此外除了顶层函数， Kotlin 中函数也可以声明在局部作用域、作为成员函数以及扩展函数。
+局部函数
+Kotlin 支持局部函数，即一个函数在另一个函数内部：
+fun dfs(graph: Graph) { fun dfs(current: Vertex, visited: MutableSet<Vertex>) { if (!visited.add(current)) return for (v in current.neighbors) dfs(v, visited) }
+dfs(graph.vertices[0], HashSet()) }
+
+767
+
+[p.768]
+函数
+局部函数可以访问外部函数（闭包）的局部变量。在上例中， visited 可以是局部变量：
+fun dfs(graph: Graph) { val visited = HashSet<Vertex>() fun dfs(current: Vertex) { if (!visited.add(current)) return for (v in current.neighbors) dfs(v) } dfs(graph.vertices[0])
+}
+成员函数
+成员函数是在类或对象内部定义的函数：
+class Sample { fun foo() { print("Foo") }
+}
+成员函数以点表示法调用：
+Sample().foo() // 创建类 Sample 实例并调用 foo
+关于类和覆盖成员的更多信息参见类和继承。
+泛型函数
+函数可以有泛型参数，通过在函数名前使用尖括号指定：
+fun <T> singletonList(item: T): List<T> { /*……*/ }
+关于泛型函数的更多信息，请参见泛型。
+尾递归函数
+Kotlin 支持一种称为尾递归的函数式编程风格。 对于某些使用循环的算法，可以使用尾递归 替代而不会有堆栈溢出的风险。 当一个函数用 tailrec 修饰符标记并满足所需的形式条件 时，编译器会优化该递归， 留下一个快速而高效的基于循环的版本：
+768
+
+[p.769]
+函数
+val eps = 1E-10 // "good enough", could be 10^-15 tailrec fun findFixPoint(x: Double = 1.0): Double =
+if (Math.abs(x - Math.cos(x)) < eps) x else findFixPoint(Math.cos(x))
+这段代码计算余弦的不动点（ fixpoint of cosine），这是一个数学常数。 它只是重复地从 1.0 开始调用 Math.cos ， 直到结果不再改变，对于这里指定的 eps 精度会产生 0.7390851332151611 的结果。最终代码相当于这种更传统风格的代码：
+val eps = 1E-10 // "good enough", could be 10^-15 private fun findFixPoint(): Double {
+var x = 1.0 while (true) {
+val y = Math.cos(x) if (Math.abs(x - y) < eps) return x x = Math.cos(x) } }
+要符合 tailrec 修饰符的条件的话，函数必须将其自身调用作为它执行的最后一个操作。在 递归调用后有更多代码时， 不能使用尾递归，不能用在 try / catch / finally 块中，也不能 用于 open 的函数。 目前在 Kotlin for the JVM 与 Kotlin/Native 中支持尾递归。 另见：
+内联函数 扩展函数 高阶函数与 Lambda 表达式
+769
+

@@ -1,0 +1,11 @@
+# 简介（第 1692-1692 页）
+
+[p.1692]
+简介
+简介
+Dokka 是 Kotlin 的 API 文档引擎。 就像 Kotlin 本身一样，Dokka 支持混合语言项目。 它理解 Kotlin 的 KDoc 注释与 Java 的 Javadoc 注释。 Dokka 可以生成多种格式的文档，包括它自己的现代 HTML 格式、 多种风格的 Markdown 以 及 Java 的 Javadoc HTML。 以下是一些将 Dokka 用于其 API 参考文档的库：
+kotlinx.coroutines Bitmovin Hexagon Ktor OkHttp 可以使用 Gradle、 Maven 或者在命令行运行 Dokka。 它也是高度可插拔的。 参见 Dokka 入门 来迈出使用 Dokka 的第一步。
+社区
+Dokka 在 Kotlin 社区 Slack 中有个专属的 #dokka 频道， 可以在其中讨论 Dokka 及其插件以 及如何开发插件，也可以与维护人取得联系。
+1692
+

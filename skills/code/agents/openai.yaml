@@ -1,0 +1,4 @@
+interface:
+  display_name: "lyycode"
+  short_description: "把一笔提交生成逐文件验证网页：文件名、完整代码、逐句含义与修改原因、如何验证"
+  default_prompt: "使用 $lyycode 为这笔提交生成逐文件验证网页；如果我没有说是哪笔提交，默认用当前分支最新的提交。"

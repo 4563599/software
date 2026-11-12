@@ -1,0 +1,33 @@
+# Compose 编译器迁移指南（第 1899-1900 页）
+
+[p.1899]
+Compose 编译器迁移指南
+Compose 编译器迁移指南
+The Compose compiler is supplemented by a Gradle plugin, which simplifies setup and offers easier access to compiler options. When applied with the Android Gradle plugin (AGP), this Compose compiler plugin will override the coordinates of the Compose compiler supplied automatically by AGP. The Compose compiler has been merged into the Kotlin repository since Kotlin 2.0.0. This helps smooth the migration of your projects to Kotlin 2.0.0 and later, as the Compose compiler ships simultaneously with Kotlin and will always be compatible with Kotlin of the same version. To use the new Compose compiler plugin in your project, apply it for each module that uses Compose. Read on for details on how to migrate a Jetpack Compose project. For a Compose Multiplatform project, refer to the multiplatform migration guide.
+Migrating a Jetpack Compose project
+When migrating to Kotlin 2.0.0 or newer from 1.9, you should adjust your project configuration depending on the way you deal with the Compose compiler. We recommend using the Kotlin Gradle plugin and the Compose compiler Gradle plugin to automate configuration management.
+Managing the Compose compiler with Gradle plugins
+For Android modules: 1. Add the Compose compiler Gradle plugin to the Gradle version catalog:
+[versions] # ... kotlin = "2.1.21" [plugins] # ... org-jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" } compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko tlin" }
+2. Add the Gradle plugin to the root build.gradle.kts file:
+plugins {
+1899
+
+[p.1900]
+Compose 编译器迁移指南
+// ... alias(libs.plugins.compose.compiler) apply false }
+3. Apply the plugin to every module that uses Jetpack Compose:
+plugins { // ... alias(libs.plugins.compose.compiler)
+}
+4. If you are using compiler options for the Jetpack Compose compiler, set them in the composeCompiler {} block. See the list of compiler options for reference.
+5. If you reference Compose compiler artifacts directly, you can remove these references and let the Gradle plugins take care of things.
+Using Compose compiler without Gradle plugins
+If you are not using Gradle plugins to manage the Compose compiler, update any direct references to old Maven artifacts in your project:
+Change androidx.compose.compiler:compiler to org.jetbrains.kotlin:kotlin-compose-
+compiler-plugin-embeddable
+Change androidx.compose.compiler:compiler-hosted to org.jetbrains.kotlin:kotlin-
+compose-compiler-plugin
+下一步做什么
+See Google's announcement about the Compose compiler moving to the Kotlin repository. If you are using Jetpack Compose to build an Android app, check out our guide on how to make it multiplatform.
+1900
+

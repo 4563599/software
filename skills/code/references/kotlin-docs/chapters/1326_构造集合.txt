@@ -1,0 +1,96 @@
+# 构造集合（第 1326-1329 页）
+
+[p.1326]
+构造集合
+构造集合
+由元素构造
+创建集合的最常用方法是使用标准库函数 listOf<T>() 、 setOf<T>() 、 mutableListOf<T> () 、 mutableSetOf<T>() 。 如果以逗号分隔的集合元素列表作为参数，编译器会自动检测元 素类型。创建空集合时，须明确指定类型。
+val numbersSet = setOf("one", "two", "three", "four") val emptySet = mutableSetOf<String>()
+同样的，Map 也有这样的函数 mapOf() 与 mutableMapOf() 。映射的键和值作为 Pair 对象 传递（通常使用中缀函数 to 创建）。
+val numbersMap = mapOf("key1" to 1, "key2" to 2, "key3" to 3, "key4" to 1)
+注意， to 符号创建了一个短时存活的 Pair 对象，因此建议仅在性能不重要时才使用它。 为避免过多的内存使用，请使用其他方法。例如，可以创建可写 Map 并使用写入操作填充 它。 apply() 函数可以帮助保持初始化流畅。
+val numbersMap = mutableMapOf<String, String>().apply { this["one"] = "1"; this["two"] = "2" }
+Create with collection builder functions
+Another way of creating a collection is to call a builder function – buildList() , buildSet() , or buildMap() . They create a new, mutable collection of the corresponding type, populate it using write operations, and return a read-only collection with the same elements:
+val map = buildMap { // this is MutableMap<String, Int>, types of key and value are in ferred from the `put()` calls below
+put("a", 1) put("b", 0) put("c", 4) } println(map) // {a=1, b=0, c=4}
+1326
+
+[p.1327]
+构造集合
+空集合
+还有用于创建没有任何元素的集合的函数： emptyList() 、 emptySet() 与 emptyMap() 。 创 建空集合时，应指定集合将包含的元素类型。
+val empty = emptyList<String>()
+
+list 的初始化函数
+
+对于 List，有一个接受 List 的大小与初始化函数的类似构造函数的函数，该初始化函数根据索 引定义元素的值。
+
+fun main() { //sampleStart
+val doubled = List(3, { it * 2 }) println(doubled) //sampleEnd }
+
+// 如果你想操作这个集合，应使用 MutableList
+
+具体类型构造函数
+要创建具体类型的集合，例如 ArrayList 或 LinkedList ，可以使用这些类型的构造函数。 类似的构造函数对于 Set 与 Map 的各实现中均有提供。
+val linkedList = LinkedList<String>(listOf("one", "two", "three")) val presizedSet = HashSet<Int>(32)
+
+复制
+要创建与现有集合具有相同元素的集合，可以使用复制函数。 标准库中的集合复制函数创建 了具有相同元素引用的 浅 复制集合。 因此，对集合元素所做的更改会反映在其所有副本中。
+在特定时刻通过集合复制函数，例如 toList() 、 toMutableList() 、 toSet() 等等。create a snapshot of a collection at a specific moment. 结果是创建了一个具有相同元素的新集合 如果在 源代码集合中添加或删除元素，则不会影响副本。副本也可以独立于源代码集合进行更改。
+class Person(var name: String) fun main() { //sampleStart
+
+1327
+
+[p.1328]
+构造集合
+
+val alice = Person("Alice") val sourceList = mutableListOf(alice, Person("Bob")) val copyList = sourceList.toList() sourceList.add(Person("Charles")) alice.name = "Alicia" println("First item's name is: ${sourceList[0].name} in source and ${copyList[0].n ame} in copy") println("List size is: ${sourceList.size} in source and ${copyList.size} in copy") //sampleEnd }
+
+这些函数还可用于将集合转换为其他类型，例如根据 List 构建 Set，反之亦然。
+fun main() { //sampleStart
+val sourceList = mutableListOf(1, 2, 3) val copySet = sourceList.toMutableSet() copySet.add(3) copySet.add(4) println(copySet) //sampleEnd }
+
+或者，可以创建对同一集合实例的新引用。使用现有集合初始化集合变量时，将创建新引 用。 因此，当通过引用更改集合实例时，更改将反映在其所有引用中。
+fun main() { //sampleStart
+val sourceList = mutableListOf(1, 2, 3) val referenceList = sourceList referenceList.add(4) println("Source size: ${sourceList.size}") //sampleEnd }
+
+集合的初始化可用于限制其可变性。例如，如果构建了一个 MutableList 的 List 引用，当 你试图通过此引用修改集合的时候，编译器会抛出错误。
+
+fun main() {
+
+//sampleStart
+
+val sourceList = mutableListOf(1, 2, 3)
+
+val referenceList: List<Int> = sourceList
+
+//referenceList.add(4)
+
+// 编译错误
+
+sourceList.add(4)
+
+println(referenceList) // 显示 sourceList 当前状态
+
+//sampleEnd
+
+}
+
+1328
+
+[p.1329]
+构造集合
+调用其他集合的函数
+可以通过其他集合各种操作的结果来创建集合。例如，过滤列表会创建与过滤器匹配的新元 素列表：
+fun main() { //sampleStart
+val numbers = listOf("one", "two", "three", "four") val longerThan3 = numbers.filter { it.length > 3 } println(longerThan3) //sampleEnd }
+映射由转换结果生成列表：
+fun main() { //sampleStart
+val numbers = setOf(1, 2, 3) println(numbers.map { it * 3 }) println(numbers.mapIndexed { idx, value -> value * idx }) //sampleEnd }
+关联生成 Map:
+fun main() { //sampleStart
+val numbers = listOf("one", "two", "three", "four") println(numbers.associateWith { it.length }) //sampleEnd }
+关于 Kotlin 中集合操作的更多信息，参见集合操作概述.
+1329
+

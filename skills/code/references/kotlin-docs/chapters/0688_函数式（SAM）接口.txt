@@ -1,0 +1,50 @@
+# 函数式（SAM）接口（第 688-690 页）
+
+[p.688]
+函数式（SAM）接口
+函数式（SAM）接口
+只有一个抽象成员函数的接口称为函数式接口或 单一抽象方法（SAM）接口。函数式接口可 以有多个非抽象成员函数，但只能有一个抽象成员函数。 可以用 fun 修饰符在 Kotlin 中声明一个函数式接口。
+fun interface KRunnable { fun invoke()
+}
+SAM 转换
+对于函数式接口，可以通过 lambda 表达式实现 SAM 转换，从而使代码更简洁、更有可读 性。 使用 lambda 表达式可以替代手动创建实现函数式接口的类。 通过 SAM 转换， Kotlin can convert any lambda expression whose signature matches the signature of the interface's single method into the code, which dynamically instantiates the interface implementation. 例如，有这样一个 Kotlin 函数式接口：
+fun interface IntPredicate { fun accept(i: Int): Boolean
+}
+如果不使用 SAM 转换，那么你需要像这样编写代码：
+// 创建一个类的实例 val isEven = object : IntPredicate {
+override fun accept(i: Int): Boolean { return i % 2 == 0
+} }
+通过利用 Kotlin 的 SAM 转换，可以改为以下等效代码：
+// 通过 lambda 表达式创建一个实例 val isEven = IntPredicate { it % 2 == 0 }
+688
+
+[p.689]
+函数式（SAM）接口
+可以通过更短的 lambda 表达式替换所有不必要的代码。
+fun interface IntPredicate { fun accept(i: Int): Boolean
+} val isEven = IntPredicate { it % 2 == 0 } fun main() {
+println("Is 7 even? - ${isEven.accept(7)}") }
+你也可以使用 Java 接口上的 SAM 转换。
+Migration from an interface with constructor function to a functional interface
+Starting from 1.6.20, Kotlin supports callable references to functional interface constructors, which adds a source-compatible way to migrate from an interface with a constructor function to a functional interface. Consider the following code:
+interface Printer { fun print()
+} fun Printer(block: () -> Unit): Printer = object : Printer { override fun print() = bl ock() }
+With callable references to functional interface constructors enabled, this code can be replaced with just a functional interface declaration:
+fun interface Printer { fun print()
+}
+Its constructor will be created implicitly, and any code using the ::Printer function reference will compile. For example:
+documentsStorage.addPrinter(::Printer)
+Preserve the binary compatibility by marking the legacy function Printer with the @Deprecated annotation with DeprecationLevel.HIDDEN :
+689
+
+[p.690]
+函数式（SAM）接口
+@Deprecated(message = "Your message about the deprecation", level = DeprecationLevel.H IDDEN) fun Printer(...) {...}
+函数式接口与类型别名比较
+You can also simply rewrite the above using a type alias for a functional type:
+typealias IntPredicate = (i: Int) -> Boolean val isEven: IntPredicate = { it % 2 == 0 } fun main() {
+println("Is 7 even? - ${isEven(7)}") }
+However, 函数式接口和类型别名用途并不相同。 类型别名只是现有类型的名称——它们不会 创建新的类型，而函数式接口却会创建新类型。 You can provide extensions that are specific to a particular functional interface to be inapplicable for plain functions or their type aliases. 类型别名只能有一个成员，而函数式接口可以有多个非抽象成员函数以及一个抽象成员函 数。 函数式接口还可以实现以及继承其他接口。 函数式接口比类型别名更灵活并且提供了更多的功能, but they can be more costly both syntactically and at runtime because they can require conversions to a specific interface. When you choose which one to use in your code, consider your needs:
+If your API needs to accept a function (any function) with some specific parameter and return types – use a simple functional type or define a type alias to give a shorter name to the corresponding functional type. If your API accepts a more complex entity than a function – for example, it has non-trivial contracts and/or operations on it that can't be expressed in a functional type's signature – declare a separate functional interface for it.
+690
+

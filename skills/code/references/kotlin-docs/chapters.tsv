@@ -1,0 +1,301 @@
+章节	起始页	结束页	文件
+（目录）	1	15	0001_（目录）.txt
+文档	16	17	0016_文档.txt
+入门	18	20	0018_入门.txt
+Kotlin 之旅	21	22	0021_Kotlin_之旅.txt
+概述	23	23	0023_概述.txt
+Kotlin 多平台	24	28	0024_Kotlin_多平台.txt
+Kotlin 用于服务器端开发	29	31	0029_Kotlin_用于服务器端开发.txt
+Kotlin 用于 Android 开发	32	32	0032_Kotlin_用于_Android_开发.txt
+Kotlin Wasm	33	36	0033_Kotlin_Wasm.txt
+Kotlin 原生	37	38	0037_Kotlin_原生.txt
+Kotlin 用于 JavaScript 开发	39	41	0039_Kotlin_用于_JavaScript_开发.txt
+Kotlin 用于数据分析	42	46	0042_Kotlin_用于数据分析.txt
+Kotlin 用于 AI 驱动的应用开发	47	48	0047_Kotlin_用于_AI_驱动的应用开发.txt
+Kotlin 用于竞技程序设计	49	54	0049_Kotlin_用于竞技程序设计.txt
+Kotlin 的新特性	55	55	0055_Kotlin_的新特性.txt
+Kotlin 2.1.20	56	71	0056_Kotlin_2.1.20.txt
+Kotlin 2.1.0	72	111	0072_Kotlin_2.1.0.txt
+Kotlin 2.2.0-RC	112	125	0112_Kotlin_2.2.0-RC.txt
+早期版本	126	126	0126_早期版本.txt
+Kotlin 2.0.20	127	147	0127_Kotlin_2.0.20.txt
+Kotlin 2.0.0	148	187	0148_Kotlin_2.0.0.txt
+Kotlin 1.9.20	188	212	0188_Kotlin_1.9.20.txt
+Kotlin 1.9.0	213	242	0213_Kotlin_1.9.0.txt
+Kotlin 1.8.20	243	274	0243_Kotlin_1.8.20.txt
+Kotlin 1.8.0	275	294	0275_Kotlin_1.8.0.txt
+Kotlin 1.7.20	295	312	0295_Kotlin_1.7.20.txt
+Kotlin 1.7.0	313	337	0313_Kotlin_1.7.0.txt
+Kotlin 1.6.20	338	359	0338_Kotlin_1.6.20.txt
+Kotlin 1.6.0	360	377	0360_Kotlin_1.6.0.txt
+Kotlin 1.5.30	378	400	0378_Kotlin_1.5.30.txt
+Kotlin 1.5.20	401	407	0401_Kotlin_1.5.20.txt
+Kotlin 1.5.0	408	427	0408_Kotlin_1.5.0.txt
+Kotlin 1.4.30	428	437	0428_Kotlin_1.4.30.txt
+Kotlin 1.4.20	438	446	0438_Kotlin_1.4.20.txt
+Kotlin 1.4.0	447	483	0447_Kotlin_1.4.0.txt
+Kotlin 1.3	484	494	0484_Kotlin_1.3.txt
+Kotlin 1.2	495	504	0495_Kotlin_1.2.txt
+Kotlin 1.1	505	520	0505_Kotlin_1.1.txt
+版本发布与路线图	521	521	0521_版本发布与路线图.txt
+Kotlin 路线图	522	525	0522_Kotlin_路线图.txt
+Kotlin 语言特性与提案	526	529	0526_Kotlin_语言特性与提案.txt
+Kotlin 演进原则	530	536	0530_Kotlin_演进原则.txt
+Kotlin 各组件的稳定性	537	540	0537_Kotlin_各组件的稳定性.txt
+Kotlin 版本发布	541	550	0541_Kotlin_版本发布.txt
+基础	551	551	0551_基础.txt
+基本语法	552	565	0552_基本语法.txt
+习惯用法	566	574	0566_习惯用法.txt
+例学 Kotlin↗	575	575	0575_例学_Kotlin↗.txt
+编码规范	576	599	0576_编码规范.txt
+概念	600	601	0600_概念.txt
+类型	602	602	0602_类型.txt
+基本类型	603	632	0603_基本类型.txt
+类型检测与类型转换	633	638	0633_类型检测与类型转换.txt
+控制流程	639	639	0639_控制流程.txt
+条件与循环	640	647	0640_条件与循环.txt
+返回与跳转	648	650	0648_返回与跳转.txt
+异常	651	666	0651_异常.txt
+包与导入	667	668	0667_包与导入.txt
+类与对象	669	669	0669_类与对象.txt
+类	670	674	0670_类.txt
+继承	675	679	0675_继承.txt
+属性	680	684	0680_属性.txt
+接口	685	687	0685_接口.txt
+函数式（SAM）接口	688	690	0688_函数式（SAM）接口.txt
+可见性修饰符	691	693	0691_可见性修饰符.txt
+扩展	694	699	0694_扩展.txt
+数据类	700	702	0700_数据类.txt
+密封类与密封接口	703	711	0703_密封类与密封接口.txt
+泛型：in、out、where	712	722	0712_泛型：in、out、where.txt
+嵌套类	723	724	0723_嵌套类.txt
+枚举类	725	728	0725_枚举类.txt
+内联类	729	733	0729_内联类.txt
+对象表达式与对象声明	734	745	0734_对象表达式与对象声明.txt
+委托	746	747	0746_委托.txt
+属性委托	748	758	0748_属性委托.txt
+类型别名	759	760	0759_类型别名.txt
+函数	761	769	0761_函数.txt
+lambda 表达式	770	777	0770_lambda_表达式.txt
+内联函数	778	782	0778_内联函数.txt
+操作符重载	783	787	0783_操作符重载.txt
+构建器	788	802	0788_构建器.txt
+空安全	803	812	0803_空安全.txt
+相等性	813	815	0813_相等性.txt
+this 表达式	816	817	0816_this_表达式.txt
+异步程序设计技术	818	821	0818_异步程序设计技术.txt
+协程	822	823	0822_协程.txt
+注解	824	830	0824_注解.txt
+解构声明	831	833	0831_解构声明.txt
+反射	834	840	0834_反射.txt
+数据分析	841	841	0841_数据分析.txt
+Kotlin Notebook 入门	842	842	0842_Kotlin_Notebook_入门.txt
+Kotlin Notebook 简介	843	843	0843_Kotlin_Notebook_简介.txt
+1、环境搭建	844	845	0844_1、环境搭建.txt
+2、创建第一个 Kotlin Notebook	846	850	0846_2、创建第一个_Kotlin_Notebook.txt
+3、将依赖添加到 Kotlin Notebook	851	854	0851_3、将依赖添加到_Kotlin_Notebook.txt
+分享 Kotlin Notebook	855	856	0855_分享_Kotlin_Notebook.txt
+Kotlin Notebook 的输出格式	857	865	0857_Kotlin_Notebook_的输出格式.txt
+使用数据源	866	866	0866_使用数据源.txt
+从文件中取数据	867	872	0867_从文件中取数据.txt
+从 web 源与 API 取数据	873	878	0873_从_web_源与_API_取数据.txt
+链接数据库并从中取数据	879	883	0879_链接数据库并从中取数据.txt
+Kotlin Notebook 中数据可视化	884	889	0884_Kotlin_Notebook_中数据可视化.txt
+用于数据分析的库	890	893	0890_用于数据分析的库.txt
+平台	894	896	0894_平台.txt
+JVM	897	897	0897_JVM.txt
+Kotlin/JVM 入门	898	903	0898_Kotlin_JVM_入门.txt
+与 Java 比较	904	905	0904_与_Java_比较.txt
+在 Kotlin 中调用 Java	906	923	0906_在_Kotlin_中调用_Java.txt
+在 Java 中调用 Kotlin	924	936	0924_在_Java_中调用_Kotlin.txt
+Spring	937	987	0937_Spring.txt
+在 JVM 平台中用 JUnit 测试代码——教程	988	994	0988_在_JVM_平台中用_JUnit_测试代码——教程.txt
+在项目中混用 Java 与 Kotlin——教程	995	998	0995_在项目中混用_Java_与_Kotlin——教程.txt
+在 Kotlin 中使用 Java 记录类型	999	1000	0999_在_Kotlin_中使用_Java_记录类型.txt
+从 Java 到 Kotlin 迁移指南	1001	1037	1001_从_Java_到_Kotlin_迁移指南.txt
+原生	1038	1048	1038_原生.txt
+定义文件	1049	1055	1049_定义文件.txt
+与 C 语言互操作	1056	1111	1056_与_C_语言互操作.txt
+与 Objective-C 互操作性	1112	1139	1112_与_Objective-C_互操作性.txt
+Kotlin/Native 库	1140	1144	1140_Kotlin_Native_库.txt
+平台库	1145	1147	1145_平台库.txt
+内存管理器	1148	1167	1148_内存管理器.txt
+调试 Kotlin/Native	1168	1172	1168_调试_Kotlin_Native.txt
+符号化 iOS 崩溃报告	1173	1174	1173_符号化_iOS_崩溃报告.txt
+参考与提示	1175	1188	1175_参考与提示.txt
+WebAssembly（Wasm）	1189	1197	1189_WebAssembly（Wasm）.txt
+Kotlin/Wasm 与 WASI 入门	1198	1202	1198_Kotlin_Wasm_与_WASI_入门.txt
+调试 Kotlin/Wasm 代码	1203	1214	1203_调试_Kotlin_Wasm_代码.txt
+与 JavaScript 的互操作	1215	1226	1215_与_JavaScript_的互操作.txt
+故障排查	1227	1230	1227_故障排查.txt
+JavaScript	1231	1231	1231_JavaScript.txt
+搭建 Kotlin/JS 项目	1232	1252	1232_搭建_Kotlin_JS_项目.txt
+运行 Kotlin/JS	1253	1255	1253_运行_Kotlin_JS.txt
+开发服务器与持续编译	1256	1258	1256_开发服务器与持续编译.txt
+调试 Kotlin/JS 代码	1259	1264	1259_调试_Kotlin_JS_代码.txt
+在 Kotlin/JS 平台中运行测试	1265	1268	1265_在_Kotlin_JS_平台中运行测试.txt
+Kotlin/JS 无用代码消除	1269	1271	1269_Kotlin_JS_无用代码消除.txt
+Kotlin/JS IR 编译器	1272	1276	1272_Kotlin_JS_IR_编译器.txt
+Kotlin 用于 JS 平台	1277	1303	1277_Kotlin_用于_JS_平台.txt
+脚本	1304	1304	1304_脚本.txt
+Kotlin 自定义脚本入门——教程	1305	1315	1305_Kotlin_自定义脚本入门——教程.txt
+Kotlin 多平台开发↗	1316	1316	1316_Kotlin_多平台开发↗.txt
+标准库	1317	1317	1317_标准库.txt
+集合	1318	1318	1318_集合.txt
+集合概述	1319	1325	1319_集合概述.txt
+构造集合	1326	1329	1326_构造集合.txt
+迭代器	1330	1332	1330_迭代器.txt
+区间与数列	1333	1335	1333_区间与数列.txt
+序列	1336	1340	1336_序列.txt
+集合操作概述	1341	1343	1341_集合操作概述.txt
+集合转换操作	1344	1349	1344_集合转换操作.txt
+过滤集合	1350	1353	1350_过滤集合.txt
+加减操作符	1354	1354	1354_加减操作符.txt
+分组	1355	1356	1355_分组.txt
+取集合的一部分	1357	1360	1357_取集合的一部分.txt
+取单个元素	1361	1365	1361_取单个元素.txt
+排序	1366	1370	1366_排序.txt
+聚合操作	1371	1374	1371_聚合操作.txt
+集合写操作	1375	1377	1375_集合写操作.txt
+List 相关操作	1378	1383	1378_List_相关操作.txt
+Set 相关操作	1384	1385	1384_Set_相关操作.txt
+Map 相关操作	1386	1390	1386_Map_相关操作.txt
+读取标准输入	1391	1392	1391_读取标准输入.txt
+选择加入要求	1393	1402	1393_选择加入要求.txt
+作用域函数	1403	1414	1403_作用域函数.txt
+时间度量	1415	1423	1415_时间度量.txt
+官方库	1424	1424	1424_官方库.txt
+协程（kotlinx.coroutines）	1425	1425	1425_协程（kotlinx.coroutines）.txt
+协程指南	1426	1427	1426_协程指南.txt
+协程基础	1428	1433	1428_协程基础.txt
+Kotlin 协程与通道介绍↗	1434	1434	1434_Kotlin_协程与通道介绍↗.txt
+取消与超时	1435	1443	1435_取消与超时.txt
+组合挂起函数	1444	1451	1444_组合挂起函数.txt
+协程上下文与调度器	1452	1464	1452_协程上下文与调度器.txt
+异步流	1465	1497	1465_异步流.txt
+通道	1498	1508	1498_通道.txt
+协程异常处理	1509	1518	1509_协程异常处理.txt
+共享的可变状态与并发	1519	1525	1519_共享的可变状态与并发.txt
+select 表达式（实验性的）	1526	1534	1526_select_表达式（实验性的）.txt
+使用 IntelliJ IDEA 调试协程——教程	1535	1545	1535_使用_IntelliJ_IDEA_调试协程——教程.txt
+序列化（kotlinx.serialization）	1546	1560	1546_序列化（kotlinx.serialization）.txt
+Lincheck（kotlinx.lincheck）	1561	1561	1561_Lincheck（kotlinx.lincheck）.txt
+Lincheck 指南	1562	1563	1562_Lincheck_指南.txt
+用 Lincheck 编写第一个测试	1564	1569	1564_用_Lincheck_编写第一个测试.txt
+测试策略	1570	1576	1570_测试策略.txt
+操作参数	1577	1579	1577_操作参数.txt
+数据结构约束	1580	1582	1580_数据结构约束.txt
+进度保证	1583	1586	1583_进度保证.txt
+时序规范	1587	1588	1587_时序规范.txt
+Ktor↗	1589	1589	1589_Ktor↗.txt
+API 参考	1590	1590	1590_API_参考.txt
+标准库（stdlib）↗	1591	1591	1591_标准库（stdlib）↗.txt
+测试库（kotlin.test）↗	1592	1592	1592_测试库（kotlin.test）↗.txt
+协程（kotlinx.coroutines）↗	1593	1593	1593_协程（kotlinx.coroutines）↗.txt
+序列化（kotlinx.serialization）↗	1594	1594	1594_序列化（kotlinx.serialization）↗.txt
+Kotlin I/O 库（kotlinx-io）↗	1595	1595	1595_Kotlin_I_O_库（kotlinx-io）↗.txt
+日期与时间（kotlinx-datetime）↗	1596	1596	1596_日期与时间（kotlinx-datetime）↗.txt
+JVM 元数据（kotlinx-metadata-jvm）↗	1597	1597	1597_JVM_元数据（kotlinx-metadata-jvm）↗.txt
+Ktor↗	1598	1599	1598_Ktor↗.txt
+语言参考	1600	1600	1600_语言参考.txt
+关键字与操作符	1601	1605	1601_关键字与操作符.txt
+语法↗	1606	1606	1606_语法↗.txt
+语言规范↗	1607	1607	1607_语言规范↗.txt
+工具	1608	1608	1608_工具.txt
+构建工具	1609	1609	1609_构建工具.txt
+Gradle	1610	1677	1610_Gradle.txt
+Maven	1678	1686	1678_Maven.txt
+Ant	1687	1690	1687_Ant.txt
+Dokka	1691	1691	1691_Dokka.txt
+简介	1692	1692	1692_简介.txt
+Dokka 入门	1693	1694	1693_Dokka_入门.txt
+运行 Dokka	1695	1754	1695_运行_Dokka.txt
+输出格式	1755	1769	1755_输出格式.txt
+Dokka 插件	1770	1775	1770_Dokka_插件.txt
+模块文档	1776	1777	1776_模块文档.txt
+用于 Kotlin 开发的 IDE	1778	1783	1778_用于_Kotlin_开发的_IDE.txt
+Kotlin Notebook	1784	1790	1784_Kotlin_Notebook.txt
+用于 Kotlin 的 Lets-Plot	1791	1797	1791_用于_Kotlin_的_Lets-Plot.txt
+运行代码片段	1798	1805	1798_运行代码片段.txt
+Kotlin 与 TeamCity 的持续集成	1806	1808	1806_Kotlin_与_TeamCity_的持续集成.txt
+编写代码文档：KDoc	1809	1812	1809_编写代码文档：KDoc.txt
+Kotlin 与 OSGi	1813	1815	1813_Kotlin_与_OSGi.txt
+编译器与插件	1816	1816	1816_编译器与插件.txt
+编译器	1817	1817	1817_编译器.txt
+K2 编译器迁移指南	1818	1847	1818_K2_编译器迁移指南.txt
+Kotlin 命令行编译器	1848	1851	1848_Kotlin_命令行编译器.txt
+Kotlin 编译器选项	1852	1861	1852_Kotlin_编译器选项.txt
+编译器插件	1862	1862	1862_编译器插件.txt
+全开放编译器插件	1863	1867	1863_全开放编译器插件.txt
+No-arg 编译器插件	1868	1870	1868_No-arg_编译器插件.txt
+带有接收者的 SAM 编译器插件	1871	1873	1871_带有接收者的_SAM_编译器插件.txt
+kapt 编译器插件	1874	1884	1874_kapt_编译器插件.txt
+Lombok 编译器插件	1885	1889	1885_Lombok_编译器插件.txt
+Power-assert	1890	1897	1890_Power-assert.txt
+Compose 编译器	1898	1898	1898_Compose_编译器.txt
+Compose 编译器迁移指南	1899	1900	1899_Compose_编译器迁移指南.txt
+Compose 编译器选项 DSL	1901	1902	1901_Compose_编译器选项_DSL.txt
+Kotlin 符号处理（KSP）API	1903	1903	1903_Kotlin_符号处理（KSP）API.txt
+KSP 概述	1904	1908	1904_KSP_概述.txt
+KSP 快速入门	1909	1917	1909_KSP_快速入门.txt
+为什么选用 KSP	1918	1920	1918_为什么选用_KSP.txt
+KSP 示例	1921	1922	1921_KSP_示例.txt
+KSP 如何为 Kotlin 代码建模	1923	1924	1923_KSP_如何为_Kotlin_代码建模.txt
+Java 注解处理对应到 KSP 参考	1925	1931	1925_Java_注解处理对应到_KSP_参考.txt
+增量处理	1932	1935	1932_增量处理.txt
+多轮次处理	1936	1938	1936_多轮次处理.txt
+KSP 与 Kotlin 多平台	1939	1940	1939_KSP_与_Kotlin_多平台.txt
+在命令行运行 KSP	1941	1942	1941_在命令行运行_KSP.txt
+常见问题	1943	1945	1943_常见问题.txt
+学习资料	1946	1946	1946_学习资料.txt
+学习资料概述	1947	1947	1947_学习资料概述.txt
+例学 Kotlin↗	1948	1948	1948_例学_Kotlin↗.txt
+Kotlin 心印	1949	1949	1949_Kotlin_心印.txt
+Kotlin 核心课程↗	1950	1950	1950_Kotlin_核心课程↗.txt
+Kotlin 动手实践	1951	1953	1951_Kotlin_动手实践.txt
+Kotlin 小窍门	1954	1958	1954_Kotlin_小窍门.txt
+图书	1959	1960	1959_图书.txt
+Advent of Code 谜题	1961	1968	1961_Advent_of_Code_谜题.txt
+在 IDE 中学习（JetBrains 学院）	1969	1969	1969_在_IDE_中学习（JetBrains_学院）.txt
+学习 Kotlin	1970	1970	1970_学习_Kotlin.txt
+讲授 Kotlin	1971	1971	1971_讲授_Kotlin.txt
+库作者指南	1972	1972	1972_库作者指南.txt
+简介	1973	1974	1973_简介.txt
+最小化心理复杂性	1975	1997	1975_最小化心理复杂性.txt
+反向兼容性	1998	2005	1998_反向兼容性.txt
+内容翔实的文档	2006	2010	2006_内容翔实的文档.txt
+构建多平台库	2011	2013	2011_构建多平台库.txt
+早期访问计划（EAP）	2014	2014	2014_早期访问计划（EAP）.txt
+参与 Kotlin 早期访问计划	2015	2016	2015_参与_Kotlin_早期访问计划.txt
+配置构建采用 EAP	2017	2020	2017_配置构建采用_EAP.txt
+其他资源	2021	2021	2021_其他资源.txt
+FAQ	2022	2026	2022_FAQ.txt
+Kotlin 兼容性指南	2027	2027	2027_Kotlin_兼容性指南.txt
+Kotlin 2.1 的兼容性指南	2028	2040	2028_Kotlin_2.1_的兼容性指南.txt
+Kotlin 2.0 的兼容性指南	2041	2057	2041_Kotlin_2.0_的兼容性指南.txt
+Kotlin 1.9 的兼容性指南	2058	2071	2058_Kotlin_1.9_的兼容性指南.txt
+Kotlin 1.8 的兼容性指南	2072	2087	2072_Kotlin_1.8_的兼容性指南.txt
+Kotlin 1.7.20 的兼容性指南	2088	2089	2088_Kotlin_1.7.20_的兼容性指南.txt
+Kotlin 1.7 的兼容性指南	2090	2101	2090_Kotlin_1.7_的兼容性指南.txt
+Kotlin 1.6 的兼容性指南	2102	2114	2102_Kotlin_1.6_的兼容性指南.txt
+Kotlin 1.5 的兼容性指南	2115	2125	2115_Kotlin_1.5_的兼容性指南.txt
+Kotlin 1.4 的兼容性指南	2126	2142	2126_Kotlin_1.4_的兼容性指南.txt
+Kotlin 1.3 的兼容性指南	2143	2153	2143_Kotlin_1.3_的兼容性指南.txt
+兼容模式	2154	2154	2154_兼容模式.txt
+Kotlin 基金会	2155	2155	2155_Kotlin_基金会.txt
+Kotlin 基金会↗	2156	2156	2156_Kotlin_基金会↗.txt
+语言委员会准则↗	2157	2157	2157_语言委员会准则↗.txt
+提交不兼容变更指南↗	2158	2158	2158_提交不兼容变更指南↗.txt
+Kotlin 品牌用途准则↗	2159	2159	2159_Kotlin_品牌用途准则↗.txt
+Kotlin 基金会 FAQ↗	2160	2160	2160_Kotlin_基金会_FAQ↗.txt
+Google Summer of Code	2161	2161	2161_Google_Summer_of_Code.txt
+概述	2162	2162	2162_概述.txt
+Google Summer of Code	2163	2165	2163_Google_Summer_of_Code.txt
+安全	2166	2166	2166_安全.txt
+社区	2167	2167	2167_社区.txt
+贡献力量	2168	2172	2168_贡献力量.txt
+KUG 准则	2173	2174	2173_KUG_准则.txt
+Kotlin 之夜准则	2175	2176	2175_Kotlin_之夜准则.txt
+Kotlin Slack 的行为准则与指南	2177	2181	2177_Kotlin_Slack_的行为准则与指南.txt
+Kotlin 品牌素材	2182	2182	2182_Kotlin_品牌素材.txt
+宣传资料↗	2183	2184	2183_宣传资料↗.txt

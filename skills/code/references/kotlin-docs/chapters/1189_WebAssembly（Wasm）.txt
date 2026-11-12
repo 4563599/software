@@ -1,0 +1,64 @@
+# WebAssembly（Wasm）（第 1189-1197 页）
+
+[p.1189]
+WebAssembly（Wasm）
+WebAssembly（Wasm）
+在 IntelliJ IDEA 中入门 Kotlin/Wasm Kotlin/Wasm 与 WASI 入门 调试 Kotlin/Wasm 代码 与 JavaScript 的互操作 故障排查
+1189
+
+[p.1190]
+在 IntelliJ IDEA 中入门 Kotlin/Wasm
+Get started with Kotlin/Wasm and Compose Multiplatform
+Kotlin/Wasm is in Alpha. It may be changed at any time. Join the Kotlin/Wasm community. This tutorial demonstrates how to run a Compose Multiplatform app with Kotlin/Wasm in IntelliJ IDEA, and generate artifacts to publish as a site on GitHub pages.
+Before you start
+Create a project using the Kotlin Multiplatform wizard: 1. Open the Kotlin Multiplatform wizard. 2. On the New Project tab, change the project name and ID to your preference. In this tutorial, we set the name to "WasmDemo" and the ID to "wasm.project.demo". These are the name and ID of the project directory. You can also leave them as they are. 3. Select the Web option. Make sure that no other options are selected. 4. Click the Download button and unpack the resulting archive.
+1190
+
+[p.1191]
+在 IntelliJ IDEA 中入门 Kotlin/Wasm
+Open the project in IntelliJ IDEA
+1. Download and install the latest version of IntelliJ IDEA. 2. On the Welcome screen of IntelliJ IDEA, click Open or select File | Open in the menu bar. 3. Navigate to the unpacked "WasmDemo" folder and click Open.
+1191
+
+[p.1192]
+在 IntelliJ IDEA 中入门 Kotlin/Wasm
+Run the application
+1. In IntelliJ IDEA, open the Gradle tool window by selecting View | Tool Windows | Gradle. You can find the Gradle tasks in the Gradle tool window once the project loads. You need at least Java 11 as your Gradle JVM for the tasks to load successfully.
+2. In wasmdemo | Tasks | kotlin browser, select and run the wasmJsBrowserDevelopmentRun task.
+Alternatively, you can run the following command in the terminal from the WasmDemo root directory:
+./gradlew wasmJsBrowserDevelopmentRun -t
+3. Once the application starts, open the following URL in your browser:
+http://localhost:8080/
+The port number can vary because the 8080 port may be unavailable. You can find the actual port number printed in the Gradle build console. You see a "Click me!" button. Click it:
+1192
+
+[p.1193]
+在 IntelliJ IDEA 中入门 Kotlin/Wasm Now you see the Compose Multiplatform logo: 1193
+
+[p.1194]
+在 IntelliJ IDEA 中入门 Kotlin/Wasm
+Generate artifacts
+In wasmdemo | Tasks | kotlin browser, select and run the wasmJsBrowserDistribution task. 1194
+
+[p.1195]
+在 IntelliJ IDEA 中入门 Kotlin/Wasm
+Alternatively, you can run the following command in the terminal from the WasmDemo root directory:
+./gradlew wasmJsBrowserDistribution
+Once the application task completes, you can find the generated artifacts in the composeApp/build/dist/wasmJs/productionExecutable directory:
+1195
+
+[p.1196]
+在 IntelliJ IDEA 中入门 Kotlin/Wasm
+Publish on GitHub pages
+1. Copy all the contents in your productionExecutable directory into the repository where you want to create a site.
+2. Follow GitHub's instructions for creating your site. It can take up to 10 minutes for changes to your site to publish after you push the changes to GitHub.
+3. In a browser, navigate to your GitHub pages domain. 1196
+
+[p.1197]
+在 IntelliJ IDEA 中入门 Kotlin/Wasm
+Congratulations! You have published your artifacts on GitHub pages.
+下一步做什么？
+Join the Kotlin/Wasm community in Kotlin Slack: Try more Kotlin/Wasm examples:
+Compose image viewer Jetsnack application Node.js example WASI example Compose example
+1197
+

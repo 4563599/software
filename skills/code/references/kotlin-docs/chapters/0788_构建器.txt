@@ -1,0 +1,254 @@
+# 构建器（第 788-802 页）
+
+[p.788]
+构建器
+构建器
+类型安全的构建器 使用带有构建器类型推断的构建器
+788
+
+[p.789]
+构建器
+类型安全的构建器
+通过使用命名得当的函数作为构建器，结合带有接收者的函数字面值， 可以在 Kotlin 中创建 类型安全、静态类型的构建器。
+类型安全的构建器可以创建基于 Kotlin 的适用于采用半声明方式构建复杂层次数据结构领域 专用语言（DSL）。以下是构建器的范例应用场景：
+使用 Kotlin 代码生成标记语言，例如 HTML 或 XML 为 Web 服务器配置路由：Ktor 考虑下面的代码：
+import com.example.html.* // 参见下文声明
+fun result() = html { head { title {+"XML encoding with Kotlin"} } body { h1 {+"XML encoding with Kotlin"} p {+"this format can be used as an alternative markup to XML"}
+// 一个具有属性和文本内容的元素 a(href = "https://kotlinlang.org") {+"Kotlin"}
+// 混合的内容 p{
++"This is some" b {+"mixed"} +"text. For more see the" a(href = "https://kotlinlang.org") {+"Kotlin"} +"project" } p {+"some text"}
+// 以下代码生成的内容 p{
+for (arg in args) +arg
+} } }
+这是完全合法的 Kotlin 代码。 可以在这里在线运行上文代码（修改它并在浏览器中运行）。
+789
+
+[p.790]
+构建器
+实现原理
+Assume that you need to implement a type-safe builder in Kotlin. 首先，定义想要构建的模型。在 本例中我们需要建模 HTML 标签。 用一些类就可以轻易完成。 例如， HTML 是一个描述 <html> 标签的类，它定义了像 <head> 和 <body> 这样的子标签。 （参见下文它的声 明。） 现在，让我们回想下为什么可以在代码中这样写：
+html { // ……
+}
+html 实际上是一个函数调用，它接受一个 lambda 表达式 作为参数。 该函数定义如下：
+fun html(init: HTML.() -> Unit): HTML { val html = HTML() html.init() return html
+}
+这个函数接受一个名为 init 的参数，该参数本身就是一个函数。 该函数的类型是 HTML.() -> Unit ，它是一个带接收者的函数类型。 这意味着需要向函数传递一个 HTML 类型的实例 （接收者）， 并且可以在函数内部调用该实例的成员。 该接收者可以通过 this 关键字访问：
+html { this.head { …… } this.body { …… }
+}
+（ head 和 body 是 HTML 的成员函数。） 现在，像往常一样， this 可以省略掉了，得到的东西看起来已经非常像一个构建器了：
+html { head { …… } body { …… }
+}
+那么，这个调用做什么？ 让我们看看上面定义的 html 函数的主体。 它创建了一个 HTML 的 新实例，然后通过调用作为参数传入的函数来初始化它 （在本例中，归结为在HTML实例上 调用 head 和 body ），然后返回此实例。 这正是构建器所应做的。
+790
+
+[p.791]
+构建器
+HTML 类中的 head 和 body 函数的定义与 html 类似。 唯一的区别是，它们将构建的实例 添加到包含 HTML 实例的 children 集合中：
+fun head(init: Head.() -> Unit): Head { val head = Head() head.init() children.add(head) return head
+}
+fun body(init: Body.() -> Unit): Body { val body = Body() body.init() children.add(body) return body
+}
+实际上这两个函数做同样的事情，所以可以有一个泛型版本， initTag ：
+protected fun <T : Element> initTag(tag: T, init: T.() -> Unit): T { tag.init() children.add(tag) return tag
+}
+所以，现在该函数很简单：
+fun head(init: Head.() -> Unit) = initTag(Head(), init)
+fun body(init: Body.() -> Unit) = initTag(Body(), init)
+并且可以使用它们来构建 <head> 和 <body> 标签。 这里要讨论的另一件事是如何向标签体中添加文本。在上例中这样写到：
+html { head { title {+"XML encoding with Kotlin"} } // ……
+}
+所以基本上，只是把一个字符串放进一个标签体内部，但在它前面有一个小的 + ， 所以它是 一个函数调用，调用一个前缀 unaryPlus() 操作。 该操作实际上是由一个扩展函数 unaryPlus() 定义的，该函数是 TagWithText 抽象类（ Title 的父类）的成员：
+791
+
+[p.792]
+构建器
+operator fun String.unaryPlus() { children.add(TextElement(this))
+}
+所以，在这里前缀 + 所做的事情是把一个字符串包装到一个 TextElement 实例中，并将其 添加到 children 集合中， 以使其成为标签树的一个适当的部分。 所有这些都在上面构建器示例顶部导入的包 com.example.html 中定义。 在最后一节中，你可 以阅读这个包的完整定义。
+作用域控制：@DslMarker
+使用 DSL 时，可能会遇到上下文中可以调用太多函数的问题。 可以调用 lambda 表达式内部 每个可用的隐式接收者的方法，因此得到一个不一致的结果， 就像在另一个 head 内部的 head 标记那样：
+html { head { head {} // 应该禁止 } // ……
+}
+在这个例子中，必须只有最近层的隐式接收者 this@head 的成员可用； head() 是外部接收 者 this@html 的成员，所以调用它一定是非法的。 为了解决这个问题，有一种控制接收者作用域的特殊机制。 为了使编译器开始控制标记，我们只是必须用相同的标记注解来标注在 DSL 中使用的所有接 收者的类型。 例如，对于 HTML 构建器，我们声明一个注解 @HTMLTagMarker ：
+@DslMarker annotation class HtmlTagMarker
+如果一个注解类使用 @DslMarker 注解标注，那么该注解类称为 DSL 标记。 在我们的 DSL 中，所有标签类都扩展了相同的超类 Tag 。 只需使用 @HtmlTagMarker 来标注 超类就足够了，之后，Kotlin 编译器会将所有继承的类视为已标注：
+@HtmlTagMarker abstract class Tag(val name: String) { …… }
+不必用 @HtmlTagMarker 标注 HTML 或 Head 类，因为它们的超类已标注过：
+792
+
+[p.793]
+构建器
+class HTML() : Tag("html") { …… } class Head() : Tag("head") { …… }
+在添加了这个注解之后，Kotlin 编译器就知道哪些隐式接收者是同一个 DSL 的一部分，并且 只允许调用最近层的接收者的成员：
+html { head { head { } // 错误：外部接收者的成员 } // ……
+}
+请注意，仍然可以调用外部接收者的成员，但是要做到这一点，你必须明确指定这个接收 者：
+html { head { this@html.head { } // 可能 } // ……
+}
+You can also apply the @DslMarker annotation directly to function types. Simply annotate the @DslMarker annotation with @Target(AnnotationTarget.TYPE) :
+@Target(AnnotationTarget.TYPE) @DslMarker annotation class HtmlTagMarker
+As a result, the @DslMarker annotation can be applied to function types, most commonly to lambdas with receivers. For example:
+fun html(init: @HtmlTagMarker HTML.() -> Unit): HTML { ... } fun HTML.head(init: @HtmlTagMarker Head.() -> Unit): Head { ... } fun Head.title(init: @HtmlTagMarker Title.() -> Unit): Title { ... }
+When you call these functions, the @DslMarker annotation restricts access to outer receivers in the body of a lambda marked with it unless you specify them explicitly:
+793
+
+[p.794]
+构建器
+html { head { title { // Access to title, head or other functions of outer receivers is restrict
+ed here. }
+} }
+Only the nearest receiver's members and extensions are accessible within a lambda, preventing unintended interactions between nested scopes.
+com.example.html 包的完整定义
+这就是 com.example.html 包的定义（只有上面例子中使用的元素）。 它构建一个 HTML 树。代码中大量使用了扩展函数和带有接收者的 lambda 表达式。
+package com.example.html
+interface Element { fun render(builder: StringBuilder, indent: String)
+}
+class TextElement(val text: String) : Element { override fun render(builder: StringBuilder, indent: String) { builder.append("$indent$text\n") }
+}
+@DslMarker annotation class HtmlTagMarker
+@HtmlTagMarker abstract class Tag(val name: String) : Element {
+val children = arrayListOf<Element>() val attributes = hashMapOf<String, String>()
+protected fun <T : Element> initTag(tag: T, init: T.() -> Unit): T { tag.init() children.add(tag) return tag
+}
+override fun render(builder: StringBuilder, indent: String) { builder.append("$indent<$name${renderAttributes()}>\n") for (c in children) { c.render(builder, indent + " ") } builder.append("$indent</$name>\n")
+794
+
+[p.795]
+构建器
+}
+private fun renderAttributes(): String { val builder = StringBuilder() for ((attr, value) in attributes) { builder.append(" $attr=\"$value\"") } return builder.toString()
+}
+override fun toString(): String { val builder = StringBuilder() render(builder, "") return builder.toString()
+} }
+abstract class TagWithText(name: String) : Tag(name) { operator fun String.unaryPlus() { children.add(TextElement(this)) }
+}
+class HTML : TagWithText("html") { fun head(init: Head.() -> Unit) = initTag(Head(), init)
+fun body(init: Body.() -> Unit) = initTag(Body(), init) }
+class Head : TagWithText("head") { fun title(init: Title.() -> Unit) = initTag(Title(), init)
+}
+class Title : TagWithText("title")
+abstract class BodyTag(name: String) : TagWithText(name) { fun b(init: B.() -> Unit) = initTag(B(), init) fun p(init: P.() -> Unit) = initTag(P(), init) fun h1(init: H1.() -> Unit) = initTag(H1(), init) fun a(href: String, init: A.() -> Unit) { val a = initTag(A(), init) a.href = href }
+}
+class Body : BodyTag("body") class B : BodyTag("b") class P : BodyTag("p") class H1 : BodyTag("h1")
+class A : BodyTag("a") { var href: String get() = attributes["href"]!!
+
+795
+
+[p.796]
+构建器
+set(value) { attributes["href"] = value
+} } fun html(init: HTML.() -> Unit): HTML {
+val html = HTML() html.init() return html }
+796
+
+[p.797]
+构建器
+使用带有构建器类型推断的构建器
+Kotlin supports builder type inference (or builder inference), which can come in useful when you are working with generic builders. It helps the compiler infer the type arguments of a builder call based on the type information about other calls inside its lambda argument. Consider this example of buildMap() usage:
+fun addEntryToMap(baseMap: Map<String, Number>, additionalEntry: Pair<String, Int>?) { val myMap = buildMap { putAll(baseMap) if (additionalEntry != null) { put(additionalEntry.first, additionalEntry.second) } }
+}
+There is not enough type information here to infer type arguments in a regular way, but builder inference can analyze the calls inside the lambda argument. Based on the type information about putAll() and put() calls, the compiler can automatically infer type arguments of the buildMap() call into String and Number . Builder inference allows to omit type arguments while using generic builders.
+Writing your own builders
+Requirements for enabling builder inference
+Before Kotlin 1.7.0, enabling builder inference for a builder function required -Xenablebuilder-inference compiler option. In 1.7.0 the option is enabled by default.
+To let builder inference work for your own builder, make sure its declaration has a builder lambda parameter of a function type with a receiver. There are also two requirements for the receiver type:
+1. It should use the type arguments that builder inference is supposed to infer. For example:
+fun <V> buildList(builder: MutableList<V>.() -> Unit) { ... }
+Note that passing the type parameter's type directly like fun <T> myBuilder(builder: T. () -> Unit) is not yet supported.
+797
+
+[p.798]
+构建器
+2. It should provide public members or extensions that contain the corresponding type parameters in their signature. For example:
+class ItemHolder<T> { private val items = mutableListOf<T>()
+fun addItem(x: T) { items.add(x)
+}
+fun getLastItem(): T? = items.lastOrNull() }
+fun <T> ItemHolder<T>.addAllItems(xs: List<T>) { xs.forEach { addItem(it) }
+}
+fun <T> itemHolderBuilder(builder: ItemHolder<T>.() -> Unit): ItemHolder<T> = ItemHolder<T>().apply(builder)
+fun test(s: String) { val itemHolder1 = itemHolderBuilder { // Type of itemHolder1 is ItemHolder<Str
+ing> addItem(s)
+} val itemHolder2 = itemHolderBuilder { // Type of itemHolder2 is ItemHolder<Str ing>
+addAllItems(listOf(s)) } val itemHolder3 = itemHolderBuilder { // Type of itemHolder3 is ItemHolder<Str ing?>
+val lastItem: String? = getLastItem() // ... } }
+Supported features
+Builder inference supports: Inferring several type arguments
+fun <K, V> myBuilder(builder: MutableMap<K, V>.() -> Unit): Map<K, V> { ... }
+Inferring type arguments of several builder lambdas within one call including interdependent ones
+798
+
+[p.799]
+构建器
+fun <K, V> myBuilder( listBuilder: MutableList<V>.() -> Unit, mapBuilder: MutableMap<K, V>.() -> Unit
+): Pair<List<V>, Map<K, V>> = mutableListOf<V>().apply(listBuilder) to mutableMapOf<K, V>().apply(mapBuilder
+)
+fun main() { val result = myBuilder( { add(1) }, { put("key", 2) } ) // result has Pair<List<Int>, Map<String, Int>> type
+}
+Inferring type arguments whose type parameters are lambda's parameter or return types
+fun <K, V> myBuilder1( mapBuilder: MutableMap<K, V>.() -> K
+): Map<K, V> = mutableMapOf<K, V>().apply { mapBuilder() }
+fun <K, V> myBuilder2( mapBuilder: MutableMap<K, V>.(K) -> Unit
+): Map<K, V> = mutableMapOf<K, V>().apply { mapBuilder(2 as K) }
+fun main() { // result1 has the Map<Long, String> type inferred val result1 = myBuilder1 { put(1L, "value") 2 } val result2 = myBuilder2 { put(1, "value 1") // You can use `it` as "postponed type variable" type // See the details in the section below put(it, "value 2") }
+}
+How builder inference works
+Postponed type variables
+Builder inference works in terms of postponed type variables, which appear inside the builder lambda during builder inference analysis. A postponed type variable is a type argument's type, which is in the process of inferring. The compiler uses it to collect type information about the type argument.
+799
+
+[p.800]
+构建器
+Consider the example with buildList() :
+val result = buildList { val x = get(0)
+}
+Here x has a type of postponed type variable: the get() call returns a value of type E , but E itself is not yet fixed. At this moment, a concrete type for E is unknown. When a value of a postponed type variable gets associated with a concrete type, builder inference collects this information to infer the resulting type of the corresponding type argument at the end of the builder inference analysis. For example:
+val result = buildList { val x = get(0) val y: String = x
+} // result has the List<String> type inferred
+After the postponed type variable gets assigned to a variable of the String type, builder inference gets the information that x is a subtype of String . This assignment is the last statement in the builder lambda, so the builder inference analysis ends with the result of inferring the type argument E into String . Note that you can always call equals() , hashCode() , and toString() functions with a postponed type variable as a receiver.
+Contributing to builder inference results
+Builder inference can collect different varieties of type information that contribute to the analysis result. It considers:
+Calling methods on a lambda's receiver that use the type parameter's type
+val result = buildList { // Type argument is inferred into String based on the passed "value" argument add("value")
+} // result has the List<String> type inferred
+Specifying the expected type for calls that return the type parameter's type
+val result = buildList { // Type argument is inferred into Float based on the expected type val x: Float = get(0)
+} // result has the List<Float> type
+800
+
+[p.801]
+构建器
+class Foo<T> { val items = mutableListOf<T>()
+}
+fun <K> myBuilder(builder: Foo<K>.() -> Unit): Foo<K> = Foo<K>().apply(builder)
+fun main() { val result = myBuilder { val x: List<CharSequence> = items // ... } // result has the Foo<CharSequence> type
+}
+Passing postponed type variables' types into methods that expect concrete types
+fun takeMyLong(x: Long) { ... }
+fun String.isMoreThat3() = length > 3
+fun takeListOfStrings(x: List<String>) { ... }
+fun main() { val result1 = buildList { val x = get(0) takeMyLong(x) } // result1 has the List<Long> type
+val result2 = buildList { val x = get(0) val isLong = x.isMoreThat3()
+// ... } // result2 has the List<String> type
+val result3 = buildList { takeListOfStrings(this)
+} // result3 has the List<String> type }
+Taking a callable reference to the lambda receiver's member
+fun main() { val result = buildList { val x: KFunction1<Int, Float> = ::get } // result has the List<Float> type
+}
+fun takeFunction(x: KFunction1<Int, Float>) { ... }
+801
+
+[p.802]
+构建器
+fun main() { val result = buildList { takeFunction(::get) } // result has the List<Float> type
+}
+At the end of the analysis, builder inference considers all collected type information and tries to merge it into the resulting type. See the example.
+val result = buildList { // Inferring postponed type variable E // Considering E is Number or a subtype of Number val n: Number? = getOrNull(0) // Considering E is Int or a supertype of Int add(1) // E gets inferred into Int
+} // result has the List<Int> type
+The resulting type is the most specific type that corresponds to the type information collected during the analysis. If the given type information is contradictory and cannot be merged, the compiler reports an error. Note that the Kotlin compiler uses builder inference only if regular type inference cannot infer a type argument. This means you can contribute type information outside a builder lambda, and then builder inference analysis is not required. Consider the example:
+fun someMap() = mutableMapOf<CharSequence, String>() fun <E> MutableMap<E, String>.f(x: MutableMap<E, String>) { ... } fun main() {
+val x: Map<in String, String> = buildMap { put("", "") f(someMap()) // Type mismatch (required String, found CharSequence)
+} }
+Here a type mismatch appears because the expected type of the map is specified outside the builder lambda. The compiler analyzes all the statements inside with the fixed receiver type Map<in String, String> .
+802
+

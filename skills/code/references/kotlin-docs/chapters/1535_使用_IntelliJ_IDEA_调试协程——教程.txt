@@ -1,0 +1,114 @@
+# 使用 IntelliJ IDEA 调试协程——教程（第 1535-1545 页）
+
+[p.1535]
+使用 IntelliJ IDEA 调试协程——教程
+使用 IntelliJ IDEA 调试协程——教程
+This tutorial demonstrates how to create Kotlin coroutines and debug them using IntelliJ IDEA. The tutorial assumes you have prior knowledge of the coroutines concept.
+Create coroutines
+1. Open a Kotlin project in IntelliJ IDEA. If you don't have a project, create one. 2. To use the kotlinx.coroutines library in a Gradle project, add the following dependency to
+build.gradle(.kts) :
+【Kotlin】
+dependencies { implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+}
+【Groovy】
+dependencies { implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2'
+}
+For other build systems, see instructions in the kotlinx.coroutines README. 1. Open the Main.kt file in src/main/kotlin . The src directory contains Kotlin source files and resources. The Main.kt file contains sample code that will print Hello World! . 2. Change code in the main() function: Use the runBlocking() block to wrap a coroutine. Use the async() function to create coroutines that compute deferred values a and b . Use the await() function to await the computation result.
+1535
+
+[p.1536]
+使用 IntelliJ IDEA 调试协程——教程 Use the println() function to print computing status and the result of multiplication to the output.
+import kotlinx.coroutines.* fun main() = runBlocking<Unit> {
+val a = async { println("I'm computing part of the answer") 6
+} val b = async {
+println("I'm computing another part of the answer") 7 } println("The answer is ${a.await() * b.await()}") }
+3. Build the code by clicking Build Project.
+Debug coroutines
+1. Set breakpoints at the lines with the println() function call:
+1536
+
+[p.1537]
+使用 IntelliJ IDEA 调试协程——教程
+2. Run the code in debug mode by clicking Debug next to the run configuration at the top of the screen.
+The Debug tool window appears: The Frames tab contains the call stack. The Variables tab contains variables in the current context. The Coroutines tab contains information on running or suspended coroutines. It shows that there are three coroutines. The first one has the RUNNING status, and the other two have the CREATED status.
+3. Resume the debugger session by clicking Resume Program in the Debug tool window: 1537
+
+[p.1538]
+使用 IntelliJ IDEA 调试协程——教程
+Now the Coroutines tab shows the following: The first coroutine has the SUSPENDED status – it is waiting for the values so it can multiply them. The second coroutine is calculating the a value – it has the RUNNING status. The third coroutine has the CREATED status and isn’t calculating the value of b .
+4. Resume the debugger session by clicking Resume Program in the Debug tool window:
+Now the Coroutines tab shows the following: The first coroutine has the SUSPENDED status – it is waiting for the values so it can multiply them. The second coroutine has computed its value and disappeared. The third coroutine is calculating the value of b – it has the RUNNING status.
+Using IntelliJ IDEA debugger, you can dig deeper into each coroutine to debug your code.
+Optimized-out variables
+If you use suspend functions, in the debugger, you might see the "was optimized out" text next to a variable's name:
+1538
+
+[p.1539]
+使用 IntelliJ IDEA 调试协程——教程
+This text means that the variable's lifetime was decreased, and the variable doesn't exist anymore. It is difficult to debug code with optimized variables because you don't see their values. You can disable this behavior with the -Xdebug compiler option.
+Never use this flag in production: -Xdebug can cause memory leaks.
+1539
+
+[p.1540]
+使用 IntelliJ IDEA 调试 Kotlin Flow——教程
+使用 IntelliJ IDEA 调试 Kotlin Flow——教程
+This tutorial demonstrates how to create Kotlin Flow and debug it using IntelliJ IDEA. The tutorial assumes you have prior knowledge of the coroutines and Kotlin Flow concepts.
+Create a Kotlin flow
+Create a Kotlin flow with a slow emitter and a slow collector: 1. Open a Kotlin project in IntelliJ IDEA. If you don't have a project, create one. 2. To use the kotlinx.coroutines library in a Gradle project, add the following dependency to build.gradle(.kts) :
+【Kotlin】
+dependencies { implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+}
+【Groovy】
+dependencies { implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2'
+}
+For other build systems, see instructions in the kotlinx.coroutines README. 1. Open the Main.kt file in src/main/kotlin . The src directory contains Kotlin source files and resources. The Main.kt file contains sample code that will print Hello World! . 2. Create the simple() function that returns a flow of three numbers: Use the delay() function to imitate CPU-consuming blocking code. It suspends the coroutine for 100 ms without blocking the thread.
+1540
+
+[p.1541]
+使用 IntelliJ IDEA 调试 Kotlin Flow——教程
+Produce the values in the for loop using the emit() function.
+import kotlinx.coroutines.* import kotlinx.coroutines.flow.* import kotlin.system.* fun simple(): Flow<Int> = flow {
+for (i in 1..3) { delay(100) emit(i)
+} }
+3. Change the code in the main() function: Use the runBlocking() block to wrap a coroutine. Collect the emitted values using the collect() function. Use the delay() function to imitate CPU-consuming code. It suspends the coroutine for 300 ms without blocking the thread. Print the collected value from the flow using the println() function.
+fun main() = runBlocking { simple() .collect { value -> delay(300) println(value) }
+}
+4. Build the code by clicking Build Project.
+Debug the coroutine
+1. Set a breakpoint at the line where the emit() function is called:
+1541
+
+[p.1542]
+使用 IntelliJ IDEA 调试 Kotlin Flow——教程
+2. Run the code in debug mode by clicking Debug next to the run configuration at the top of the screen.
+The Debug tool window appears: The Frames tab contains the call stack. The Variables tab contains variables in the current context. It tells us that the flow is emitting the first value. The Coroutines tab contains information on running or suspended coroutines.
+1542
+
+[p.1543]
+使用 IntelliJ IDEA 调试 Kotlin Flow——教程
+3. Resume the debugger session by clicking Resume Program in the Debug tool window. The program stops at the same breakpoint.
+Now the flow emits the second value.
+Optimized-out variables
+If you use suspend functions, in the debugger, you might see the "was optimized out" text next to a variable's name:
+1543
+
+[p.1544]
+使用 IntelliJ IDEA 调试 Kotlin Flow——教程
+This text means that the variable's lifetime was decreased, and the variable doesn't exist anymore. It is difficult to debug code with optimized variables because you don't see their values. You can disable this behavior with the -Xdebug compiler option.
+Never use this flag in production: -Xdebug can cause memory leaks.
+Add a concurrently running coroutine
+1. Open the Main.kt file in src/main/kotlin . 2. Enhance the code to run the emitter and collector concurrently:
+Add a call to the buffer() function to run the emitter and collector concurrently. buffer() stores emitted values and runs the flow collector in a separate coroutine.
+fun main() = runBlocking<Unit> { simple() .buffer() .collect { value -> delay(300) println(value) }
+}
+3. Build the code by clicking Build Project. 1544
+
+[p.1545]
+使用 IntelliJ IDEA 调试 Kotlin Flow——教程
+Debug a Kotlin flow with two coroutines
+1. Set a new breakpoint at println(value) . 2. Run the code in debug mode by clicking Debug next to the run configuration at the top of the
+screen.
+The Debug tool window appears. In the Coroutines tab, you can see that there are two coroutines running concurrently. The flow collector and emitter run in separate coroutines because of the buffer() function. The buffer() function buffers emitted values from the flow. The emitter coroutine has the RUNNING status, and the collector coroutine has the SUSPENDED status. 3. Resume the debugger session by clicking Resume Program in the Debug tool window.
+Now the collector coroutine has the RUNNING status, while the emitter coroutine has the SUSPENDED status. You can dig deeper into each coroutine to debug your code.
+1545
+

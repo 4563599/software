@@ -1,0 +1,8 @@
+# 学习资料概述（第 1947-1947 页）
+
+[p.1947]
+学习资料概述
+学习资料概述
+You can use the following materials and resources for learning Kotlin: Basic syntax – get a quick overview of the Kotlin syntax. Idioms – learn how to write idiomatic Kotlin code for popular cases. Java to Kotlin migration guide: Strings – learn how to perform typical tasks with strings in Java and Kotlin. Java to Kotlin migration guide: Collections — learn how to perform typical tasks with collections in Java and Kotlin. Java to Kotlin migration guide: Nullability — learn how to handle nullability in Java and Kotlin. Kotlin Koans – complete exercises to learn the Kotlin syntax. Each exercise is created as a failing unit test and your job is to make it pass. Recommended for developers with Java experience. Kotlin by example – review a set of small and simple annotated examples for the Kotlin syntax. Kotlin Core track by JetBrains Academy – learn all the Kotlin essentials while creating working applications step by step. Kotlin books – find books we've reviewed and recommend for learning Kotlin. Kotlin tips – watch short videos where the Kotlin team shows you how to use Kotlin in a more efficient and idiomatic way, so you can have more fun when writing code. Advent of Code puzzles – learn idiomatic Kotlin and test your language skills by completing short and fun tasks. Kotlin hands-on tutorials – complete long-form tutorials to fully grasp a technology. These tutorials guide you through a self-contained project related to a specific topic. Kotlin for Java Developers – learn the similarities and differences between Java and Kotlin in this course on Coursera. Kotlin documentation in PDF format – read our documentation offline.
+1947
+

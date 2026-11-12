@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!--PAGETITLE--></title>
+<style>
+:root{
+  --bg:#f5f6f8;--card:#fff;--text:#1d2129;--sub:#646c78;--line:#e2e5ea;
+  --accent:#2f6fde;--accent-bg:#eaf1fd;--warn:#c4361c;--warn-bg:#fdeeea;
+  --code-bg:#fafbfc;--code-line:#eceff3;--add-bg:#e6f6ea;--add-fg:#116329;--del-bg:#fdecec;--del-fg:#a1281c;--gutter:#8a919b;--hunk-bg:#eef2f8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141619;--card:#1d2024;--text:#e4e6ea;--sub:#9aa1ab;--line:#2f333a;
+    --accent:#6f9cf0;--accent-bg:#1e2a40;--warn:#f08a72;--warn-bg:#3a2420;
+    --code-bg:#16181b;--code-line:#262a30;--add-bg:#17311f;--add-fg:#7ee2a0;--del-bg:#3a1d1b;--del-fg:#ff9b8e;--gutter:#6b727c;--hunk-bg:#1f2633;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141619;--card:#1d2024;--text:#e4e6ea;--sub:#9aa1ab;--line:#2f333a;
+  --accent:#6f9cf0;--accent-bg:#1e2a40;--warn:#f08a72;--warn-bg:#3a2420;
+  --code-bg:#16181b;--code-line:#262a30;--add-bg:#17311f;--add-fg:#7ee2a0;--del-bg:#3a1d1b;--del-fg:#ff9b8e;--gutter:#6b727c;--hunk-bg:#1f2633;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+code{background:var(--code-line);padding:0 4px;border-radius:3px;font:13.5px Consolas,"JetBrains Mono",monospace;word-break:break-all}
+.layout{display:grid;grid-template-columns:270px minmax(0,1fr);min-height:100vh}
+aside{position:sticky;top:0;height:100vh;overflow:auto;background:var(--card);border-right:1px solid var(--line);padding:14px 8px}
+aside h2{font-size:15px;margin:0 6px 8px}
+aside input{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:8px}
+.nav .ni{display:flex;align-items:center;gap:4px;border-radius:6px;padding-right:6px}
+.nav .ni:hover{background:var(--accent-bg)}
+.nav .ni a{flex:1;min-width:0;display:flex;gap:6px;align-items:baseline;padding:5px 4px 5px 6px;color:var(--text);text-decoration:none;font-size:14px;line-height:1.45}
+.nav .no{color:var(--sub);min-width:18px;text-align:right}
+.nav .nm{flex:1;word-break:break-all}
+.vl{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--sub);white-space:nowrap;cursor:pointer;user-select:none}
+.vl .vchk{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.vl .bx{width:18px;height:18px;flex:none;border:2px solid #9aa1ab;border-radius:4px;background:var(--card);display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;line-height:1;color:transparent}
+.vl:hover .bx{border-color:var(--add-fg)}
+.vl .tx::after{content:"未验证"}
+.vl .vchk:checked + .bx{background:var(--add-fg);border-color:var(--add-fg);color:#fff}
+.vl .vchk:checked + .bx::after{content:"✓"}
+.vl .vchk:checked ~ .tx{color:var(--add-fg);font-weight:600}
+.vl .vchk:checked ~ .tx::after{content:"已验证"}
+.vl .vchk:focus-visible + .bx{outline:2px solid var(--accent);outline-offset:1px}
+.fh .vl{float:right;font-size:13.5px}
+.nav .ni.cur{background:var(--accent)}
+.nav .ni.cur a,.nav .ni.cur .no,.nav .ni.cur .tx{color:#fff}
+.nav .ni:has(.vchk:checked) .nm{color:var(--add-fg)}
+.nav .ni.cur:has(.vchk:checked) .nm,.nav .ni.cur .vchk:checked ~ .tx{color:#fff}
+.nav .ni.cur .vl .bx{border-color:#fff}
+main{padding:16px 16px 80px;min-width:0}
+h1{font-size:22px;margin:0 0 4px}
+.meta{color:var(--sub);font-size:14px;margin-bottom:12px}
+.alert{background:var(--warn-bg);border-left:4px solid var(--warn);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:14px}
+.alert b{color:var(--warn)}
+.info{background:var(--accent-bg);border-left-color:var(--accent)}
+.info b{color:var(--accent)}
+.bar{display:flex;gap:8px;align-items:center;margin:14px 0 10px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--text);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:13px}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.prog{margin-left:auto;color:var(--sub);font-size:14px}
+.jsonly{display:none}
+.js .jsonly{display:revert}
+
+/* 外层表格固定列宽，长代码只在代码框内部横向滚动 */
+table.t{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;background:var(--card);border:1px solid var(--line);border-radius:8px}
+.t col.c3{width:60%} .t col.c4{width:40%}
+.t thead th{position:sticky;top:0;z-index:3;background:var(--accent-bg);text-align:left;padding:9px 12px;font-size:14px;border-bottom:1px solid var(--line)}
+.t thead th:first-child{border-top-left-radius:8px}
+.t thead th:last-child{border-top-right-radius:8px}
+.t>tbody>tr>td{padding:8px 10px;vertical-align:top;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.t tbody.file{scroll-margin-top:44px}
+.t tbody.file.flash>tr>td{animation:fl 1.4s}
+@keyframes fl{0%{background:var(--accent-bg)}100%{background:transparent}}
+.t td.rs,.t td.vf{font-size:14px;line-height:1.65}
+.t tr.fh>td{position:sticky;top:0;z-index:2;background:var(--hunk-bg);padding:7px 10px;border-bottom:1px solid var(--line);font-size:14.5px}
+.fh .idx{display:inline-block;background:var(--accent);color:#fff;border-radius:4px;font-size:13px;padding:0 6px;margin-right:8px;white-space:nowrap}
+.fh .base{font-weight:600;margin-right:8px}
+.fh .dir{color:var(--sub);font-size:13px;margin-right:8px;word-break:break-all}
+.fh .cnt{color:var(--sub);font-size:13px;white-space:nowrap;margin-right:10px}
+.fh .new{display:inline-block;border:1px solid var(--add-fg);color:var(--add-fg);font-size:11px;font-weight:400;border-radius:3px;padding:0 4px;margin-left:6px;white-space:nowrap}
+.fh .del{display:inline-block;border:1px solid var(--del-fg);color:var(--del-fg);font-size:11px;font-weight:400;border-radius:3px;padding:0 4px;margin-left:6px;white-space:nowrap}
+.fh .warnt{display:inline-block;background:var(--warn);color:#fff;font-size:11px;border-radius:3px;padding:0 5px;margin-left:6px}
+.t tr.warn>td.rs,.t tr.warn>td.vf{background:var(--warn-bg)}
+.t tr.hk-code>td{border-bottom:none;padding-bottom:4px}
+.t tr.hk-note>td{padding-top:6px;padding-bottom:16px;border-bottom:2px solid var(--line)}
+.t tr.hk-note>td.rs{border-right:1px dashed var(--line)}
+tbody.done>tr:not(.fh)>td{opacity:.55}
+.rs .k,.vf .k{display:block;color:var(--accent);font-weight:600;font-size:13px;margin-bottom:4px}
+.rs .k2{font-weight:600;font-size:14px;margin:8px 0 4px;padding-left:8px;border-left:3px solid var(--accent)}
+.rs ol.ex{margin:0 0 8px;padding:0;list-style:none;counter-reset:ex}
+.rs ol.ex li{counter-increment:ex;position:relative;padding:5px 0 6px 22px;border-bottom:1px dashed var(--line)}
+.rs ol.ex li:last-child{border-bottom:none}
+.rs ol.ex li::before{content:counter(ex);position:absolute;left:0;top:8px;width:18px;height:18px;line-height:18px;text-align:center;font-size:12px;border-radius:50%;background:var(--accent-bg);color:var(--accent)}
+.rs ol.ex li{padding-left:26px}
+.rs pre.exc{margin:0 0 4px;padding:5px 8px;background:var(--code-line);border-radius:4px;font:13px/1.55 Consolas,"JetBrains Mono",monospace;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4}
+.rs .mean{display:block;color:var(--text)}
+.rs .syn{display:block;margin-top:4px;padding:4px 8px;border-radius:4px;background:var(--accent-bg);font-size:13.5px;color:var(--text)}
+.rs .syn b{color:var(--accent);margin-right:6px}
+.rs .syn .sh{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px}
+.rs .syn .sname{font-weight:600}
+.rs .syn .sdoc{font-size:12.5px;color:var(--sub)}
+.rs .syn .stext{display:block;margin-top:2px}
+b.w{color:var(--warn)}
+
+/* 代码框：完整显示全部代码，不换行；过长的行在框内左右滚动，行号列固定在左边 */
+.box{border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--code-bg);position:relative}
+.box .hd{display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--hunk-bg);border-bottom:1px solid var(--line);font-size:13px}
+.box .hd .k{font-weight:600;color:var(--accent);white-space:nowrap}
+.box .hd .c{color:var(--sub);font-family:Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.box .sc{overflow-x:auto;overflow-y:hidden}
+table.code{border-collapse:separate;border-spacing:0;min-width:100%;width:max-content;font:13.5px/1.6 Consolas,"JetBrains Mono","Courier New",monospace}
+.code td{padding:0 8px;border:none;white-space:pre;vertical-align:top}
+.code td.g{position:sticky;width:42px;min-width:42px;max-width:42px;color:var(--gutter);text-align:right;user-select:none;padding:0 6px;background:var(--code-line);font-size:12.5px}
+.code td.g:first-child{left:0}
+.code td.g:nth-child(2){left:42px}
+.code td.m{width:16px;min-width:16px;user-select:none;padding:0 2px 0 6px}
+.code td.s{width:auto}
+.code .cm{color:#5f7f9e;font-style:italic}
+.code tr.a .cm{color:#4f7f52}
+.code tr.d .cm{color:#9a6a55}
+details.fold>summary{cursor:pointer;list-style:none}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary .c::before{content:"▸ "}
+details.fold[open]>summary .c::before{content:"▾ "}
+details.fold:not([open])>summary{border-bottom:none}
+.code tr.a{background:var(--add-bg)} .code tr.a td.s,.code tr.a td.m{color:var(--add-fg)}
+.code tr.d{background:var(--del-bg)} .code tr.d td.s,.code tr.d td.m{color:var(--del-fg)}
+.hidden{display:none!important}
+
+/* 窄屏（包括侧边栏预览）：文件列表放到顶部，表格每格单独一行 */
+@media (max-width:1000px){
+  .layout{display:block}
+  aside{position:static;height:auto;max-height:230px;border-right:none;border-bottom:1px solid var(--line)}
+  .nav{columns:2;column-gap:8px}
+  .nav .ni{break-inside:avoid}
+  main{padding:14px 16px 60px}
+  .t,.t>tbody{display:block;width:100%}
+  .t>tbody>tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .t>tbody>tr>td{display:block;min-width:0}
+  .t>tbody>tr>td.cd,.t>tbody>tr.fh>td{grid-column:1 / -1}
+  .t>tbody>tr>td.rs{border-right:1px solid var(--line)}
+  .t thead,.t colgroup{display:none}
+  .t tr.fh>td{position:static}
+}
+@media (max-width:560px){.nav{columns:1}}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside id="side">
+    <h2>文件列表（git 顺序）</h2>
+    <input type="search" id="q" class="jsonly" placeholder="筛选文件名…">
+    <div class="nav" id="nav">
+<!--NAV-->
+    </div>
+  </aside>
+  <main>
+    <h1><!--TITLE--></h1>
+    <div class="meta"><!--META--> · 点左侧文件名跳转，验证完点方框打勾（左侧列表和文件栏里都可以勾） · 代码不换行，过长的行在代码框内左右滚动 · 绿色为新增行，红色为删除行 · 导包、布局和资源文件不逐句解释</div>
+    <!--ALERTS-->
+    <div class="bar jsonly">
+      <span class="prog" id="prog"></span>
+    </div>
+    <table class="t">
+      <colgroup><col class="c3"><col class="c4"></colgroup>
+<!--ROWS-->
+    </table>
+  </main>
+</div>
+<script>
+// 以下只是增强功能（记住勾选、筛选、全部展开、高亮当前文件），不执行也不影响内容显示
+document.documentElement.classList.add("js");
+const KEY="lyycode_<!--KEY-->_done", TOTAL=<!--TOTAL-->;
+let done={};try{done=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(done))}catch(e){}};
+const nav=document.getElementById("nav");
+const items=[...nav.querySelectorAll(".ni")];
+const boxesOf=f=>[...document.querySelectorAll(".vchk")].filter(c=>c.closest("[data-f]")&&c.closest("[data-f]").dataset.f===f);
+const navOf=f=>items.find(n=>n.dataset.f===f);
+const bodies=[...document.querySelectorAll("tbody.file")];
+const bodyOf=f=>bodies.find(t=>t.dataset.f===f);
+const prog=()=>{document.getElementById("prog").textContent=`已验证 ${Object.keys(done).length} / ${TOTAL} 个文件`};
+items.forEach(ni=>{
+  const f=ni.dataset.f, tb=bodyOf(f), boxes=boxesOf(f);
+  const apply=()=>{boxes.forEach(c=>c.checked=!!done[f]);tb&&tb.classList.toggle("done",!!done[f])};
+  apply();
+  boxes.forEach(c=>c.onchange=()=>{if(c.checked)done[f]=1;else delete done[f];save();apply();prog()});
+  ni.querySelector("a").addEventListener("click",()=>{if(!tb)return;tb.classList.remove("flash");void tb.offsetWidth;tb.classList.add("flash")});
+});
+prog();
+document.getElementById("q").oninput=e=>{
+  const q=e.target.value.trim().toLowerCase();
+  items.forEach(n=>n.classList.toggle("hidden",!!q&&!n.dataset.f.toLowerCase().includes(q)));
+  bodies.forEach(t=>t.classList.toggle("hidden",!!q&&!t.dataset.f.toLowerCase().includes(q)));
+};
+if("IntersectionObserver" in window){
+  const io=new IntersectionObserver(es=>{es.forEach(en=>{if(en.isIntersecting){
+    items.forEach(n=>n.classList.remove("cur"));
+    const a=navOf(en.target.dataset.f);if(a){a.classList.add("cur");if(getComputedStyle(document.getElementById("side")).position==="sticky")a.scrollIntoView({block:"nearest"})}
+  }})},{rootMargin:"-45% 0px -50% 0px"});
+  bodies.forEach(t=>io.observe(t));
+}
+</script>
+</body>
+</html>

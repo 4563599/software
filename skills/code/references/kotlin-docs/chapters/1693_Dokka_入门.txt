@@ -1,0 +1,32 @@
+# Dokka 入门（第 1693-1694 页）
+
+[p.1693]
+Dokka 入门
+Dokka 入门
+Below you can find simple instructions to help you get started with Dokka.
+【Gradle Kotlin DSL】 Apply the Gradle plugin for Dokka in the root build script of your project:
+plugins { id("org.jetbrains.dokka") version "2.0.0"
+}
+When documenting multi-project builds, you need to apply the Gradle plugin within subprojects as well:
+subprojects { apply(plugin = "org.jetbrains.dokka")
+}
+To generate documentation, run the following Gradle tasks: dokkaHtml for single-project builds dokkaHtmlMultiModule for multi-project builds
+By default, the output directory is set to /build/dokka/html and /build/dokka/htmlMultiModule . To learn more about using Dokka with Gradle, see Gradle.
+【Gradle Groovy DSL】 Apply the Gradle plugin for Dokka in the root build script of your project:
+plugins { id 'org.jetbrains.dokka' version '2.0.0'
+}
+When documenting multi-project builds, you need to apply the Gradle plugin within subprojects as well:
+1693
+
+[p.1694]
+Dokka 入门
+subprojects { apply plugin: 'org.jetbrains.dokka'
+}
+To generate documentation, run the following Gradle tasks: dokkaHtml for single-project builds dokkaHtmlMultiModule for multi-project builds
+By default, the output directory is set to /build/dokka/html and /build/dokka/htmlMultiModule . To learn more about using Dokka with Gradle, see Gradle.
+【Maven】 Add the Maven plugin for Dokka to the plugins section of your POM file:
+<build> <plugins> <plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> <version>2.0.0</version> <executions> <execution> <phase>pre-site</phase> <goals> <goal>dokka</goal> </goals> </execution> </executions> </plugin> </plugins>
+</build>
+To generate documentation, run the dokka:dokka goal. By default, the output directory is set to target/dokka . To learn more about using Dokka with Maven, see Maven.
+1694
+

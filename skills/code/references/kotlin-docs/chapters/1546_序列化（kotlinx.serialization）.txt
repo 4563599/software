@@ -1,0 +1,230 @@
+# 序列化（kotlinx.serialization）（第 1546-1560 页）
+
+[p.1546]
+序列化（kotlinx.serialization）
+序列化
+Serialization is the process of converting data used by an application to a format that can be transferred over a network or stored in a database or a file. In turn, deserialization is the opposite process of reading data from an external source and converting it into a runtime object. Together, they are essential to most applications that exchange data with third parties. Some data serialization formats, such as JSON and protocol buffers are particularly common. Being language-neutral and platform-neutral, they enable data exchange between systems written in any modern language. In Kotlin, data serialization tools are available in a separate component, kotlinx.serialization. It consists of several parts: the org.jetbrains.kotlin.plugin.serialization Gradle plugin, runtime libraries, and compiler plugins. Compiler plugins, kotlinx-serialization-compiler-plugin and kotlinx-serializationcompiler-plugin-embeddable , are published directly to Maven Central. The second plugin is designed for working with the kotlin-compiler-embeddable artifact, which is the default option for scripting artifacts. Gradle adds compiler plugins to your projects as compiler arguments.
+Libraries
+kotlinx.serialization provides sets of libraries for all supported platforms – JVM, JavaScript, Native – and for various serialization formats – JSON, CBOR, protocol buffers, and others. You can find the complete list of supported serialization formats below. All Kotlin serialization libraries belong to the org.jetbrains.kotlinx: group. Their names start with kotlinx-serialization- and have suffixes that reflect the serialization format. Examples:
+org.jetbrains.kotlinx:kotlinx-serialization-json provides JSON serialization for Kotlin projects. org.jetbrains.kotlinx:kotlinx-serialization-cbor provides CBOR serialization. Platform-specific artifacts are handled automatically; you don't need to add them manually. Use the same dependencies in JVM, JS, Native, and multiplatform projects. Note that the kotlinx.serialization libraries use their own versioning structure, which doesn't match Kotlin's versioning. Check out the releases on GitHub to find the latest versions.
+Formats
+1546
+
+[p.1547]
+序列化（kotlinx.serialization）
+kotlinx.serialization includes libraries for various serialization formats: JSON: kotlinx-serialization-json Protocol buffers: kotlinx-serialization-protobuf CBOR: kotlinx-serialization-cbor Properties: kotlinx-serialization-properties HOCON: kotlinx-serialization-hocon (only on JVM)
+Note that all libraries except JSON serialization ( kotlinx-serialization-json ) are Experimental, which means their API can be changed without notice. There are also community-maintained libraries that support more serialization formats, such as YAML or Apache Avro. For detailed information about available serialization formats, see the kotlinx.serialization documentation.
+Example: JSON serialization
+Let's take a look at how to serialize Kotlin objects into JSON.
+Add plugins and dependencies
+Before starting, you must configure your build script so that you can use Kotlin serialization tools in your project:
+1. Apply the Kotlin serialization Gradle plugin org.jetbrains.kotlin.plugin.serialization (or kotlin("plugin.serialization") in the Kotlin Gradle DSL).
+【Kotlin】
+plugins { kotlin("jvm") version "2.1.21" kotlin("plugin.serialization") version "2.1.21"
+}
+
+【Groovy】
+plugins { id 'org.jetbrains.kotlin.jvm' version '2.1.21' id 'org.jetbrains.kotlin.plugin.serialization' version '2.1.21'
+}
+
+1547
+
+[p.1548]
+序列化（kotlinx.serialization）
+1. Add the JSON serialization library dependency: org.jetbrains.kotlinx:kotlinx-
+serialization-json:1.8.1
+【Kotlin】
+dependencies { implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+}
+
+【Groovy】
+dependencies { implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1'
+}
+
+Now you're ready to use the serialization API in your code. The API is located in the kotlinx.serialization package and its format-specific subpackages, such as kotlinx.serialization.json .
+Serialize and deserialize JSON
+1. Make a class serializable by annotating it with @Serializable .
+import kotlinx.serialization.Serializable @Serializable data class Data(val a: Int, val b: String)
+1. Serialize an instance of this class by calling Json.encodeToString() .
+import kotlinx.serialization.Serializable import kotlinx.serialization.json.Json import kotlinx.serialization.encodeToString @Serializable data class Data(val a: Int, val b: String) fun main() {
+
+1548
+
+[p.1549]
+序列化（kotlinx.serialization）
+val json = Json.encodeToString(Data(42, "str")) }
+As a result, you get a string containing the state of this object in the JSON format: {"a": 42, "b":
+"str"}
+You can also serialize object collections, such as lists, in a single call:
+val dataList = listOf(Data(42, "str"), Data(12, "test")) val jsonList = Json.encodeToString(dataList)
+1. Use the decodeFromString() function to deserialize an object from JSON:
+import kotlinx.serialization.Serializable import kotlinx.serialization.json.Json import kotlinx.serialization.decodeFromString @Serializable data class Data(val a: Int, val b: String) fun main() {
+val obj = Json.decodeFromString<Data>("""{"a":42, "b": "str"}""") }
+That's it! You have successfully serialized objects into JSON strings and deserialized them back into objects.
+下一步做什么
+For more information about serialization in Kotlin, see the Kotlin Serialization Guide. You can explore different aspects of Kotlin serialization in the following resources:
+Learn more about Kotlin serialization and its core concepts Explore the built-in serializable classes of Kotlin Look at serializers in more detail and learn how to create custom serializers Discover how polymorphic serialization is handled in Kotlin Look into the various JSON features handling Kotlin serialization Learn more about the experimental serialization formats supported by Kotlin
+1549
+
+[p.1550]
+序列化（kotlinx.serialization） 1550
+
+[p.1551]
+Kotlin Metadata JVM（kotlin-metadata-jvm）
+
+Kotlin Metadata JVM 库
+The kotlin-metadata-jvm library provides tools to read, modify, and generate metadata from Kotlin classes compiled for the JVM. This metadata, stored in the @Metadata annotation within .class files, is used by libraries and tools such as kotlin-reflect to inspect Kotlin-specific constructs such as properties, functions, and classes at runtime.
+The kotlin-reflect library relies on metadata to retrieve Kotlin-specific class details at runtime. Any inconsistencies between the metadata and the actual .class file may lead to incorrect behavior when using reflection.
+You can also use the Kotlin Metadata JVM library to inspect various declaration attributes such as visibility or modality, or to generate and embed metadata into .class files.
+Add the library to your project
+To include the Kotlin Metadata JVM library in your project, add the corresponding dependency configuration based on your build tool.
+The Kotlin Metadata JVM library follows the same versioning as the Kotlin compiler and standard library. Ensure that the version you use matches your project's Kotlin version.
+
+Gradle
+Add the following dependency to your build.gradle(.kts) file:
+【Kotlin】
+// build.gradle.kts repositories {
+mavenCentral() }
+dependencies { implementation("org.jetbrains.kotlin:kotlin-metadata-jvm:2.1.21")
+}
+
+1551
+
+[p.1552]
+Kotlin Metadata JVM（kotlin-metadata-jvm）
+【Groovy】
+// build.gradle repositories {
+mavenCentral() }
+dependencies { implementation 'org.jetbrains.kotlin:kotlin-metadata-jvm:2.1.21'
+}
+Maven
+Add the following dependency to your pom.xml file.
+<project> <dependencies> <dependency> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-metadata-jvm</artifactId> <version>2.1.21</version> </dependency> </dependencies> ...
+</project>
+Read and parse metadata
+The kotlin-metadata-jvm library extracts structured information from compiled Kotlin .class files, such as class names, visibility, and signatures. You can use it in projects that need to analyze compiled Kotlin declarations. For example, the Binary Compatibility Validator (BCV) relies on kotlin-metadata-jvm to print public API declarations. You can start exploring Kotlin class metadata by retrieving the @Metadata annotation from a compiled class using reflection:
+fun main() { // Specifies the fully qualified name of the class val clazz = Class.forName("org.example.SampleClass")
+// Retrieves the @Metadata annotation val metadata = clazz.getAnnotation(Metadata::class.java)
+1552
+
+[p.1553]
+Kotlin Metadata JVM（kotlin-metadata-jvm）
+// Checks if the metadata is present if (metadata != null) {
+println("This is a Kotlin class with metadata.") } else {
+println("This is not a Kotlin class.") } }
+After retrieving the @Metadata annotation, use either the readLenient() or the readStrict() function from the KotlinClassMetadata API to parse it. These functions extract detailed information about classes or files, while addressing different compatibility requirements:
+readLenient() : Use this function to read metadata, including metadata generated by newer Kotlin compiler versions. This function doesn't support modifying or writing metadata. readStrict() : Use this function when you need to modify and write metadata. The readStrict() function only works with metadata generated by Kotlin compiler versions fully supported by your project.
+The readStrict() function supports metadata formats up to one version beyond JvmMetadataVersion.LATEST_STABLE_SUPPORTED , which corresponds to the latest Kotlin version used in the project. For example, if your project depends on kotlin-metadatajvm:2.1.0 , readStrict() can process metadata up to Kotlin 2.2.x ; otherwise, it throws an error to prevent mishandling unknown formats.
+For more information, see the Kotlin Metadata GitHub repository.
+When parsing metadata, the KotlinClassMetadata instance provides structured information about class or file-level declarations. For classes, use the kmClass property to analyze detailed class-level metadata, such as the class name, functions, properties, and attributes like visibility. For file-level declarations, the metadata is represented by the kmPackage property, which includes top-level functions and properties from file facades generated by the Kotlin compiler.
+The following code example demonstrates how to use readLenient() to parse metadata, analyze class-level details with kmClass , and retrieve file-level declarations with kmPackage :
+// Imports the necessary libraries import kotlin.metadata.jvm.* import kotlin.metadata.*
+fun main() { // Specifies the fully qualified class name val className = "org.example.SampleClass"
+try {
+1553
+
+[p.1554]
+Kotlin Metadata JVM（kotlin-metadata-jvm）
+// Retrieves the class object for the specified name val clazz = Class.forName(className)
+// Retrieves the @Metadata annotation val metadataAnnotation = clazz.getAnnotation(Metadata::class.java) if (metadataAnnotation != null) {
+println("Kotlin Metadata found for class: $className")
+// Parses metadata using the readLenient() function val metadata = KotlinClassMetadata.readLenient(metadataAnnotation) when (metadata) {
+is KotlinClassMetadata.Class -> { val kmClass = metadata.kmClass println("Class name: ${kmClass.name}")
+// Iterates over functions and checks visibility kmClass.functions.forEach { function ->
+val visibility = function.visibility println("Function: ${function.name}, Visibility: $visibility") } } is KotlinClassMetadata.FileFacade -> { val kmPackage = metadata.kmPackage
+// Iterates over functions and checks visibility kmPackage.functions.forEach { function ->
+val visibility = function.visibility println("Function: ${function.name}, Visibility: $visibility") } } else -> { println("Unsupported metadata type: $metadata") } } } else { println("No Kotlin Metadata found for class: $className") } } catch (e: ClassNotFoundException) { println("Class not found: $className") } catch (e: Exception) { println("Error processing metadata: ${e.message}") e.printStackTrace() } }
+Extract metadata from bytecode
+While you can retrieve metadata using reflection, another approach is to extract it from bytecode using a bytecode manipulation framework such as ASM.
+You can do this by following these steps:
+1554
+
+[p.1555]
+Kotlin Metadata JVM（kotlin-metadata-jvm）
+1. Read the bytecode of a .class file using the ASM library's ClassReader class. This class processes the compiled file and populates a ClassNode object, which represents the class structure.
+2. Extract the @Metadata from the ClassNode object. The example below uses a custom extension function findAnnotation() for this.
+3. Parse the extracted metadata using the KotlinClassMetadata.readLenient() function. 4. Inspect the parsed metadata with the kmClass and kmPackage properties.
+Here's an example:
+// Imports the necessary libraries import kotlin.metadata.jvm.* import kotlin.metadata.* import org.objectweb.asm.* import org.objectweb.asm.tree.* import java.io.File
+// Checks if an annotation refers to a specific name fun AnnotationNode.refersToName(name: String) =
+desc.startsWith('L') && desc.endsWith(';') && desc.regionMatches(1, name, 0, name. length)
+// Retrieves annotation values by key private fun List<Any>.annotationValue(key: String): Any? {
+for (index in (0 until size / 2)) { if (this[index * 2] == key) { return this[index * 2 + 1] }
+} return null }
+// Defines a custom extension function to locate an annotation by its name in a ClassN ode fun ClassNode.findAnnotation(annotationName: String, includeInvisible: Boolean = false) : AnnotationNode? {
+val visible = visibleAnnotations?.firstOrNull { it.refersToName(annotationName) } if (!includeInvisible) return visible return visible ?: invisibleAnnotations?.firstOrNull { it.refersToName(annotationNa me) } }
+// Operator to simplify retrieving annotation values operator fun AnnotationNode.get(key: String): Any? = values.annotationValue(key)
+// Extracts Kotlin metadata from a class node fun ClassNode.readMetadataLenient(): KotlinClassMetadata? {
+val metadataAnnotation = findAnnotation("kotlin/Metadata", false) ?: return null @Suppress("UNCHECKED_CAST") val metadata = Metadata(
+1555
+
+[p.1556]
+Kotlin Metadata JVM（kotlin-metadata-jvm）
+kind = metadataAnnotation["k"] as Int?, metadataVersion = (metadataAnnotation["mv"] as List<Int>?)?.toIntArray(), data1 = (metadataAnnotation["d1"] as List<String>?)?.toTypedArray(), data2 = (metadataAnnotation["d2"] as List<String>?)?.toTypedArray(), extraString = metadataAnnotation["xs"] as String?, packageName = metadataAnnotation["pn"] as String?, extraInt = metadataAnnotation["xi"] as Int? ) return KotlinClassMetadata.readLenient(metadata) }
+// Converts a file to a ClassNode for bytecode inspection fun File.toClassNode(): ClassNode {
+val node = ClassNode() this.inputStream().use { ClassReader(it).accept(node, ClassReader.SKIP_CODE) } return node }
+fun main() { val classFilePath = "build/classes/kotlin/main/org/example/SampleClass.class" val classFile = File(classFilePath)
+// Reads the bytecode and processes it into a ClassNode object val classNode = classFile.toClassNode()
+// Locates the @Metadata annotation and reads it leniently val metadata = classNode.readMetadataLenient() if (metadata != null && metadata is KotlinClassMetadata.Class) {
+// Inspects the parsed metadata val kmClass = metadata.kmClass
+// Prints class details println("Class name: ${kmClass.name}") println("Functions:") kmClass.functions.forEach { function ->
+println("- ${function.name}, Visibility: ${function.visibility}") } } }
+Modify metadata
+When using tools like ProGuard to shrink and optimize bytecode, some declarations may be removed from .class files. ProGuard automatically updates metadata to keep it consistent with the modified bytecode.
+1556
+
+[p.1557]
+Kotlin Metadata JVM（kotlin-metadata-jvm）
+However, if you're developing a custom tool that modifies Kotlin bytecode in a similar way, you need to ensure that metadata is adjusted accordingly. With the kotlin-metadata-jvm library, you can update declarations, adjust attributes, and remove specific elements.
+For example, if you use a JVM tool that deletes private methods from Java class files, you must also delete private functions from Kotlin metadata to maintain consistency:
+1. Parse the metadata by using the readStrict() function to load the @Metadata annotation into a structured KotlinClassMetadata object.
+2. Apply modifications by adjusting the metadata, such as filtering functions or altering attributes, directly within kmClass or other metadata structures.
+3. Use the write() function to encode the modified metadata into a new @Metadata annotation.
+Here's an example where private functions are removed from a class's metadata:
+// Imports the necessary libraries import kotlin.metadata.jvm.* import kotlin.metadata.*
+fun main() { // Specifies the fully qualified class name val className = "org.example.SampleClass"
+try { // Retrieves the class object for the specified name val clazz = Class.forName(className)
+// Retrieves the @Metadata annotation val metadataAnnotation = clazz.getAnnotation(Metadata::class.java) if (metadataAnnotation != null) {
+println("Kotlin Metadata found for class: $className")
+// Parses metadata using the readStrict() function val metadata = KotlinClassMetadata.readStrict(metadataAnnotation) if (metadata is KotlinClassMetadata.Class) {
+val kmClass = metadata.kmClass
+// Removes private functions from the class metadata kmClass.functions.removeIf { it.visibility == Visibility.PRIVATE } println("Removed private functions. Remaining functions: ${kmClass.fun ctions.map { it.name }}")
+// Serializes the modified metadata back val newMetadata = metadata.write() // After modifying the metadata, you need to write it into the class f ile // To do so, you can use a bytecode manipulation framework such as ASM
+println("Modified metadata: ${newMetadata}") } else {
+1557
+
+[p.1558]
+Kotlin Metadata JVM（kotlin-metadata-jvm）
+println("The metadata is not a class.") } } else { println("No Kotlin Metadata found for class: $className") } } catch (e: ClassNotFoundException) { println("Class not found: $className") } catch (e: Exception) { println("Error processing metadata: ${e.message}") e.printStackTrace() } }
+Instead of separately calling readStrict() and write() , you can use the transform() function. This function parses metadata, applies transformations through a lambda, and writes the modified metadata automatically.
+Create metadata from scratch
+To create metadata for a Kotlin class file from scratch using the Kotlin Metadata JVM library: 1. Create an instance of KmClass , KmPackage , or KmLambda , depending on the type of metadata you want to generate. 2. Add attributes to the instance, such as the class name, visibility, constructors, and function signatures. You can use the apply() scope function to reduce boilerplate code while setting properties.
+3. Use the instance to create a KotlinClassMetadata object, which can generate a @Metadata annotation.
+4. Specify the metadata version, such as JvmMetadataVersion.LATEST_STABLE_SUPPORTED , and set flags ( 0 for no flags, or copy flags from existing files if necessary).
+5. Use the ClassWriter class from ASM to embed metadata fields, such as kind , data1 and data2 into a .class file.
+The following example demonstrates how to create metadata for a simple Kotlin class:
+// Imports the necessary libraries import kotlin.metadata.* import kotlin.metadata.jvm.*
+1558
+
+[p.1559]
+Kotlin Metadata JVM（kotlin-metadata-jvm）
+import org.objectweb.asm.*
+fun main() { // Creates a KmClass instance val klass = KmClass().apply { name = "Hello" visibility = Visibility.PUBLIC constructors += KmConstructor().apply { visibility = Visibility.PUBLIC signature = JvmMethodSignature("<init>", "()V") } functions += KmFunction("hello").apply { visibility = Visibility.PUBLIC returnType = KmType().apply { classifier = KmClassifier.Class("kotlin/String") } signature = JvmMethodSignature("hello", "()Ljava/lang/String;") } }
+// Serializes a KotlinClassMetadata.Class instance, including the version and flag s, into a @kotlin.Metadata annotation
+val annotationData = KotlinClassMetadata.Class( klass, JvmMetadataVersion.LATEST_STABLE_SUPPORTED, 0
+).write()
+// Generates a .class file with ASM val classBytes = ClassWriter(0).apply {
+visit(Opcodes.V1_6, Opcodes.ACC_PUBLIC, "Hello", null, "java/lang/Object", null )
+// Writes @kotlin.Metadata instance to the .class file visitAnnotation("Lkotlin/Metadata;", true).apply {
+visit("mv", annotationData.metadataVersion) visit("k", annotationData.kind) visitArray("d1").apply {
+annotationData.data1.forEach { visit(null, it) } visitEnd() } visitArray("d2").apply { annotationData.data2.forEach { visit(null, it) } visitEnd() } visitEnd() } visitEnd() }.toByteArray()
+// Writes the generated class file to disk java.io.File("Hello.class").writeBytes(classBytes)
+println("Metadata and .class file created successfully.") }
+1559
+
+[p.1560]
+Kotlin Metadata JVM（kotlin-metadata-jvm） For a more detailed example, see the Kotlin Metadata JVM GitHub repository.
+下一步做什么
+See the API reference for the Kotlin Metadata JVM library. Check out the Kotlin Metadata JVM GitHub repository. Learn about module metadata and working with .kotlin_module files.
+1560
+

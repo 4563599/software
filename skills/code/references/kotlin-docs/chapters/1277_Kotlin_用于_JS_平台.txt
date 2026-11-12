@@ -1,0 +1,458 @@
+# Kotlin 用于 JS 平台（第 1277-1303 页）
+
+[p.1277]
+Kotlin 用于 JS 平台
+Kotlin 用于 JS 平台
+浏览器与 DOM API 在 Kotlin 中使用 JavaScript 代码 动态类型 使用来自 npm 的依赖 在 JavaScript 中使用 Kotlin 代码 JavaScript 模块 Kotlin/JS 反射 类型安全的 HTML DSL
+1277
+
+[p.1278]
+Kotlin 用于 JS 平台
+浏览器与 DOM API
+The Kotlin/JS standard library lets you access browser-specific functionality using the kotlinx.browser package, which includes typical top-level objects such as document and window . The standard library provides typesafe wrappers for the functionality exposed by these objects wherever possible. As a fallback, the dynamic type is used to provide interaction with functions that do not map well into the Kotlin type system.
+Interaction with the DOM
+For interaction with the Document Object Model (DOM), you can use the variable document . For example, you can set the background color of our website through this object:
+document.bgColor = "FFAA12"
+The document object also provides you a way to retrieve a specific element by ID, name, class name, tag name and so on. All returned elements are of type Element? . To access their properties, you need to cast them to their appropriate type. For example, assume that you have an HTML page with an email <input> field:
+<body> <input type="text" name="email" id="email"/> <script type="text/javascript" src="tutorial.js"></script>
+</body>
+Note that your script is included at the bottom of the body tag. This ensures that the DOM is fully available before the script is loaded. With this setup, you can access elements of the DOM. To access the properties of the input field, invoke getElementById and cast it to HTMLInputElement . You can then safely access its properties, such as value :
+val email = document.getElementById("email") as HTMLInputElement email.value = "hadi@jetbrains.com"
+Much like you reference this input element, you can access other elements on the page, casting them to the appropriate types.
+1278
+
+[p.1279]
+Kotlin 用于 JS 平台 To see how to create and structure elements in the DOM in a concise way, check out the Typesafe HTML DSL.
+1279
+
+[p.1280]
+Kotlin 用于 JS 平台
+在 Kotlin 中使用 JavaScript 代码
+Kotlin 最初被设计为能够与 Java 平台轻松互操作。它将 Java 类视为 Kotlin 类，并且 Java 也将 Kotlin 类视为 Java 类。 但是，JavaScript 是一种动态类型语言，这意味着它不会在编译期检测类型。可以通过 动态类 型在 Kotlin 中自由地与 JavaScript 交流。如果想要使用 Kotlin 类型系统的全部威力， 可以为 JavaScript 库创建 Kotlin 编译器与周边工具可理解的外部声明。
+内联 JavaScript
+你可以使用 js() 函数将 JavaScript 代码嵌入到 Kotlin 代码中。 例如：
+fun jsTypeOf(o: Any): String { return js("typeof o")
+}
+因为 js 的参数是在编译期解析并且按原样翻译成 JavaScript 代码的，因此它必须是字符串 常量。因此，以下代码是不正确的：
+fun jsTypeOf(o: Any): String { return js(getTypeof() + " o") // 此处报错
+} fun getTypeof() = "typeof"
+As the JavaScript code is parsed by the Kotlin compiler, not all ECMAScript features might be supported. In this case, you can encounter compilation errors.
+请注意，调用 js() 会返回动态类型的结果，该结果在编译时不提供任何类型安全性。
+external 修饰符
+要告诉 Kotlin 某个声明是用纯 JavaScript 编写的，你应该用 external 修饰符来标记它。 当 编译器看到这样的声明时，它假定相应类、函数或属性的实现是由外部提供的（由开发人员 或者通过 npm 依赖项）， 因此不会尝试从声明中生成任何 JavaScript 代码。 这也是为什么 external 声明不能具有主体的原因。例如：
+1280
+
+[p.1281]
+Kotlin 用于 JS 平台
+external fun alert(message: Any?): Unit external class Node {
+val firstChild: Node fun append(child: Node): Node fun removeChild(child: Node): Node // 等等 } external val window: Window
+请注意，嵌套的声明会继承 external 修饰符，这也是 Node 类中成员函数和属性之前没有 external 修饰符的原因。 external 修饰符只允许在包级声明中使用。 你不能声明一个非 external 类的 external 成员。
+声明类的（静态）成员
+在 JavaScript 中，你可以在原型或者类本身上定义成员：
+function MyClass() { …… } MyClass.sharedMember = function() { /* 实现 */ }; MyClass.prototype.ownMember = function() { /* 实现 */ };
+Kotlin 中没有这样的语法。然而，在 Kotlin 中我们有伴生（ companion ）对象。 Kotlin 以特殊 的方式处理 external 类的伴生对象：替代期待一个对象的是， 它假定伴生对象的成员就是 该类自身的成员。可以这样描述来自上例中的 MyClass ：
+external class MyClass { companion object { fun sharedMember() } fun ownMember()
+}
+声明可选参数
+如果正在为具有可选参数的 JavaScript 函数编写外部声明，请使用 definedExternally 。 这将 默认值的生成委托给 JavaScript 函数本身：
+1281
+
+[p.1282]
+Kotlin 用于 JS 平台
+external fun myFunWithOptionalArgs( x: Int, y: String = definedExternally, z: String = definedExternally
+)
+使用此外部声明，可以调用带有一个必需参数和两个可选参数的 myFunWithOptionalArgs ， 其 中默认值由 myFunWithOptionalArgs 的 JavaScript 实现计算得出。
+扩展 JavaScript 类
+你可以轻松扩展 JavaScript 类，因为它们是 Kotlin 类。只需定义一个 external open 类并用 非 external 类扩展它。例如：
+open external class Foo { open fun run() fun stop()
+}
+class Bar : Foo() { override fun run() { window.alert("Running!") }
+fun restart() { window.alert("Restarting")
+} }
+有一些限制： 当一个外部基类的函数被签名重载时，不能在派生类中覆盖它。 不能覆盖一个使用默认实参的函数。 不能用外部类扩展非外部类。
+external 接口
+JavaScript 没有接口的概念。当函数期望其参数支持 foo 和 bar 两个方法时，只需传入实际 具有这些方法的对象。 在静态类型的 Kotlin 中，你可以使用接口来表达这一概念：
+external interface HasFooAndBar { fun foo()
+fun bar()
+1282
+
+[p.1283]
+Kotlin 用于 JS 平台
+}
+external fun myFunction(p: HasFooAndBar)
+外部接口的典型使用场景是描述设置对象。例如：
+external interface JQueryAjaxSettings { var async: Boolean
+var cache: Boolean
+var complete: (JQueryXHR, String) -> Unit
+// 等等 }
+fun JQueryAjaxSettings(): JQueryAjaxSettings = js("{}")
+external class JQuery { companion object { fun get(settings: JQueryAjaxSettings): JQueryXHR }
+}
+fun sendQuery() { JQuery.get(JQueryAjaxSettings().apply { complete = { (xhr, data) -> window.alert("Request complete") } })
+}
+外部接口有一些限制： 它们不能在 is 检测的右侧使用。 它们不能作为具体化类型参数传递。 它们不能用在类的字面值表达式（例如 I::class ）中。 as 转换为外部接口总是成功。 强制转换为外部接口会产生“未检查强制转换到外部接口 （Unchecked cast to external interface）”编译时警告。可以使用 @Suppress("UNCHECKED_CAST_TO_EXTERNAL_INTERFACE") 注解取消警告。 IntelliJ IDEA 还可以自动生成 @Suppress 注解。通过灯泡图标或 Alt + Enter 打开意图 菜单，然后单击“未检查强制转换到外部接口”检查旁边的小箭头。在这里，可以选择抑制 作用域，IDE 将相应地将注解添加到文件中。
+强制转换
+1283
+
+[p.1284]
+Kotlin 用于 JS 平台
+除了“unsafe”强制转换运算符 as （在无法进行强制转换时抛出 ClassCastException ）之 外， Kotlin/JS 还提供 unsafeCast<T>() 。使用 unsafeCast 时， 在运行时 完全不进行类型检 查。例如，考虑以下两种方法：
+fun usingUnsafeCast(s: Any) = s.unsafeCast<String>() fun usingAsOperator(s: Any) = s as String
+它们将进行相应的编译：
+function usingUnsafeCast(s) { return s;
+}
+function usingAsOperator(s) { var tmp$; return typeof (tmp$ = s) === 'string' ? tmp$ : throwCCE();
+}
+Equality
+Kotlin/JS has particular semantics for equality checks compared to other platforms. In Kotlin/JS, the Kotlin referential equality operator ( === ) always translates to the JavaScript strict equality operator ( === ). The JavaScript === operator checks not only that two values are equal but also that the types of these two values are equal:
+fun main() { val name = "kotlin" val value1 = name.substring(0, 1) val value2 = name.substring(0, 1)
+println(if (value1 === value2) "yes" else "no") // Prints 'yes' on Kotlin/JS // Prints 'no' on other platforms }
+Also, in Kotlin/JS, the Byte , Short , Int , Float , and Double numeric types are all represented with the Number JavaScript type in runtime. Therefore, the values of these five types are indistinguishable:
+fun main() { println(1.0 as Any === 1 as Any)
+1284
+
+[p.1285]
+Kotlin 用于 JS 平台
+// Prints 'true' on Kotlin/JS // Prints 'false' on other platforms }
+For more information about equality in Kotlin, see the Equality documentation.
+1285
+
+[p.1286]
+Kotlin 用于 JS 平台
+动态类型
+在面向 JVM 平台的代码中不支持动态类型。
+Being a statically typed language, Kotlin still has to interoperate with untyped or loosely typed environments, such as the JavaScript ecosystem. To facilitate these use cases, the dynamic type is available in the language:
+val dyn: dynamic = ……
+dynamic 类型基本上关闭了 Kotlin 的类型检测系统： A value of the dynamic type can be assigned to any variable or passed anywhere as a parameter. Any value can be assigned to a variable of the dynamic type or passed to a function that takes dynamic as a parameter. null -checks are disabled for the dynamic type values.
+The most peculiar feature of dynamic is that we are allowed to call any property or function with any parameters on a dynamic variable:
+dyn.whatever(1, "foo", dyn) // “whatever”在任何地方都没有定义 dyn.whatever(*arrayOf(1, 2, 3))
+On the JavaScript platform 这段代码会按照原样编译：在生成的 JavaScript 代码中，Kotlin中的 dyn.whatever(1) 变为 dyn.whatever(1) 。 当在 dynamic 类型的值上调用 Kotlin 写的函数时，请记住由 Kotlin 到 JavaScript 编译器执行 的名字修饰。你可能需要使用 @JsName 注解 为需要调用的函数分配明确定义的名称。 动态调用总是返回 dynamic 作为结果，因此可以自由链式调用：
+dyn.foo().bar.baz()
+当把一个 lambda 表达式传给一个动态调用时，它的所有参数默认都是 dynamic 类型的：
+dyn.foo { x -> x.bar() // x 是 dynamic
+}
+1286
+
+[p.1287]
+Kotlin 用于 JS 平台 使用 dynamic 类型值的表达式会按照原样转换为 JavaScript，并且不使用 Kotlin 运算符约 定。 支持以下运算符：
+二元： + 、 - 、 * 、 / 、 % 、 > 、 < 、 >= 、 <= 、 == 、 != 、 === 、 !== 、 && 、 || 一元
+前置： - 、 + 、 ! 前置及后置： ++ 、 -赋值： += 、 -= 、 *= 、 /= 、 %= 索引访问： 读： d[a] ，多于一个参数会出错 写： d[a1] = a2 ， [] 中有多于一个参数会出错 in 、 !in 以及 .. 操作对于 dynamic 类型的值是禁用的。 更多技术说明请参见规范文档。
+1287
+
+[p.1288]
+Kotlin 用于 JS 平台
+使用来自 npm 的依赖
+In Kotlin/JS projects, all dependencies can be managed through the Gradle plugin. This includes Kotlin/Multiplatform libraries such as kotlinx.coroutines , kotlinx.serialization , or ktorclient . For depending on JavaScript packages from npm, the Gradle DSL exposes an npm function that lets you specify packages you want to import from npm. Let's consider the import of an NPM package called is-sorted . The corresponding part in the Gradle build file looks as follows:
+dependencies { // ... implementation(npm("is-sorted", "1.0.5"))
+}
+Because JavaScript modules are usually dynamically typed and Kotlin is a statically typed language, you need to provide a kind of adapter. In Kotlin, such adapters are called external declarations. For the is-sorted package which offers only one function, this declaration is small to write. Inside the source folder, create a new file called is-sorted.kt , and fill it with these contents:
+@JsModule("is-sorted") @JsNonModule external fun <T> sorted(a: Array<T>): Boolean
+Please note that if you're using CommonJS as a target, the @JsModule and @JsNonModule annotations need to be adjusted accordingly. This JavaScript function can now be used just like a regular Kotlin function. Because we provided type information in the header file (as opposed to simply defining parameter and return type to be dynamic ), proper compiler support and type-checking is also available.
+console.log("Hello, Kotlin/JS!") console.log(sorted(arrayOf(1,2,3))) console.log(sorted(arrayOf(3,1,2)))
+Running these three lines either in the browser or Node.js, the output shows that the call to sorted was properly mapped to the function exported by the is-sorted package:
+Hello, Kotlin/JS!
+1288
+
+[p.1289]
+Kotlin 用于 JS 平台
+true false
+Because the JavaScript ecosystem has multiple ways of exposing functions in a package (for example through named or default exports), other npm packages might need a slightly altered structure for their external declarations. To learn more about how to write declarations, please refer to Calling JavaScript from Kotlin.
+1289
+
+[p.1290]
+Kotlin 用于 JS 平台
+在 JavaScript 中使用 Kotlin 代码
+根据所选的 JavaScript 模块系统，Kotlin/JS 编译器会生成不同的输出。 当然通常 Kotlin 编译 器生成正常的 JavaScript 类，可以在 JavaScript 代码中自由地使用的函数和属性。不过，应该 记住一些微妙的事情。
+在 plain 模式中用独立的 JavaScript 隔离声明
+如果将模块种类明确设置为 plain , 为了防止损坏全局对象， Kotlin 创建一个包含当前模块 中所有 Kotlin 声明的对象。这意味着对于一个模块 myModule ， 所有的声明都可以通过 myModule 对象在 JavaScript 中使用。例如：
+fun foo() = "Hello"
+可以在 JavaScript 中这样调用：
+alert(myModule.foo());
+将 Kotlin 模块编译为 JavaScript 模块 〔例如 UMD，（这是 browser 与 nodejs 目标的默认 设置）、CommonJS 或 AMD〕时，此方法不适用。在这种情况下，声明将以选择的 JavaScript 模块系统指定的格式暴露。例如，当使用 UMD 或 CommonJS 时，调用处可能如下所示：
+alert(require('myModule').foo());
+查看有关 JavaScript 模块的文章，以获取有关 JavaScript 模块系统专题的更多信息。
+包结构
+Kotlin 将其包结构暴露给 JavaScript，因此除非你在根包中定义声明， 否则必须在 JavaScript 中使用完整限定名。例如：
+package my.qualified.packagename fun foo() = "Hello"
+例如，当使用 UMD 或 CommonJS 时，调用处可能如下所示：
+1290
+
+[p.1291]
+Kotlin 用于 JS 平台
+
+alert(require('myModule').my.qualified.packagename.foo())
+或者，在使用 plain 格式作为模块系统设置的情况下：
+alert(myModule.my.qualified.packagename.foo());
+
+@JsName 注解
+在某些情况下（例如为了支持重载），Kotlin 编译器会修饰（mangle） JavaScript 代码中生成 的函数和属性的名称。要控制生成的名称，可以使用 @JsName 注解：
+// 模块“kjs” class Person(val name: String) {
+fun hello() { println("Hello $name!")
+}
+@JsName("helloWithGreeting") fun hello(greeting: String) {
+println("$greeting $name!") } }
+
+现在，你可以通过以下方式在 JavaScript 中使用这个类：
+
+// 如有必要，根据所选模块系统导入“kjs” var person = new kjs.Person("Dmitry"); person.hello(); person.helloWithGreeting("Servus");
+
+// 引用到模块“kjs” // 输出“Hello Dmitry!” // 输出“Servus Dmitry!”
+
+如果我们没有指定 @JsName 注解，相应函数的名称会包含从函数签名计算而来的后缀，例如 hello_61zpoe$ 。
+请注意，在某些情况下，Kotlin 编译器不应用修饰：
+external 声明不会被修饰 从 external 类继承的非 external 类中的任何重写函数都不会被修饰。
+@JsName 的参数需要是一个常量字符串字面值，该字面值是一个有效的标识符。 任何尝试将 非标识符字符串传递给 @JsName 时，编译器都会报错。 以下示例会产生编译期错误：
+@JsName("new C()") // 此处出错 external fun newC()
+
+1291
+
+[p.1292]
+Kotlin 用于 JS 平台
+@JsExport 注解
+This feature is Experimental. 其设计可能会在将来的版本中更改。
+
+通过将 @JsExport 注解应用于顶级声明（如类或函数），可以从 JavaScript 使用 Kotlin 声 明。注解会导出所有嵌套声明，并使用 Kotlin 中给出的名称。 也可以使用 @file:JsExport 将其应用于文件级。
+要解决导出中的歧义（例如，具有相同名称的函数的重载），可以将 @JsExport 批注与 @JsName 一起使用，以指定生成与导出函数的名称。
+在当前的 IR 编译器后端中， the @JsExport annotation is the only way to make your functions visible from Kotlin.
+对于多平台项目， @JsExport 也可以在公共代码中使用。它仅在针对 JavaScript 目标进行编译 时才有效，并且还允许导出非平台特有的 Kotlin 声明。
+@JsStatic
+This feature is Experimental. It may be dropped or changed at any time. Use it only for evaluation purposes. We would appreciate your feedback on it in YouTrack.
+
+The @JsStatic annotation instructs the compiler to generate additional static methods for the target declaration. This helps you use static members from your Kotlin code directly in JavaScript.
+You can apply the @JsStatic annotation to functions defined in named objects, as well as in companion objects declared inside classes and interfaces. If you use this annotation, the compiler will generate both a static method of the object and an instance method in the object itself. For example:
+// Kotlin class C {
+companion object { @JsStatic fun callStatic() {} fun callNonStatic() {}
+} }
+
+Now, the callStatic() function is static in JavaScript while the callNonStatic() function is not:
+
+// JavaScript C.callStatic(); C.callNonStatic();
+
+// Works, accessing the static function // Error, not a static function in the generated JavaScri
+
+1292
+
+[p.1293]
+Kotlin 用于 JS 平台
+
+pt C.Companion.callStatic(); // Instance method remains C.Companion.callNonStatic(); // The only way it works
+
+It's also possible to apply the @JsStatic annotation to a property of an object or a companion object, making its getter and setter methods static members in that object or the class containing the companion object.
+
+JavaScript 中的 Kotlin 类型
+
+See how Kotlin types are mapped to JavaScript ones:
+
+Kotlin
+
+Byte , Short , Float ,
+Double
+
+Int ,
+
+Char
+
+JavaScript
+Number Number
+
+Long
+
+Not supported
+
+Boolean String Array ByteArray ShortArray IntArray
+CharArray
+FloatArray DoubleArray
+
+Boolean String Array Int8Array Int16Array Int32Array
+UInt16Array
+Float32Array Float64Array
+
+LongArray
+
+Array<kotlin.Long>
+
+BooleanArray
+
+Int8Array
+
+List ,
+MutableList
+
+KtList ,
+KtMutableList
+
+Comments
+The number represents the character's code. There is no 64-bit integer number type in JavaScript, so it is emulated by a Kotlin class.
+Carries the property $type$ == "CharArray" .
+Carries the property $type$ == "LongArray" . Also see Kotlin's Long type comment. Carries the property $type$ == "BooleanArray" . Exposes an Array via
+KtList.asJsReadonlyArrayView
+or KtMutableList.asJsArrayView .
+
+1293
+
+[p.1294]
+Kotlin 用于 JS 平台
+
+Map ,
+MutableMap
+Set ,
+MutableSet
+
+KtMap ,
+KtMutableMap
+KtSet ,
+KtMutableSet
+
+Unit
+Any
+Throwable
+Nullable
+Type?
+All other Kotlin types (except for those marked with
+JsExport
+annotation)
+
+Undefined
+Object Error
+`Type
+Not supported
+
+Exposes an ES2015 Map via KtMap.asJsReadonlyMapView or KtMutableMap.asJsMapView .
+Exposes an ES2015 Set via KtSet.asJsReadonlySetView or KtMutableSet.asJsSetView .
+Exportable when used as return type, but not when used as parameter type.
+
+null
+
+undefined`
+
+Includes Kotlin's unsigned integer types.
+
+Additionally, it is important to know that:
+Kotlin preserves overflow semantics for kotlin.Int , kotlin.Byte , kotlin.Short , kotlin.Char and kotlin.Long . Kotlin cannot distinguish between numeric types at runtime (except for kotlin.Long ), so the following code works:
+
+fun f() { val x: Int = 23 val y: Any = x println(y as Float)
+}
+
+Kotlin 在 JavaScript 中保留了惰性对象初始化。 Kotlin 不会在 JavaScript 中实现顶层属性的惰性初始化。
+
+1294
+
+[p.1295]
+Kotlin 用于 JS 平台
+JavaScript 模块
+可以将 Kotlin 项目编译为适用于各种流行模块系统的 JavaScript 模块。我们目前支持以下 JavaScript 模块配置：
+统一模块定义（UMD，Unified Module Definitions），它与 AMD 和 CommonJS 兼容。 UMD 模块也可以在不导入或没有模块系统的情况下执行。这是 browser 与 nodejs 目 标的默认选项。 异步模块定义（AMD，Asynchronous Module Definition），它尤其为 RequireJS 库所使 用。 CommonJS，广泛用于 Node.js/npm （ require 函数和 module.exports 对象）。 无模块（Plain）。不为任何模块系统编译。可以在全局作用域中以其名称访问模块。
+浏览器目标
+如果打算在 web 浏览器环境中运行代码并希望使用 UMD 之外的模块系统，那么可以在 webpackTask 配置块中指定所需的模块类型。例如，要切换到 CommonJS，请使用：
+kotlin { js { browser { webpackTask { output.libraryTarget = "commonjs2" } } binaries.executable() }
+}
+Webpack 提供了 commonjs 与 commonjs2 这两种不同的 CommonJS“风味”，它们影响声明的 可用方式。在大多数情况下，可能希望使用 commonjs2 ，该模块将 module.exports 语法添加 到所生成的库中。或者，也可以选择 commonjs 选项，严格遵守 CommonJS 规范。 如需了解 有关 commonjs 与 commonjs2 之间的区别的更多信息，请参见 Webpack 版本库查看。
+JavaScript 库与 Node.js 文件
+如果要创建一个用于 JavaScript 或 Node.js 环境的库，并且希望使用不同的模块系统，那么其 说明会略有不同。
+1295
+
+[p.1296]
+Kotlin 用于 JS 平台
+选择目标模块系统
+如需选择目标模块系统，请在 Gradle 构建脚本中设置 moduleKind 编译器选项。
+【Kotlin】
+tasks.withType<org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrLink> { compilerOptions.moduleKind.set(org.jetbrains.kotlin.gradle.dsl.JsModuleKind.MODULE
+_COMMONJS) }
+【Groovy】
+compileKotlinJs.compilerOptions.moduleKind = org.jetbrains.kotlin.gradle.dsl.JsModuleK ind.MODULE_COMMONJS
+可用值为： umd （默认）、 commonjs 、 amd 、 plain 。 这与调整 webpackTask.output.libraryTarget 不同。库目标更改了 webpack 生成的 输出 （在代码已编译之后）。 compilerOptions.moduleKind 更改 由 Kotlin 编译器 生成的输 出。
+在 Kotlin Gradle DSL 中，还有一个用于设置 CommonJS 模块种类的快捷方式：
+kotlin { js { useCommonJs() // ... }
+}
+@JsModule 注解
+要告诉 Kotlin 一个 external 类、 包、 函数或者属性是一个 JavaScript 模块，你可以使用 @JsModule 注解。考虑你有以下 CommonJS 模块叫“hello”：
+module.exports.sayHello = function (name) { alert("Hello, " + name); }
+1296
+
+[p.1297]
+Kotlin 用于 JS 平台
+你应该在 Kotlin 中这样声明：
+@JsModule("hello") external fun sayHello(name: String)
+将 @JsModule 应用到包
+一些 JavaScript 库导出包（命名空间）而不是函数和类。 从 JavaScript 角度讲，它是一个具有 一些成员的对象，这些成员是类、函数和属性。 将这些包作为 Kotlin 对象导入通常看起来不 自然。 编译器可以使用以下助记符将导入的 JavaScript 包映射到 Kotlin 包：
+@file:JsModule("extModule") package ext.jspackage.name external fun foo() external class C
+其中相应的 JavaScript 模块的声明如下：
+module.exports = { foo: { /* 此处一些代码 */ }, C: { /* 此处一些代码 */ }
+}
+标有 @file:JsModule 注解的文件无法声明非外部成员。 下面的示例会产生编译期错误：
+@file:JsModule("extModule") package ext.jspackage.name external fun foo() fun bar() = "!" + foo() + "!" // 此处报错
+导入更深的包层次结构
+在前文示例中，JavaScript 模块导出单个包。 但是，一些 JavaScript 库会从模块中导出多个 包。 Kotlin 也支持这种场景，尽管你必须为每个导入的包声明一个新的 .kt 文件。 例如，让示例更复杂一些：
+1297
+
+[p.1298]
+Kotlin 用于 JS 平台
+module.exports = { mylib: { pkg1: { foo: function () { /* 此处一些代码 */ }, bar: function () { /* 此处一些代码 */ } }, pkg2: { baz: function () { /* 此处一些代码 */ } } }
+}
+要在 Kotlin 中导入该模块，你必须编写两个 Kotlin 源文件：
+@file:JsModule("extModule") @file:JsQualifier("mylib.pkg1")
+package extlib.pkg1
+external fun foo()
+external fun bar()
+以及
+@file:JsModule("extModule") @file:JsQualifier("mylib.pkg2")
+package extlib.pkg2
+external fun baz()
+@JsNonModule 注解
+当一个声明标有 @JsModule 、当你并不把它编译到一个 JavaScript 模块时，你不能在 Kotlin 代 码中使用它。 通常，开发人员将他们的库既作为 JavaScript 模块也作为可下载的 .js 文件分 发， 可以将这些文件复制到项目的静态资源，并通过 <script> 标签包含。 如需告诉 Kotlin，可以在非模块环境中使用一个 @JsModule 声明，请添加 @JsNonModule 注解。例如， 考虑以下 JavaScript 代码：
+function topLevelSayHello (name) { alert("Hello, " + name); }
+if (module && module.exports) { module.exports = topLevelSayHello;
+}
+1298
+
+[p.1299]
+Kotlin 用于 JS 平台 在 Kotlin 中可以这样描述：
+@JsModule("hello") @JsNonModule @JsName("topLevelSayHello") external fun sayHello(name: String)
+Kotlin 标准库使用的模块系统
+Kotlin 以 Kotlin/JS 标准库作为单个文件分发，该文件本身被编译为 UMD 模块， 因此可以使 用上述任何模块系统。在大多数 Kotlin/JS 使用场景中，建议对 kotlin-stdlib-js 使用 Gradle 依赖项, 它也在 NPM 上作为 kotlin 包提供。
+1299
+
+[p.1300]
+Kotlin 用于 JS 平台
+Kotlin/JS 反射
+Kotlin/JS provides a limited support for the Kotlin reflection API. The only supported parts of the API are:
+Class references ( ::class ) KType and typeof() KClass and createInstance()
+Class references
+The ::class syntax returns a reference to the class of an instance, or the class corresponding to the given type. In Kotlin/JS, the value of a ::class expression is a stripped-down KClass implementation that supports only:
+simpleName and isInstance() members. cast() and safeCast() extension functions. 除此之外，你可以使用 KClass.js 访问与 JsClass 类对应的实例。 该 JsClass 实例本身就是对 构造函数的引用。 这可以用于与期望构造函数的引用的 JS 函数进行互操作。
+KType and typeOf()
+The typeof() function constructs an instance of KType for a given type. The KType API is fully supported in Kotlin/JS except for Java-specific parts.
+KClass and createInstance()
+The createInstance() function from the KClass interface creates a new instance of the specified class, which is useful for getting the runtime reference to a Kotlin class.
+Example
+Here is an example of the reflection usage in Kotlin/JS.
+open class Shape class Rectangle : Shape()
+1300
+
+[p.1301]
+Kotlin 用于 JS 平台
+inline fun <reified T> accessReifiedTypeArg() = println(typeOf<T>().toString())
+fun main() { val s = Shape() val r = Rectangle() println(r::class.simpleName) // Prints "Rectangle" println(Shape::class.simpleName) // Prints "Shape" println(Shape::class.js.name) // Prints "Shape" println(Shape::class.isInstance(r)) // Prints "true" println(Rectangle::class.isInstance(s)) // Prints "false" val rShape = Shape::class.cast(r) // Casts a Rectangle "r" to Shape accessReifiedTypeArg<Rectangle>() // Accesses the type via typeOf(). Prints "Recta
+ngle" }
+1301
+
+[p.1302]
+Kotlin 用于 JS 平台
+类型安全的 HTML DSL
+The kotlinx.html library provides the ability to generate DOM elements using statically typed HTML builders (and besides JavaScript, it is even available on the JVM target!) To use the library, include the corresponding repository and dependency to our build.gradle.kts file:
+repositories { // ... mavenCentral()
+}
+dependencies { implementation(kotlin("stdlib-js")) implementation("org.jetbrains.kotlinx:kotlinx-html-js:0.8.0") // ...
+}
+Once the dependency is included, you can access the different interfaces provided to generate the DOM. To render a headline, some text, and a link, the following snippet would be sufficient, for example:
+import kotlinx.browser.* import kotlinx.html.* import kotlinx.html.dom.*
+fun main() { document.body!!.append.div { h1 { +"Welcome to Kotlin/JS!" } p{ +"Fancy joining this year's " a("https://kotlinconf.com/") { +"KotlinConf" } +"?" } }
+}
+When running this example in the browser, the DOM will be assembled in a straightforward way. This is easily confirmed by checking the Elements of the website using the developer tools of our browser:
+1302
+
+[p.1303]
+Kotlin 用于 JS 平台
+To learn more about the kotlinx.html library, check out the GitHub Wiki, where you can find more information about how to create elements without adding them to the DOM, binding to events like onClick , and examples on how to apply CSS classes to your HTML elements, to name just a few.
+1303
+

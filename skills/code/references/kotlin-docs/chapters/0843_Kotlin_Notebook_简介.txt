@@ -1,0 +1,11 @@
+# Kotlin Notebook 简介（第 843-843 页）
+
+[p.843]
+Kotlin Notebook 简介
+Kotlin Notebook 入门
+Kotlin Notebook is an interactive tool that lets you mix code, visuals, and markdown in one document. You can use notebooks to write and execute code in sections known as code cells, see the results instantly, and write down your thoughts. This setup makes it an excellent tool for rapid prototyping, analytics, and data science. Get to know Kotlin Notebook by completing these steps:
+Set up an environment for working with Kotlin Notebook Create your first notebook and perform some simple operations Add dependencies to your Kotlin Notebook
+Next step
+Start by setting up an environment for working with Kotlin Notebook: Proceed to the next part
+843
+

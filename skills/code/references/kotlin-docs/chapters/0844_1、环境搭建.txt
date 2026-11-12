@@ -1,0 +1,22 @@
+# 1、环境搭建（第 844-845 页）
+
+[p.844]
+1、环境搭建
+环境搭建
+This is the first part of the Getting started with Kotlin Notebook tutorial: Set up an environment
+Create a Kotlin Notebook
+Add dependencies to a Kotlin Notebook
+Before you create your first Kotlin Notebook, you need to set up an environment.
+Set up the environment
+Kotlin Notebook relies on the Kotlin Notebook plugin, which is bundled and enabled in IntelliJ IDEA by default. To use Kotlin Notebook, download and install the latest version of IntelliJ IDEA. If the Kotlin Notebook features are not available, ensure the plugin is enabled:
+1. In IntelliJ IDEA, select IntelliJ IDEA | Settings | Plugins. 2. In the Installed tab, find the Kotlin Notebook plugin, and select the checkbox next to the plugin
+name.
+844
+
+[p.845]
+1、环境搭建
+3. Click OK to apply the changes and restart your IDE if prompted.
+Next step
+In the next part of the tutorial, you will learn how to create a Kotlin Notebook. Proceed to the next chapter
+845
+

@@ -1,0 +1,340 @@
+# Kotlin 版本发布（第 541-550 页）
+
+[p.541]
+Kotlin 版本发布
+Kotlin 版本发布
+Latest Kotlin version: 2.1.21 See What's new in Kotlin 2.1.21 for details Since Kotlin 2.0.0, we ship the following types of releases:
+Language releases (2.x.0) that bring major changes in the language and include tooling updates. Released once in 6 months. Tooling releases (2.x.20) that are shipped between language releases and include updates in the tooling, performance improvements, and bug fixes. Released in 3 months after corresponding language release. Bug fix releases (2.x.yz) that include bug fixes for tooling releases. There is no exact release schedule for these releases. For each language and tooling release, we also ship several preview (EAP) versions for you to try new features before they are released. See Early Access Preview for details. If you want to be notified about new Kotlin releases, subscribe to the Kotlin newsletter, follow Kotlin on X, or enable the Watch | Custom | Releases option on the Kotlin GitHub repository.
+更新到新版 Kotlin
+To upgrade your project to a new release, you need to update your build script file. For example, to update to Kotlin 2.1.21, change the version of the Kotlin Gradle plugin in your build.gradle(.kts) file:
+【Kotlin】
+plugins { // Replace `<...>` with the plugin name appropriate for your target environment kotlin("<...>") version "2.1.21" // For example, if your target environment is JVM: // kotlin("jvm") version "2.1.21" // If your target is Kotlin Multiplatform: // kotlin("multiplatform") version "2.1.21"
+}
+541
+
+[p.542]
+Kotlin 版本发布
+【Groovy】
+plugins { // Replace `<...>` with the plugin name appropriate for your target environment id 'org.jetbrains.kotlin.<...>' version '2.1.21' // For example, if your target environment is JVM: // id 'org.jetbrains.kotlin.jvm' version '2.1.21' // If your target is Kotlin Multiplatform: // id 'org.jetbrains.kotlin.multiplatform' version '2.1.21'
+}
+If you have projects created with earlier Kotlin versions, change the Kotlin version in your projects and update kotlinx libraries if necessary. If you are migrating to the new language release, Kotlin plugin's migration tools will help you with the migration.
+IDE 支持
+Kotlin has full out-of-the-box support in IntelliJ IDEA and Android Studio with an official Kotlin plugin developed by JetBrains. K2 mode in IntelliJ IDEA and Android Studio uses the K2 compiler to improve code analysis, code completion, and highlighting. Starting with IntelliJ IDEA 2025.1, K2 mode is enabled by default. In Android Studio, you can enable K2 mode starting with 2024.1 by following these steps:
+1. Go to Settings | Languages & Frameworks | Kotlin. 2. Select the Enable K2 mode option. Learn more about K2 mode in our blog.
+Kotlin release compatibility
+Learn more about types of Kotlin releases and their compatibility
+版本发布详情
+542
+
+[p.543]
+Kotlin 版本发布
+The following table lists details of the latest Kotlin releases: You can also try Early Access Preview (EAP) versions of Kotlin.
+
+版本信息
+2.1.21 Released: May 13, 2025
+Release on GitHub
+
+版本重点
+A bug fix release for Kotlin 2.1.20. For more details, please refer to the changelog.
+
+2.1.20 Released: March 20, 2025
+Release on GitHub
+
+A tooling release for Kotlin 2.1.0 containing new experimental features, performance improvements, and bug fixes.
+Learn more about Kotlin 2.1.20 in What's new in Kotlin 2.1.20.
+
+2.1.10 Released: January 27, 2025
+Release on GitHub
+
+A bug fix release for Kotlin 2.1.0 For more details, please refer to the changelog.
+
+2.1.0 Released: November 27, 2024
+Release on GitHub
+
+A language release introducing new language features. Learn more about Kotlin 2.1.0 in What's new in Kotlin 2.1.0.
+
+2.0.21 Released: October 10, 2024
+Release on GitHub
+
+A bug fix release for Kotlin 2.0.20 For more details, please refer to the changelog.
+
+2.0.20 Released: August 22, 2024
+
+A tooling release for Kotlin 2.0.0 containing performance improvements and bug fixes. Features also include concurrent marking in Kotlin/Native's garbage collector, UUID support in Kotlin common standard library, Compose compiler updates, and support up to Gradle 8.8.
+
+543
+
+[p.544]
+Kotlin 版本发布
+
+Release on Learn more about Kotlin 2.0.20 in What's new in Kotlin 2.0.20. GitHub
+
+2.0.10 Released: August 6, 2024
+Release on GitHub
+
+A bug fix release for Kotlin 2.0.0. Learn more about Kotlin 2.0.0 in What's new in Kotlin 2.0.0.
+
+2.0.0 Released: May 21, 2024
+Release on GitHub
+
+A language release with the Stable Kotlin K2 compiler. Learn more about Kotlin 2.0.0 in What's new in Kotlin 2.0.0.
+
+1.9.25 Released: July 19, 2024
+Release on GitHub
+
+A bug fix release for Kotlin 1.9.20, 1.9.21, 1.9.22, 1.9.23, and 1.9.24. Learn more about Kotlin 1.9.20 in What's new in Kotlin 1.9.20.
+
+1.9.24 Released: May 7, 2024
+Release on GitHub
+
+A bug fix release for Kotlin 1.9.20, 1.9.21, 1.9.22, and 1.9.23. Learn more about Kotlin 1.9.20 in What's new in Kotlin 1.9.20.
+
+1.9.23 Released: March 7, 2024
+Release on GitHub
+
+A bug fix release for Kotlin 1.9.20, 1.9.21, and 1.9.22. Learn more about Kotlin 1.9.20 in What's new in Kotlin 1.9.20.
+
+1.9.22 Released: December 21, 2023
+Release on GitHub
+
+A bug fix release for Kotlin 1.9.20 and 1.9.21. Learn more about Kotlin 1.9.20 in What's new in Kotlin 1.9.20.
+
+1.9.21
+
+544
+
+[p.545]
+Kotlin 版本发布
+
+Released: November 23, 2023
+Release on GitHub
+
+A bug fix release for Kotlin 1.9.20. Learn more about Kotlin 1.9.20 in What's new in Kotlin 1.9.20.
+
+1.9.20 Released: November 1, 2023
+Release on GitHub
+
+A feature release with Kotlin K2 compiler in Beta and Stable Kotlin Multiplatform.
+Learn more in:
+What's new in Kotlin 1.9.20
+
+1.9.10 Released: August 23, 2023
+Release on GitHub
+
+A bug fix release for Kotlin 1.9.0.
+Learn more about Kotlin 1.9.0 in What's new in Kotlin 1.9.0.
+For Android Studio Giraffe and Hedgehog, the Kotlin plugin 1.9.10 will be delivered with upcoming Android Studios updates.
+
+1.9.0 Released: July 6, 2023
+Release on GitHub
+
+A feature release with Kotlin K2 compiler updates, new enum class values function, new operator for open-ended ranges, preview of Gradle configuration cache in Kotlin Multiplatform, changes to Android target support in Kotlin Multiplatform, preview of custom memory allocator in Kotlin/Native.
+Learn more in:
+What's new in Kotlin 1.9.0 What's new in Kotlin YouTube video
+
+1.8.22 Released: June 8, 2023
+Release on GitHub
+
+A bug fix release for Kotlin 1.8.20. Learn more about Kotlin 1.8.20 in What's new in Kotlin 1.8.20.
+
+1.8.21 Released: April 25, 2023
+Release on GitHub
+
+A bug fix release for Kotlin 1.8.20.
+Learn more about Kotlin 1.8.20 in What's new in Kotlin 1.8.20.
+For Android Studio Flamingo and Giraffe, the Kotlin plugin 1.8.21 will be delivered with upcoming Android Studios updates.
+
+1.8.20
+
+A feature release with Kotlin K2 compiler updates, AutoCloseable interface and Base64 encoding in stdlib, new JVM incremental compilation enabled by default, new Kotlin/Wasm compiler backend.
+
+545
+
+[p.546]
+Kotlin 版本发布
+
+Release on GitHub
+
+Learn more in:
+What's new in Kotlin 1.8.20 What's new in Kotlin YouTube video
+
+1.8.10 Released: February 2, 2023
+Release on GitHub
+
+A bug fix release for Kotlin 1.8.0.
+Learn more about Kotlin 1.8.0.
+For Android Studio Electric Eel and Flamingo, the Kotlin plugin 1.8.10 will be delivered with upcoming Android Studios updates.
+
+1.8.0 Released: December 28, 2022
+Release on GitHub
+
+A feature release with improved kotlin-reflect performance, new recursively copy or delete directory content experimental functions for JVM, improved ObjectiveC/Swift interoperability.
+Learn more in:
+What's new in Kotlin 1.8.0 Compatibility guide for Kotlin 1.8.0
+
+1.7.21 Released: November 9, 2022
+Release on GitHub
+
+A bug fix release for Kotlin 1.7.20.
+Learn more about Kotlin 1.7.20 in What's new in Kotlin 1.7.20.
+For Android Studio Dolphin, Electric Eel, and Flamingo, the Kotlin plugin 1.7.21 will be delivered with upcoming Android Studios updates.
+
+1.7.20 Released: September 29, 2022
+Release on GitHub
+
+An incremental release with new language features, the support for several compiler plugins in the Kotlin K2 compiler, the new Kotlin/Native memory manager enabled by default, and the support for Gradle 7.1.
+Learn more in:
+What's new in Kotlin 1.7.20 What's new in Kotlin YouTube video Compatibility guide for Kotlin 1.7.20
+Learn more about Kotlin 1.7.20.
+
+1.7.10 Released: July 7, 2022
+Release on GitHub
+
+A bug fix release for Kotlin 1.7.0.
+Learn more about Kotlin 1.7.0.
+For Android Studio Dolphin (213) and Android Studio Electric Eel (221), the Kotlin plugin 1.7.10 will be delivered with upcoming Android Studios updates.
+
+1.7.0 546
+
+[p.547]
+Kotlin 版本发布
+
+Released: June 9, 2022
+Release on GitHub
+
+Learn more in:
+What's new in Kotlin 1.7.0 What's new in Kotlin YouTube video Compatibility guide for Kotlin 1.7.0
+
+1.6.21 Released: April 20, 2022
+Release on GitHub
+
+A bug fix release for Kotlin 1.6.20. Learn more about Kotlin 1.6.20.
+
+1.6.20 Released: April 4, 2022
+Release on GitHub
+
+An incremental release with various improvements such as:
+Prototype of context receivers Callable references to functional interface constructors Kotlin/Native: performance improvements for the new memory manager Multiplatform: hierarchical project structure by default Kotlin/JS: IR compiler improvements Gradle: compiler execution strategies
+Learn more about Kotlin 1.6.20.
+
+1.6.10 Released: December 14, 2021
+Release on GitHub
+
+A bug fix release for Kotlin 1.6.0. Learn more about Kotlin 1.6.0.
+
+1.6.0 Released: November 16, 2021
+Release on GitHub
+
+A feature release with new language features, performance improvements, and evolutionary changes such as stabilizing experimental APIs.
+Learn more in:
+Release blog post What's new in Kotlin 1.6.0 Compatibility guide
+
+1.5.32 Released: November 29, 2021
+Release on GitHub
+
+A bug fix release for Kotlin 1.5.31. Learn more about Kotlin 1.5.30.
+
+547
+
+[p.548]
+Kotlin 版本发布
+
+1.5.31 Released: September 20, 2021
+Release on GitHub
+
+A bug fix release for Kotlin 1.5.30. Learn more about Kotlin 1.5.30.
+
+1.5.30 Released: August 23, 2021
+Release on GitHub
+
+An incremental release with various improvements such as:
+Instantiation of annotation classes on JVM Improved opt-in requirement mechanism and type inference Kotlin/JS IR backend in Beta Support for Apple Silicon targets Improved CocoaPods support Gradle: Java toolchain support and improved daemon configuration
+Learn more in:
+Release blog post What's new in Kotlin 1.5.30
+
+1.5.21 Released: July 13, 2021
+Release on GitHub
+
+A bug fix release for Kotlin 1.5.20. Learn more about Kotlin 1.5.20.
+
+1.5.20 Released: June 24, 2021
+Release on GitHub
+
+An incremental release with various improvements such as:
+String concatenation via invokedynamic on JVM by default Improved support for Lombok and support for JSpecify Kotlin/Native: KDoc export to Objective-C headers and faster Array.copyInto() inside one array Gradle: caching of annotation processors' classloaders and support for the -parallel Gradle property Aligned behavior of stdlib functions across platforms
+Learn more in:
+Release blog post What's new in Kotlin 1.5.20
+
+1.5.10 Released: May 24, 2021
+Release on GitHub
+
+A bug fix release for Kotlin 1.5.0. Learn more about Kotlin 1.5.0.
+
+548
+
+[p.549]
+Kotlin 版本发布
+
+Released: May 5, 2021
+Release on GitHub
+
+Learn more in:
+Release blog post What's new in Kotlin 1.5.0 Compatibility guide
+
+1.4.32 Released: March 22, 2021
+Release on GitHub
+
+A bug fix release for Kotlin 1.4.30. Learn more about Kotlin 1.4.30.
+
+1.4.31 Released: February 25, 2021
+Release on GitHub
+
+A bug fix release for Kotlin 1.4.30 Learn more about Kotlin 1.4.30.
+
+1.4.30 Released: February 3, 2021
+Release on GitHub
+
+An incremental release with various improvements such as:
+New JVM backend, now in Beta Preview of new language features Improved Kotlin/Native performance Standard library API improvements
+Learn more in:
+Release blog post What's new in Kotlin 1.4.30
+
+1.4.21 Released: December 7, 2020
+Release on GitHub
+
+A bug fix release for Kotlin 1.4.20 Learn more about Kotlin 1.4.20.
+
+1.4.20 Released: November 23, 2020
+Release on GitHub
+
+An incremental release with various improvements such as:
+Supporting new JVM features, like string concatenation via invokedynamic Improved performance and exception handling for Kotlin Multiplatform Mobile projects Extensions for JDK Path: Path("dir") / "file.txt"
+Learn more in:
+Release blog post What's new in Kotlin 1.4.20
+
+549
+
+[p.550]
+Kotlin 版本发布
+
+What's new in Kotlin 1.4.20
+
+1.4.10 发布 于：202009-07
+GitHub 上 的版本发 布
+
+A bug fix release for Kotlin 1.4.0. Learn more about Kotlin 1.4.0.
+
+1.4.0 发布 于：202008-17
+GitHub 上 的版本发 布
+
+A feature release with many features and improvements that mostly focus on quality and performance.
+Learn more in:
+Release blog post What's new in Kotlin 1.4.0 Compatibility guide Migrating to Kotlin 1.4.0
+
+1.3.72 发布 于：202004-15
+GitHub 上 的版本发 布
+
+A bug fix release for Kotlin 1.3.70. Learn more about Kotlin 1.3.70.
+
+550
+

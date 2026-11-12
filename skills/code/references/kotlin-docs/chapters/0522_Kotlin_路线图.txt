@@ -1,0 +1,170 @@
+# Kotlin 路线图（第 522-525 页）
+
+[p.522]
+Kotlin 路线图
+
+Kotlin 路线图
+
+最后修改时间 下次更新时间
+
+2025 年 2 月 2025 年 8 月
+
+欢迎来看 Kotlin 路线图！一窥 JetBrains 团队的工作重点。
+
+关键优先事项
+这个路线图的目标是给出全局图景。 这里列出了我们的关键关注领域——我们专注于交付的 最重要的方向：
+Language evolution: more efficient data handling, increased abstraction, enhanced performance with clear code. Kotlin Multiplatform: release direct Kotlin to Swift Export, streamlined build setup, and simplified creation of multiplatform libraries. Experience of third-party ecosystem authors: simplified development and publication process for Kotlin libraries, tools, and frameworks.
+
+以子系统划分的 Kotlin 路线图
+
+If you have any questions or feedback about the roadmap or the items on it, feel free to post them to YouTrack tickets or in the #kotlin-roadmap channel of Kotlin Slack (request an invite).
+
+子
+
+系
+
+当前聚焦
+
+统
+
+语
+
+See the full list of Kotlin language features and proposals or follow the YouTrack issue
+
+言
+
+for upcoming language features
+
+Finalize JSpecify support
+
+编
+
+Deprecate K1 compiler
+
+译
+
+Promote Kotlin/Wasm ( wasm-js target) to Beta
+
+器
+
+Kotlin/Wasm: Switch wasm-wasi target of libraries to WASI Preview 2
+
+Kotlin/Wasm: Support Component Model
+
+The first public release of Swift Export
+
+Enable Concurrent Mark and Sweep (CMS) GC by default
+
+Stabilize klib cross-compilation on different platforms
+
+多
+
+Implement the next generation distribution format of multiplatform libraries
+
+522
+
+[p.523]
+Kotlin 路线图
+
+平
+
+Support declaring Kotlin Multiplatform dependencies at project-level
+
+台
+
+Unify inline semantics between all Kotlin targets
+
+Enable incremental compilation of klib artifacts by default
+
+Kotlin Multiplatform development roadmap
+
+Improve development experience for Kotlin/Wasm projects in IntelliJ IDEA
+
+Improve performance of imports
+
+Support resources in XCFrameworks
+
+Kotlin Notebook: Smoother access and improved experience
+
+IntelliJ IDEA K2 mode complete release
+
+工
+
+Design the Build Tools API
+
+具
+
+Kotlin Ecosystem Plugin supporting Declarative Gradle
+
+Support Gradle project isolation
+
+Improve integration of Kotlin/Native toolchain into Gradle
+
+Improve Kotlin build reports
+
+Expose stable compiler arguments in Gradle DSL
+
+Improve Kotlin scripting and experience with .gradle.kts
+
+Library ecosystem roadmap items:
+
+Refine the Dokka HTML output UI
+
+Introduce default warnings/errors for Kotlin functions that return non-unit values
+
+that are unused
+
+New multiplatform API for the standard library: Support for Unicode and
+
+codepoints
+
+Stabilize the kotlinx-io library
+
+Improve Kotlin distribution UX: add code coverage and binary compatibility
+
+validation
+
+Promote kotlinx-datetime to Beta
+
+库
+
+生
+
+Ktor:
+
+态
+
+Add gRPC support to Ktor with a generator plugin and tutorial
+
+Make project structuring for the backend applications simple
+
+Publish CLI generator to SNAP
+
+Create Kubernetes Generator Plugin
+
+Make Dependency Injection Usage Simple
+
+HTTP/3 Support
+
+Exposed:
+
+Release 1.0.0 Add R2DBC Support
+
+This roadmap is not an exhaustive list of all things the team is working on, only the biggest projects. There's no commitment to delivering specific features or fixes in specific versions. We will adjust our priorities as we go and update the roadmap approximately every six months.
+
+523
+
+[p.524]
+Kotlin 路线图
+相对 2024 年 9 月版的变化
+已完成
+We've completed the following items from the previous roadmap: Compiler: Support debugging inline functions on Android Compiler: Improve the quality of compiler diagnostics Multiplatform: Support Xcode 16 in Kotlin Multiplatform: Publish publicly available API reference for Kotlin Gradle Plugin Tooling: Provide out-of-the-box debugging experience for Kotlin/Wasm targets Library ecosystem: Implement new Dokka Gradle plugin based on Dokkatoo Library ecosystem: New multiplatform API for the standard library: Atomics Library ecosystem: Expand Library authors’ guidelines
+新增
+We've added the following items to the roadmap: Compiler: Finalize JSpecify support Compiler: Deprecate K1 compiler Compiler: Promote Kotlin/Wasm ( wasm-js target) to Beta Tooling: Improve development experience for Kotlin/Wasm projects in IntelliJ IDEA Tooling: Improve performance of imports Tooling: Support resources in XCFrameworks Tooling: Smoother access and improved experience in Kotlin Notebook Ktor: Add gRPC support to Ktor with a generator plugin and tutorial Ktor: Make project structuring for the backend applications simple Ktor: Publish CLI generator to SNAP Ktor: Create Kubernetes Generator Plugin Ktor: Make Dependency Injection Usage Simple Ktor: HTTP/3 Support Exposed: Release 1.0.0 Exposed: Add R2DBC Support
+进行中
+All other previously identified roadmap items are in progress. You can check their YouTrack tickets for updates.
+524
+
+[p.525]
+Kotlin 路线图 525
+

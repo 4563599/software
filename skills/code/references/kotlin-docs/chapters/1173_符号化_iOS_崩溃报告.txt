@@ -1,0 +1,29 @@
+# 符号化 iOS 崩溃报告（第 1173-1174 页）
+
+[p.1173]
+符号化 iOS 崩溃报告
+符号化 iOS 崩溃报告
+Debugging an iOS application crash sometimes involves analyzing crash reports. More info about crash reports can be found in the Apple documentation. Crash reports generally require symbolication to become properly readable: symbolication turns machine code addresses into human-readable source locations. The document below describes some specific details of symbolicating crash reports from iOS applications using Kotlin.
+Producing .dSYM for release Kotlin binaries
+To symbolicate addresses in Kotlin code (e.g. for stack trace elements corresponding to Kotlin code) .dSYM bundle for Kotlin code is required. By default, Kotlin/Native compiler produces .dSYM for release (i.e. optimized) binaries on Darwin platforms. This can be disabled with -Xadd-light-debug=disable compiler flag. At the same time, this option is disabled by default for other platforms. To enable it, use the -Xadd-lightdebug=enable compiler option.
+【Kotlin】
+kotlin { targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget> { binaries.all { freeCompilerArgs += "-Xadd-light-debug={enable|disable}" } }
+}
+【Groovy】
+kotlin { targets.withType(org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget) { binaries.all { freeCompilerArgs += "-Xadd-light-debug={enable|disable}" } }
+}
+1173
+
+[p.1174]
+符号化 iOS 崩溃报告
+In projects created from IntelliJ IDEA or AppCode templates these .dSYM bundles are then discovered by Xcode automatically.
+Make frameworks static when using rebuild from bitcode
+Rebuilding Kotlin-produced framework from bitcode invalidates the original .dSYM . If it is performed locally, make sure the updated .dSYM is used when symbolicating crash reports. If rebuilding is performed on App Store side, then .dSYM of rebuilt dynamic framework seems discarded and not downloadable from App Store Connect. In this case, it may be required to make the framework static.
+【Kotlin】
+kotlin { targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget> { binaries.withType<org.jetbrains.kotlin.gradle.plugin.mpp.Framework> { isStatic = true } }
+}
+【Groovy】
+kotlin { targets.withType(org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget) { binaries.withType(org.jetbrains.kotlin.gradle.plugin.mpp.Framework) { isStatic = true } }
+}
+1174
+

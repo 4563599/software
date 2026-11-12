@@ -1,0 +1,54 @@
+# No-arg 编译器插件（第 1868-1870 页）
+
+[p.1868]
+No-arg 编译器插件
+No-arg 编译器插件
+The no-arg compiler plugin generates an additional zero-argument constructor for classes with a specific annotation. The generated constructor is synthetic, so it can't be directly called from Java or Kotlin, but it can be called using reflection. This allows the Java Persistence API (JPA) to instantiate a class although it doesn't have the zeroparameter constructor from Kotlin or Java point of view (see the description of kotlin-jpa plugin below).
+In your Kotlin file
+Add new annotations to mark the code that needs a zero-argument constructor:
+package com.my annotation class Annotation
+Gradle
+Add the plugin using Gradle's plugins DSL:
+【Kotlin】
+plugins { kotlin("plugin.noarg") version "2.1.21"
+}
+【Groovy】
+plugins { id "org.jetbrains.kotlin.plugin.noarg" version "2.1.21"
+}
+1868
+
+[p.1869]
+No-arg 编译器插件
+Then specify the list of no-arg annotations that must lead to generating a no-arg constructor for the annotated classes:
+noArg { annotation("com.my.Annotation")
+}
+Enable invokeInitializers option if you want the plugin to run the initialization logic from the synthetic constructor. By default, it is disabled.
+noArg { invokeInitializers = true
+}
+Maven
+<plugin> <artifactId>kotlin-maven-plugin</artifactId> <groupId>org.jetbrains.kotlin</groupId> <version>${kotlin.version}</version>
+<configuration> <compilerPlugins> <!-- Or "jpa" for JPA support --> <plugin>no-arg</plugin> </compilerPlugins>
+<pluginOptions> <option>no-arg:annotation=com.my.Annotation</option> <!-- Call instance initializers in the synthetic constructor --> <!-- <option>no-arg:invokeInitializers=true</option> -->
+</pluginOptions> </configuration>
+<dependencies> <dependency> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-maven-noarg</artifactId> <version>${kotlin.version}</version> </dependency>
+</dependencies> </plugin>
+1869
+
+[p.1870]
+No-arg 编译器插件
+JPA 支持
+As with the kotlin-spring plugin wrapped on top of all-open , kotlin-jpa is wrapped on top of no-arg . The plugin specifies @Entity , @Embeddable , and @MappedSuperclass no-arg annotations automatically. Add the plugin using the Gradle plugins DSL:
+【Kotlin】
+plugins { kotlin("plugin.jpa") version "2.1.21"
+}
+【Groovy】
+plugins { id "org.jetbrains.kotlin.plugin.jpa" version "2.1.21"
+}
+In Maven, enable the jpa plugin:
+<compilerPlugins> <plugin>jpa</plugin>
+</compilerPlugins>
+命令行编译器
+Add the plugin JAR file to the compiler plugin classpath and specify annotations or presets:
+-Xplugin=$KOTLIN_HOME/lib/noarg-compiler-plugin.jar -P plugin:org.jetbrains.kotlin.noarg:annotation=com.my.Annotation -P plugin:org.jetbrains.kotlin.noarg:preset=jpa
+1870
+

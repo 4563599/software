@@ -1,0 +1,80 @@
+# KSP 概述（第 1904-1908 页）
+
+[p.1904]
+KSP 概述
+Kotlin 符号处理 API
+Kotlin Symbol Processing (KSP) is an API that you can use to develop lightweight compiler plugins. KSP provides a simplified compiler plugin API that leverages the power of Kotlin while keeping the learning curve at a minimum. Compared to kapt, annotation processors that use KSP can run up to two times faster.
+To learn more about how KSP compares to kapt, check out why KSP. To get started writing a KSP processor, take a look at the KSP quickstart.
+Overview
+The KSP API processes Kotlin programs idiomatically. KSP understands Kotlin-specific features, such as extension functions, declaration-site variance, and local functions. It also models types explicitly and provides basic type checking, such as equivalence and assign-compatibility. The API models Kotlin program structures at the symbol level according to Kotlin grammar. When KSP-based plugins process source programs, constructs like classes, class members, functions, and associated parameters are accessible for the processors, while things like if blocks and for loops are not. Conceptually, KSP is similar to KType in Kotlin reflection. The API allows processors to navigate from class declarations to corresponding types with specific type arguments and vice-versa. You can also substitute type arguments, specify variances, apply star projections, and mark nullabilities of types. Another way to think of KSP is as a preprocessor framework of Kotlin programs. By considering KSP-based plugins as symbol processors, or simply processors, the data flow in a compilation can be described in the following steps:
+1. Processors read and analyze source programs and resources. 2. Processors generate code or other forms of output. 3. The Kotlin compiler compiles the source programs together with the generated code. Unlike a full-fledged compiler plugin, processors cannot modify the code. A compiler plugin that changes language semantics can sometimes be very confusing. KSP avoids that by treating the source programs as read-only. You can also get an overview of KSP in this video:
+1904
+
+[p.1905]
+KSP 概述
+YouTube 视频：Kotlin Symbol Processing (KSP)
+How KSP looks at source files
+Most processors navigate through the various program structures of the input source code. Before diving into usage of the API, let's see at how a file might look from KSP's point of view:
+KSFile packageName: KSName fileName: String annotations: List<KSAnnotation> (File annotations) declarations: List<KSDeclaration> KSClassDeclaration // class, interface, object simpleName: KSName qualifiedName: KSName containingFile: String typeParameters: KSTypeParameter parentDeclaration: KSDeclaration classKind: ClassKind primaryConstructor: KSFunctionDeclaration superTypes: List<KSTypeReference> // contains inner classes, member functions, properties, etc. declarations: List<KSDeclaration> KSFunctionDeclaration // top level function simpleName: KSName qualifiedName: KSName containingFile: String typeParameters: KSTypeParameter parentDeclaration: KSDeclaration functionKind: FunctionKind extensionReceiver: KSTypeReference? returnType: KSTypeReference parameters: List<KSValueParameter> // contains local classes, local functions, local variables, etc. declarations: List<KSDeclaration> KSPropertyDeclaration // global variable simpleName: KSName qualifiedName: KSName containingFile: String typeParameters: KSTypeParameter
+1905
+
+[p.1906]
+KSP 概述
+parentDeclaration: KSDeclaration extensionReceiver: KSTypeReference? type: KSTypeReference getter: KSPropertyGetter
+returnType: KSTypeReference setter: KSPropertySetter
+parameter: KSValueParameter
+This view lists common things that are declared in the file: classes, functions, properties, and so on.
+SymbolProcessorProvider: the entry point
+KSP expects an implementation of the SymbolProcessorProvider interface to instantiate SymbolProcessor :
+interface SymbolProcessorProvider { fun create(environment: SymbolProcessorEnvironment): SymbolProcessor
+}
+While SymbolProcessor is defined as:
+interface SymbolProcessor { fun process(resolver: Resolver): List<KSAnnotated> // Let's focus on this fun finish() {} fun onError() {}
+}
+A Resolver provides SymbolProcessor with access to compiler details such as symbols. A processor that finds all top-level functions and non-local functions in top-level classes might look something like the following:
+class HelloFunctionFinderProcessor : SymbolProcessor() { // ... val functions = mutableListOf<KSClassDeclaration>() val visitor = FindFunctionsVisitor()
+override fun process(resolver: Resolver) { resolver.getAllFiles().forEach { it.accept(visitor, Unit) }
+}
+inner class FindFunctionsVisitor : KSVisitorVoid() { override fun visitClassDeclaration(classDeclaration: KSClassDeclaration, data:
+Unit) { classDeclaration.getDeclaredFunctions().forEach { it.accept(this, Unit) }
+}
+1906
+
+[p.1907]
+KSP 概述
+
+nit) {
+
+override fun visitFunctionDeclaration(function: KSFunctionDeclaration, data: U
+functions.add(function) }
+
+override fun visitFile(file: KSFile, data: Unit) { file.declarations.forEach { it.accept(this, Unit) }
+} } // ...
+
+class Provider : SymbolProcessorProvider { override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor
+= TODO() }
+}
+
+Resources
+Quickstart Why use KSP? Examples How KSP models Kotlin code Reference for Java annotation processor authors Incremental processing notes Multiple round processing notes KSP on multiplatform projects Running KSP from command line FAQ
+
+Supported libraries
+
+The table includes a list of popular libraries on Android and their various stages of support for KSP:
+
+Library Room Moshi RxHttp Kotshi Lyricist
+
+Officially supported Officially supported Officially supported Officially supported Officially supported
+
+Status
+
+1907
+
+[p.1908]
+KSP 概述
+Lich SavedState gRPC Dekorator EasyAdapter Koin Annotations Glide Micronaut Epoxy Paris Auto Dagger SealedX Ktorfit Mockative DeeplinkDispatch Dagger Motif Hilt Auto Factory
+
+Officially supported Officially supported Officially supported Officially supported Officially supported Officially supported Officially supported Officially supported Officially supported Officially supported Officially supported Officially supported Supported via airbnb/DeepLinkDispatch#323 Alpha Alpha In progress Not yet supported
+
+1908
+

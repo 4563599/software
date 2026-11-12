@@ -1,0 +1,321 @@
+# Java 注解处理对应到 KSP 参考（第 1925-1931 页）
+
+[p.1925]
+Java 注解处理对应到 KSP 参考
+
+Java 注解处理对应到 KSP 参考
+
+Program elements
+
+Java
+AnnotationMirror AnnotationValue Element ExecutableElement
+PackageElement
+Parameterizable QualifiedNameable TypeElement TypeParameterElement VariableElement
+
+Closest facility in KSP
+KSAnnotation KSValueArguments
+KSDeclaration /
+KSDeclarationContainer KSFunctionDeclaration
+KSFile
+KSDeclaration KSDeclaration KSClassDeclaration KSTypeParameter
+KSValueParameter /
+KSPropertyDeclaration
+
+Notes
+KSP doesn't model packages as program elements
+
+Types
+
+KSP requires explicit type resolution, so some functionalities in Java can only be carried out by KSType and the corresponding elements before resolution.
+
+Java
+ArrayType DeclaredType ErrorType ExecutableType
+IntersectionType NoType NullType PrimitiveType
+
+Closest facility in KSP
+KSBuiltIns.arrayType
+KSType /
+KSClassifierReference KSType.isError
+KSType /
+KSCallableReference
+KSType /
+KSTypeParameter KSType.isError
+KSBuiltIns
+
+Notes
+N/A in KSP N/A in KSP Not exactly same as primitive type in Java
+
+1925
+
+[p.1926]
+Java 注解处理对应到 KSP 参考
+
+ReferenceType TypeMirror TypeVariable
+UnionType
+WildcardType
+
+KSTypeReference KSType KSTypeParameter
+N/A
+KSType /
+KSTypeArgument
+
+Kotlin has only one type per catch block. UnionType is also not observable by even Java annotation processors
+
+Misc
+
+Name
+
+Java
+
+ElementKind
+
+Modifier
+
+NestingKind
+
+AnnotationValueVisitor ElementVisitor AnnotatedConstruct TypeVisitor
+
+TypeKind
+
+ElementFilter ElementKindVisitor ElementScanner SimpleAnnotationValueVisitor SimpleElementVisitor SimpleTypeVisitor TypeKindVisitor
+Types
+Elements
+
+Closest facility in KSP
+KSName
+ClassKind / FunctionKind
+Modifier
+ClassKind / FunctionKind
+
+Notes
+
+KSVisitor KSAnnotated
+
+KSBuiltIns
+Collection.filterIsInstance KSVisitor KSTopDownVisitor
+KSVisitor
+
+Some can be found in builtins, otherwise check
+KSClassDeclaration
+for DeclaredType
+Not needed in KSP
+
+Resolver / utils Resolver / utils
+
+Some of the utils are also integrated into symbol interfaces
+
+Details
+1926
+
+[p.1927]
+Java 注解处理对应到 KSP 参考
+
+See how functionalities of Java annotation processing API can be carried out by KSP.
+
+AnnotationMirror
+Java
+getAnnotationType getElementValues
+
+KSP equivalent
+ksAnnotation.annotationType ksAnnotation.arguments
+
+AnnotationValue
+Java
+getValue
+
+KSP equivalent
+ksValueArgument.value
+
+Element
+
+Java
+asType
+getAnnotation getAnnotationMirrors getEnclosedElements getEnclosingElements getKind getModifiers getSimpleName
+
+KSP equivalent ksClassDeclaration.asType(...) is available for KSClassDeclaration only. Type arguments need to be supplied. To be implemented
+ksDeclaration.annotations ksDeclarationContainer.declarations ksDeclaration.parentDeclaration
+Type check and cast following ClassKind or FunctionKind
+ksDeclaration.modifiers ksDeclaration.simpleName
+
+ExecutableElement
+
+Java
+getDefaultValue getParameters getReceiverType getReturnType getSimpleName getThrownTypes getTypeParameters isDefault
+
+KSP equivalent To be implemented
+ksFunctionDeclaration.parameters ksFunctionDeclaration.parentDeclaration ksFunctionDeclaration.returnType ksFunctionDeclaration.simpleName
+Not needed in Kotlin
+ksFunctionDeclaration.typeParameters
+Check whether parent declaration is an interface or not
+
+1927
+
+[p.1928]
+Java 注解处理对应到 KSP 参考
+
+isVarArgs
+
+ksFunctionDeclaration.parameters.any { it.isVarArg }
+
+Parameterizable
+Java
+getTypeParameters
+
+KSP equivalent
+ksFunctionDeclaration.typeParameters
+
+QualifiedNameable
+Java
+getQualifiedName
+
+KSP equivalent
+ksDeclaration.qualifiedName
+
+TypeElement
+
+Java
+getEnclosedElements getEnclosingElement
+getInterfaces
+getNestingKind getQualifiedName getSimpleName
+getSuperclass
+getTypeParameters
+
+KSP equivalent
+ksClassDeclaration.declarations
+ksClassDeclaration.parentDeclaration
+```kotlin // Should be able to do without resolution ksClassDeclaration.superTypes .map { it.resolve() } .filter { (it?.declaration as? KSClassDeclaration)?.classKind == ClassKind.INTERFACE } ```
+Check KSClassDeclaration.parentDeclaration and inner modifier
+ksClassDeclaration.qualifiedName
+ksClassDeclaration.simpleName
+```kotlin // Should be able to do without resolution ksClassDeclaration.superTypes .map { it.resolve() } .filter { (it?.declaration as? KSClassDeclaration)?.classKind == ClassKind.CLASS } ```
+ksClassDeclaration.typeParameters
+
+TypeParameterElement
+Java
+getBounds getEnclosingElement getGenericElement
+
+KSP equivalent
+ksTypeParameter.bounds ksTypeParameter.parentDeclaration ksTypeParameter.parentDeclaration
+
+VariableElement
+
+1928
+
+[p.1929]
+Java 注解处理对应到 KSP 参考
+
+Java
+getConstantValue getEnclosingElement getSimpleName
+
+KSP equivalent To be implemented
+ksValueParameter.parentDeclaration ksValueParameter.simpleName
+
+ArrayType
+Java
+getComponentType
+
+KSP equivalent
+ksType.arguments.first()
+
+DeclaredType
+Java
+asElement getEnclosingType getTypeArguments
+
+KSP equivalent
+ksType.declaration ksType.declaration.parentDeclaration ksType.arguments
+
+ExecutableType
+A KSType for a function is just a signature represented by the FunctionN<R, T1, T2, ..., TN> family.
+
+Java
+getParameterTypes getReceiverType getReturnType getThrownTypes getTypeVariables
+
+KSP equivalent ksType.declaration.typeParameters ,
+ksFunctionDeclaration.parameters.map { it.type } ksFunctionDeclaration.parentDeclaration.asType(...) ksType.declaration.typeParameters.last()
+Not needed in Kotlin
+ksFunctionDeclaration.typeParameters
+
+IntersectionType
+Java
+getBounds
+
+KSP equivalent
+ksTypeParameter.bounds
+
+TypeMirror
+
+1929
+
+[p.1930]
+Java 注解处理对应到 KSP 参考
+
+Java
+getKind
+
+KSP equivalent
+Compare with types in KSBuiltIns for primitive types, Unit type, otherwise declared types
+
+TypeVariable
+
+Java
+asElement getLowerBound getUpperBound
+
+KSP equivalent
+ksType.declaration
+To be decided. Only needed if capture is provided and explicit bound checking is needed.
+ksTypeParameter.bounds
+
+WildcardType
+
+Java
+getExtendsBound getSuperBound
+
+KSP equivalent
+```kotlin if (ksTypeArgument.variance == Variance.COVARIANT) ksTypeArgument.type else null ```
+```kotlin if (ksTypeArgument.variance == Variance.CONTRAVARIANT) ksTypeArgument.type else null ```
+
+Elements
+
+Java
+getAllAnnotationMirrors getAllMembers getBinaryName getConstantExpression getDocComment getElementValuesWithDefaults getName getPackageElement
+getPackageOf getTypeElement hides
+isDeprecated
+
+KSP equivalent
+KSDeclarations.annotations
+getAllFunctions , getAllProperties is to be implemented To be decided, see Java Specification There is constant value, not expression To be implemented To be implemented
+resolver.getKSNameFromString
+Package not supported, while package information can be retrieved. Operation on package is not possible for KSP Package not supported
+Resolver.getClassDeclarationByName
+To be implemented ```kotlin KsDeclaration.annotations.any { it.annotationType.resolve()!!.declaration.qualifiedName!!.asString()
+
+1930
+
+[p.1931]
+Java 注解处理对应到 KSP 参考
+
+overrides printElements
+
+== Deprecated::class.qualifiedName } ```
+KSFunctionDeclaration.overrides / KSPropertyDeclaration.overrides (member function of respective class)
+KSP has basic toString() implementation on most classes
+
+Types
+
+Java
+asElement asMemberOf boxedClass capture contains directSuperTypes erasure getArrayType getDeclaredType getNoType getNullType getPrimitiveType getWildcardType isAssignable isSameType
+isSubsignature
+isSubtype unboxedType
+
+KSP equivalent
+ksType.declaration resolver.asMemberOf
+Not needed To be decided
+KSType.isAssignableFrom (ksType.declaration as KSClassDeclaration).superTypes ksType.starProjection() ksBuiltIns.arrayType.replace(...) ksClassDeclaration.asType
+ksBuiltIns.nothingType / null Depending on the context, KSType.markNullable could be useful Not needed, check for KSBuiltins Use Variance in places expecting KSTypeArgument
+ksType.isAssignableFrom ksType.equals
+functionTypeA == functionTypeB / functionTypeA ==
+functionTypeB.starProjection() ksType.isAssignableFrom
+Not needed
+
+1931
+

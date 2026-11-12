@@ -1,0 +1,128 @@
+# 反射（第 834-840 页）
+
+[p.834]
+反射
+反射
+反射是这样的一组语言和库功能，让你可以在运行时自省你的程序的结构。 Kotlin 中的函数 和属性是一等公民，而对其自省（即在运行时获悉一个属性或函数的名称或类型）能力是使 用函数式或反应式风格时所必需的。
+Kotlin/JS provides limited support for reflection features. Learn more about reflection in Kotlin/JS.
+JVM dependency
+On the JVM platform, the Kotlin compiler distribution includes the runtime component required for using the reflection features as a separate artifact, kotlin-reflect.jar . This is done to reduce the required size of the runtime library for applications that do not use reflection features. To use reflection in a Gradle or Maven project, add the dependency on kotlin-reflect :
+In Gradle:
+【Kotlin】
+dependencies { implementation(kotlin("reflect"))
+}
+【Groovy】
+dependencies { implementation "org.jetbrains.kotlin:kotlin-reflect:2.1.21"
+}
+In Maven:
+<dependencies>
+834
+
+[p.835]
+反射
+<dependency> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-reflect</artifactId>
+</dependency> </dependencies>
+If you don't use Gradle or Maven, make sure you have kotlin-reflect.jar in the classpath of your project. In other supported cases (IntelliJ IDEA projects that use the command-line compiler or Ant), it is added by default. In the command-line compiler and Ant, you can use the -no-reflect compiler option to exclude kotlin-reflect.jar from the classpath.
+类引用
+最基本的反射功能是获取 Kotlin 类的运行时引用。要获取对静态已知的 Kotlin 类的引用，可 以使用 类字面值 语法：
+val c = MyClass::class
+该引用是 KClass 类型的值。 对于 JVM 平台：Kotlin 类引用与 Java 类引用不同。要获得 Java 类引用， 请在 KClass 实例上使用 .java 属性。
+绑定的类引用
+通过使用对象作为接收者，可以用相同的 ::class 语法获取指定对象的类的引用：
+val widget: Widget = …… assert(widget is GoodWidget) { "Bad widget: ${widget::class.qualifiedName}" }
+你会获得对象的精确类的引用，例如 GoodWidget 或 BadWidget ， 尽管接收者表达式的类型 是 Widget 。
+可调用引用
+函数、属性以及构造函数的引用可以用于调用或者用作函数类型的实例。 所有可调用引用的公共超类型是 KCallable<out R> ， 其中 R 是返回值类型。对于属性是属 性类型，对于构造函数是所构造类型。
+835
+
+[p.836]
+反射
+函数引用
+当有一个具名函数声明如下， you can call it directly ( isOdd(5) ):
+fun isOdd(x: Int) = x % 2 != 0
+Alternatively, you can use the function as a function type value, that is, pass it to another function. To do so, use the :: operator:
+fun isOdd(x: Int) = x % 2 != 0 fun main() { //sampleStart
+val numbers = listOf(1, 2, 3) println(numbers.filter(::isOdd)) //sampleEnd }
+这里 ::isOdd 是函数类型 (Int) -> Boolean 的一个值。 函数引用属于 KFunction<out R> 的子类型之一，取决于参数个数。例如 KFunction3<T1, T2, T3, R> 。 当上下文中已知函数期望的类型时， :: 可以用于重载函数。 例如：
+fun main() { //sampleStart
+fun isOdd(x: Int) = x % 2 != 0 fun isOdd(s: String) = s == "brillig" || s == "slithy" || s == "tove" val numbers = listOf(1, 2, 3) println(numbers.filter(::isOdd)) // 引用到 isOdd(x: Int) //sampleEnd }
+或者，你可以通过将方法引用存储在具有显式指定类型的变量中来提供必要的上下文：
+val predicate: (String) -> Boolean = ::isOdd // 引用到 isOdd(x: String)
+如果需要使用类的成员函数或扩展函数，它需要是限定的，例如 String::toCharArray 。 即使以扩展函数的引用初始化一个变量，其推断出的函数类型也会没有接收者，但是它会有 一个接受接收者对象的额外参数。如需改为带有接收者的函数类型，请明确指定其类型：
+val isEmptyStringList: List<String>.() -> Boolean = List<String>::isEmpty
+836
+
+[p.837]
+反射
+示例：函数组合
+考虑以下函数：
+fun <A, B, C> compose(f: (B) -> C, g: (A) -> B): (A) -> C { return { x -> f(g(x)) }
+}
+它返回一个传给它的两个函数的组合： compose(f, g) = f(g(*)) 。 你可以将该函数应用于可 调用引用：
+fun <A, B, C> compose(f: (B) -> C, g: (A) -> B): (A) -> C { return { x -> f(g(x)) }
+} fun isOdd(x: Int) = x % 2 != 0 fun main() { //sampleStart
+fun length(s: String) = s.length val oddLength = compose(::isOdd, ::length) val strings = listOf("a", "ab", "abc") println(strings.filter(oddLength)) //sampleEnd }
+属性引用
+要把属性作为 Kotlin中 的一等对象来访问，可以使用 :: 操作符：
+val x = 1 fun main() {
+println(::x.get()) println(::x.name) }
+表达式 ::x 求值为 KProperty0<Int> 类型的属性对象，可以使用 get() 读取它的值，或者 使用 name 属性来获取属性名。更多信息请参见关于 KProperty 类的文档。 对于可变属性，例如 var y = 1 ， ::y 返回 KMutableProperty0<Int> 类型的一个值， 该类 型有一个 set() 方法。
+837
+
+[p.838]
+反射
+var y = 1
+fun main() { ::y.set(2) println(y)
+}
+属性引用可以用在预期具有单个泛型参数的函数的地方：
+fun main() { //sampleStart
+val strs = listOf("a", "bc", "def") println(strs.map(String::length)) //sampleEnd }
+要访问属于类的成员的属性，这样限定它：
+fun main() { //sampleStart
+class A(val p: Int) val prop = A::p println(prop.get(A(1))) //sampleEnd }
+对于扩展属性：
+val String.lastChar: Char get() = this[length - 1]
+fun main() { println(String::lastChar.get("abc"))
+}
+与 Java 反射的互操作性
+在 JVM 平台上，标准库包含反射类的扩展，它提供了与 Java 反射对象之间映射（参见 kotlin.reflect.jvm 包）。 例如，要查找一个用作 Kotlin 属性 getter 的 幕后字段或 Java方 法，可以这样写：
+import kotlin.reflect.jvm.*
+class A(val p: Int)
+fun main() {
+838
+
+[p.839]
+反射
+println(A::p.javaGetter) // 输出 "public final int A.getP()" println(A::p.javaField) // 输出 "private final int A.p" }
+要获得对应于 Java 类的 Kotlin 类，请使用 .kotlin 扩展属性：
+fun getKClass(o: Any): KClass<Any> = o.javaClass.kotlin
+构造函数引用
+构造函数可以像方法和属性那样引用。可以将其用于程序期待这样函数类型对象的任何地 方：它与该构造函数接受相同参数并且返回相应类型的对象。 通过使用 :: 操作符并添加类 名来引用构造函数。考虑下面的函数， 它期待一个无参并返回 Foo 类型的函数参数：
+class Foo fun function(factory: () -> Foo) {
+val x: Foo = factory() }
+使用 ::Foo ，类 Foo 的零参数构造函数，可以这样调用它：
+function(::Foo)
+构造函数的可调用引用的类型也是 KFunction<out R> 的子类型之一， 取决于其参数个数。
+绑定的函数与属性引用
+你可以引用特定对象的实例方法：
+fun main() { //sampleStart
+val numberRegex = "\\d+".toRegex() println(numberRegex.matches("29")) val isNumber = numberRegex::matches println(isNumber("29")) //sampleEnd }
+取代直接调用方法 matches 的是使用其引用。 这样的引用会绑定到其接收者上。 它可以直 接调用（如上例所示）或者用于任何期待一个函数类型表达式的时候：
+839
+
+[p.840]
+反射
+fun main() { //sampleStart
+val numberRegex = "\\d+".toRegex() val strings = listOf("abc", "124", "a70") println(strings.filter(numberRegex::matches)) //sampleEnd }
+比较绑定的引用与未绑定的引用的类型。 绑定的可调用引用有其接收者“附加”到其上，因此 接收者的类型不再是参数：
+val isNumber: (CharSequence) -> Boolean = numberRegex::matches val matches: (Regex, CharSequence) -> Boolean = Regex::matches
+属性引用也可以绑定：
+fun main() { //sampleStart
+val prop = "abc"::length println(prop.get()) //sampleEnd }
+无需显式指定 this 作为接收者： this::foo 与 ::foo 是等价的。
+绑定的构造函数引用
+内部类的构造函数的绑定的可调用引用可通过提供外部类的实例来获得：
+class Outer { inner class Inner
+} val o = Outer() val boundInnerCtor = o::Inner
+840
+

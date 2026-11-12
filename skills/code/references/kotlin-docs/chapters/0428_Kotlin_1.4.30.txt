@@ -1,0 +1,180 @@
+# Kotlin 1.4.30（第 428-437 页）
+
+[p.428]
+Kotlin 1.4.30
+Kotlin 1.4.30 的新特性
+发布于：2021-02-03 Kotlin 1.4.30 offers preview versions of new language features, promotes the new IR backend of the Kotlin/JVM compiler to Beta, and ships various performance and functional improvements. You can also learn about new features in this blog post.
+语言特性
+Kotlin 1.5.0 is going to deliver new language features – JVM 记录类型支持, sealed interfaces, and Stable inline classes. In Kotlin 1.4.30, you can try these features and improvements in preview mode. We would be very grateful if you share your feedback with us in the corresponding YouTrack tickets, as that will allow us to address it before the release of 1.5.0.
+JVM 记录类型支持 密封接口以及密封类改进 改进的内联类 To enable these language features and improvements in preview mode, you need to opt in by adding specific compiler options. See the sections below for details. Learn more about the new features preview in this blog post.
+JVM 记录类型支持
+The JVM records feature is Experimental. It may be dropped or changed at any time. Opt-in is required (see the details below), and you should use it only for evaluation purposes. We would appreciate your feedback on it in YouTrack.
+The JDK 16 release includes plans to stabilize a new Java class type called record. To provide all the benefits of Kotlin and maintain its interoperability with Java, Kotlin is introducing experimental record class support. You can use record classes that are declared in Java just like classes with properties in Kotlin. No additional steps are required. Starting with 1.4.30, you can declare the record class in Kotlin using the @JvmRecord annotation for a data class:
+428
+
+[p.429]
+Kotlin 1.4.30
+@JvmRecord data class User(val name: String, val age: Int)
+To try the preview version of JVM records, add the compiler options -Xjvm-enable-preview and language-version 1.5 . We're continuing to work on JVM records support, and we would be very grateful if you would share your feedback with us using this YouTrack ticket. Learn more about implementation, restrictions, and the syntax in KEEP.
+密封接口
+密封接口 are Experimental. They may be dropped or changed at any time. Opt-in is required (see the details below), and you should use them only for evaluation purposes. We would appreciate your feedback on them in YouTrack.
+In Kotlin 1.4.30, we're shipping the prototype of sealed interfaces. They complement sealed classes and make it possible to build more flexible restricted class hierarchies. They can serve as "internal" interfaces that cannot be implemented outside the same module. You can rely on that fact, for example, to write exhaustive when expressions.
+sealed interface Polygon
+class Rectangle(): Polygon class Triangle(): Polygon
+// when() is exhaustive: no other polygon implementations can appear // after the module is compiled fun draw(polygon: Polygon) = when (polygon) {
+is Rectangle -> // ... is Triangle -> // ... }
+Another use-case: with sealed interfaces, you can inherit a class from two or more sealed superclasses.
+sealed interface Fillable { fun fill()
+} sealed interface Polygon {
+val vertices: List<Point> }
+429
+
+[p.430]
+Kotlin 1.4.30
+class Rectangle(override val vertices: List<Point>): Fillable, Polygon { override fun fill() { /*...*/ }
+}
+To try the preview version of sealed interfaces, add the compiler option -language-version 1.5 . Once you switch to this version, you'll be able to use the sealed modifier on interfaces. We would be very grateful if you would share your feedback with us using this YouTrack ticket. Learn more about sealed interfaces.
+包范围的密封类层次结构
+Package-wide hierarchies of sealed classes are Experimental. They may be dropped or changed at any time. Opt-in is required (see the details below), and you should use them only for evaluation purposes. We would appreciate your feedback on them in YouTrack.
+Sealed classes can now form more flexible hierarchies. They can have subclasses in all files of the same compilation unit and the same package. Previously, all subclasses had to appear in the same file. Direct subclasses may be top-level or nested inside any number of other named classes, named interfaces, or named objects. The subclasses of a sealed class must have a name that is properly qualified – they cannot be local nor anonymous objects. To try package-wide hierarchies of sealed classes, add the compiler option -language-version 1.5 . We would be very grateful if you would share your feedback with us using this YouTrack ticket. Learn more about package-wide hierarchies of sealed classes.
+改进的内联类
+Inline value classes are in Beta. They are almost stable, but migration steps may be required in the future. We'll do our best to minimize any changes you have to make. We would appreciate your feedback on the inline classes feature in YouTrack.
+Kotlin 1.4.30 promotes inline classes to Beta and brings the following features and improvements to them:
+Since inline classes are value-based, you can define them using the value modifier. The inline and value modifiers are now equivalent to each other. In future Kotlin versions, we're planning to deprecate the inline modifier.
+430
+
+[p.431]
+Kotlin 1.4.30
+From now on, Kotlin requires the @JvmInline annotation before a class declaration for the JVM backend:
+inline class Name(private val s: String)
+value class Name(private val s: String)
+// For JVM backends @JvmInline value class Name(private val s: String)
+Inline classes can have init blocks. You can add code to be executed right after the class is instantiated:
+@JvmInline value class Negative(val x: Int) {
+init { require(x < 0) { }
+} }
+Calling functions with inline classes from Java code: before Kotlin 1.4.30, you couldn't call functions that accept inline classes from Java because of mangling. From now on, you can disable mangling manually. To call such functions from Java code, you should add the @JvmName annotation before the function declaration:
+inline class UInt(val x: Int)
+fun compute(x: Int) { }
+@JvmName("computeUInt") fun compute(x: UInt) { }
+In this release, we've changed the mangling scheme for functions to fix the incorrect behavior. These changes led to ABI changes. Starting with 1.4.30, the Kotlin compiler uses a new mangling scheme by default. Use the Xuse-14-inline-classes-mangling-scheme compiler flag to force the compiler to use the old 1.4.0 mangling scheme and preserve binary compatibility. Kotlin 1.4.30 promotes inline classes to Beta and we are planning to make them Stable in future releases. We'd be very grateful if you would share your feedback with us using this YouTrack ticket. To try the preview version of inline classes, add the compiler option -Xinline-classes or language-version 1.5 .
+431
+
+[p.432]
+Kotlin 1.4.30
+Learn more about the mangling algorithm in KEEP. Learn more about inline classes.
+Kotlin/JVM
+JVM IR 编译器后端达到 Beta 版
+The IR-based compiler backend for Kotlin/JVM, which was presented in 1.4.0 in Alpha, has reached Beta. This is the last pre-stable level before the IR backend becomes the default for the Kotlin/JVM compiler. We're now dropping the restriction on consuming binaries produced by the IR compiler. Previously, you could use code compiled by the new JVM IR backend only if you had enabled the new backend. Starting from 1.4.30, there is no such limitation, so you can use the new backend to build components for third-party use, such as libraries. Try the Beta version of the new backend and share your feedback in our issue tracker. To enable the new JVM IR backend, add the following lines to the project's configuration file:
+In Gradle:
+【Kotlin】
+tasks.withType(org.jetbrains.kotlin.gradle.dsl.KotlinJvmCompile::class) { kotlinOptions.useIR = true
+}
+【Groovy】
+tasks.withType(org.jetbrains.kotlin.gradle.dsl.KotlinJvmCompile) { kotlinOptions.useIR = true
+}
+In Maven:
+<configuration> <args> <arg>-Xuse-ir</arg>
+432
+
+[p.433]
+Kotlin 1.4.30
+</args> </configuration>
+Learn more about the changes that the JVM IR backend brings in this blog post.
+Kotlin/Native
+性能提升
+Kotlin/Native has received a variety of performance improvements in 1.4.30, which has resulted in faster compilation times. For example, the time required to rebuild the framework in the Networking and data storage with Kotlin Multiplatform Mobile sample has decreased from 9.5 seconds (in 1.4.10) to 4.5 seconds (in 1.4.30).
+Apple watchOS 64-位模拟器目标
+The x86 simulator target has been deprecated for watchOS since version 7.0. To keep up with the latest watchOS versions, Kotlin/Native has the new target watchosX64 for running the simulator on 64-bit architecture.
+对 Xcode 12.2 库的支持
+We have added support for the new libraries delivered with Xcode 12.2. You can now use them from Kotlin code.
+Kotlin/JS
+顶层属性的延迟初始化
+顶层属性的延迟初始化 is Experimental. It may be dropped or changed at any time. Opt-in is required (see the details below), and you should use it only for evaluation purposes. We would appreciate your feedback on it in YouTrack.
+The IR backend for Kotlin/JS is receiving a prototype implementation of lazy initialization for toplevel properties. This reduces the need to initialize all top-level properties when the application starts, and it should significantly improve application start-up times.
+433
+
+[p.434]
+Kotlin 1.4.30
+We'll keep working on the lazy initialization, and we ask you to try the current prototype and share your thoughts and results in this YouTrack ticket or the #javascript channel in the official Kotlin Slack (get an invite here). To use the lazy initialization, add the -Xir-property-lazy-initialization compiler option when compiling the code with the JS IR compiler.
+Gradle 项目改进
+支持 Gradle 配置缓存
+Starting with 1.4.30, the Kotlin Gradle plugin supports the configuration cache feature. It speeds up the build process: once you run the command, Gradle executes the configuration phase and calculates the task graph. Gradle caches the result and reuses it for subsequent builds. To start using this feature, you can use the Gradle command or set up the IntelliJ based IDE.
+标准库
+用于大小写文本的区域设置无关 API
+The locale-agnostic API feature is Experimental. It may be dropped or changed at any time. Use it only for evaluation purposes. We would appreciate your feedback on it in YouTrack.
+
+This release introduces the experimental locale-agnostic API for changing the case of strings and characters. The current toLowerCase() , toUpperCase() , capitalize() , decapitalize() API functions are locale-sensitive. This means that different platform locale settings can affect code behavior. For example, in the Turkish locale, when the string "kotlin" is converted using toUpperCase , the result is "KOTLİN", not "KOTLIN".
+// current API println("Needs to be capitalized".toUpperCase()) // NEEDS TO BE CAPITALIZED
+// new API println("Needs to be capitalized".uppercase()) // NEEDS TO BE CAPITALIZED
+
+Kotlin 1.4.30 provides the following alternatives: For String functions: Earlier versions
+
+1.4.30 alternative
+
+434
+
+[p.435]
+Kotlin 1.4.30
+
+String.toUpperCase() String.toLowerCase() String.capitalize() String.decapitalize()
+
+String.uppercase() String.lowercase() String.replaceFirstChar { it.uppercase() } String.replaceFirstChar { it.lowercase() }
+
+For Char functions:
+
+Earlier versions
+Char.toUpperCase()
+
+1.4.30 alternative
+Char.uppercaseChar(): Char
+
+Char.toLowerCase()
+
+Char.uppercase(): String Char.lowercaseChar(): Char
+
+Char.toTitleCase()
+
+Char.lowercase(): String Char.titlecaseChar(): Char
+Char.titlecase(): String
+
+For Kotlin/JVM, there are also overloaded uppercase() , lowercase() , and titlecase() functions with an explicit Locale parameter.
+
+See the full list of changes to the text processing functions in KEEP.
+明确字符到码值与字符到数位的转换
+The unambiguous API for the Char conversion feature is Experimental. It may be dropped or changed at any time. Use it only for evaluation purposes. We would appreciate your feedback on it in YouTrack.
+
+The current Char to numbers conversion functions, which return UTF-16 codes expressed in different numeric types, are often confused with the similar String-to-Int conversion, which returns the numeric value of a string:
+"4".toInt() // returns 4 '4'.toInt() // returns 52 // and there was no common function that would return the numeric value 4 for Char '4'
+
+435
+
+[p.436]
+Kotlin 1.4.30
+To avoid this confusion we've decided to separate Char conversions into two following sets of clearly named functions:
+Functions to get the integer code of Char and to construct Char from the given code:
+fun Char(code: Int): Char fun Char(code: UShort): Char val Char.code: Int
+Functions to convert Char to the numeric value of the digit it represents:
+fun Char.digitToInt(radix: Int): Int fun Char.digitToIntOrNull(radix: Int): Int?
+An extension function for Int to convert the non-negative single digit it represents to the corresponding Char representation:
+fun Int.digitToChar(radix: Int): Char
+See more details in KEEP.
+序列化更新
+Along with Kotlin 1.4.30, we are releasing kotlinx.serialization 1.1.0-RC, which includes some new features:
+内联类序列化支持 无符号原生类型的序列化支持
+内联类序列化支持
+Starting with Kotlin 1.4.30, you can make inline classes serializable:
+@Serializable inline class Color(val rgb: Int)
+The feature requires the new 1.4.30 IR compiler.
+The serialization framework does not box serializable inline classes when they are used in other serializable classes.
+436
+
+[p.437]
+Kotlin 1.4.30 Learn more in the kotlinx.serialization docs.
+无符号原生类型的序列化支持
+Starting from 1.4.30, you can use standard JSON serializers of kotlinx.serialization for unsigned primitive types: UInt , ULong , UByte , and UShort :
+@Serializable class Counter(val counted: UByte, val description: String) fun main() {
+val counted = 239.toUByte() println(Json.encodeToString(Counter(counted, "tries"))) }
+Learn more in the kotlinx.serialization docs.
+437
+

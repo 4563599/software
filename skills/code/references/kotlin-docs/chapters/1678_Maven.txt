@@ -1,0 +1,176 @@
+# Maven（第 1678-1686 页）
+
+[p.1678]
+Maven
+Maven
+Maven is a build system that you can use to build and manage any Java-based project.
+Configure and enable the plugin
+kotlin-maven-plugin 用于编译 Kotlin 源代码与模块，目前只支持 Maven V3。 In your pom.xml file, define the version of Kotlin you want to use in the kotlin.version property:
+<properties> <kotlin.version>{{ site.data.releases.latest.version }}</kotlin.version>
+</properties>
+To enable kotlin-maven-plugin , update your pom.xml file:
+<plugins> <plugin> <artifactId>kotlin-maven-plugin</artifactId> <groupId>org.jetbrains.kotlin</groupId> <version>2.1.21</version> </plugin>
+</plugins>
+Use JDK 17
+To use JDK 17, in your .mvn/jvm.config file, add:
+--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED
+Declare repositories
+By default, the mavenCentral repository is available for all Maven projects. To access artifacts in other repositories, specify the ID and URL of each repository in the <repositories> element:
+<repositories> <repository> <id>spring-repo</id>
+1678
+
+[p.1679]
+Maven
+<url>https://repo.spring.io/release</url> </repository> </repositories>
+If you declare mavenLocal() as a repository in a Gradle project, you may experience problems when switching between Gradle and Maven projects. For more information, see Declare repositories.
+Set dependencies
+Kotlin 有一个广泛的标准库可用于应用程序。 To use the standard library in your project, 在 pom.xml 文件中配置以下依赖关系：
+<dependencies> <dependency> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-stdlib</artifactId> <version>${kotlin.version}</version> </dependency>
+</dependencies>
+If you're targeting JDK 7 or 8 with Kotlin versions older than: 1.8, use kotlin-stdlib-jdk7 or kotlin-stdlib-jdk8 , respectively. 1.2, use kotlin-stdlib-jre7 or kotlin-stdlib-jre8 , respectively.
+如果你的项目使用 Kotlin 反射 或者测试设施，那么你还需要添加相应的依赖项。 其构件 ID 对于反射库是 kotlin-reflect ，对于测试库是 kotlin-test 与 kotlin-test-junit 。
+编译只有 Kotlin 的源代码
+要编译源代码，请在 <build> 标签中指定源代码目录：
+<build> <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory> <testSourceDirectory>${project.basedir}/src/test/kotlin</testSourceDirectory>
+</build>
+需要引用 Kotlin Maven 插件来编译源代码：
+1679
+
+[p.1680]
+Maven
+<build> <plugins> <plugin> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-maven-plugin</artifactId> <version>${kotlin.version}</version>
+<executions> <execution> <id>compile</id> <goals> <goal>compile</goal> </goals> </execution>
+<execution> <id>test-compile</id> <goals> <goal>test-compile</goal> </goals>
+</execution> </executions> </plugin> </plugins> </build>
+Starting from Kotlin 1.8.20, you can replace the whole <executions> element above with <extensions>true</extensions> . Enabling extensions automatically adds the compile , testcompile , kapt , and test-kapt executions to your build, bound to their appropriate lifecycle phases. If you need to configure an execution, you need to specify its ID. You can find an example of this in the next section.
+If several build plugins overwrite the default lifecycle and you have also enabled the extensions option, the last plugin in the <build> section has priority in terms of lifecycle settings. All earlier changes to lifecycle settings are ignored.
+同时编译 Kotlin 与 Java 源代码
+要编译混合代码应用程序，必须在 Java 编译器之前调用 Kotlin 编译器。 按照 Maven 的方式， 这意味着应该使用以下方法在 maven-compiler-plugin 之前运行 kotlin-maven-plugin 。 确保 pom.xml 文件中的 kotlin 插件位于 maven-compiler-plugin 之前：
+<build> <plugins>
+1680
+
+[p.1681]
+Maven
+<plugin> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-maven-plugin</artifactId> <version>${kotlin.version}</version> <extensions>true</extensions> <!-- You can set this option to automatically take information about lifecycles --> <executions> <execution> <id>compile</id> <goals> <goal>compile</goal> <!-- You can skip the <goals> element if you enable extensions for the plugin --> </goals> <configuration> <sourceDirs> <sourceDir>${project.basedir}/src/main/kotlin</sourceDir> <sourceDir>${project.basedir}/src/main/java</sourceDir> </sourceDirs> </configuration> </execution> <execution> <id>test-compile</id> <goals> <goal>test-compile</goal> <!-- You can skip the <goals> elemen
+t if you enable extensions for the plugin --> </goals> <configuration> <sourceDirs> <sourceDir>${project.basedir}/src/test/kotlin</sourceDir> <sourceDir>${project.basedir}/src/test/java</sourceDir> </sourceDirs> </configuration>
+</execution> </executions> </plugin> <plugin> <groupId>org.apache.maven.plugins</groupId> <artifactId>maven-compiler-plugin</artifactId> <version>3.5.1</version> <executions>
+<!-- 替换会被 Maven 特别处理的 default-compile --> <execution>
+<id>default-compile</id> <phase>none</phase> </execution> <!-- 替换会被 Maven 特别处理的 default-testCompile --> <execution> <id>default-testCompile</id> <phase>none</phase> </execution> <execution> <id>java-compile</id>
+1681
+
+[p.1682]
+Maven
+<phase>compile</phase> <goals>
+<goal>compile</goal> </goals> </execution> <execution> <id>java-test-compile</id> <phase>test-compile</phase> <goals>
+<goal>testCompile</goal> </goals> </execution> </executions> </plugin> </plugins> </build>
+Enable incremental compilation
+为了使构建更快，可以通过添加 kotlin.compiler.incremental 属性来启用增量编译：
+<properties> <kotlin.compiler.incremental>true</kotlin.compiler.incremental>
+</properties>
+或者，使用 -Dkotlin.compiler.incremental=true 选项运行构建。
+Configure annotation processing
+See kapt – Using in Maven.
+Create JAR file
+要创建一个仅包含模块代码的小型 JAR 文件，请在 Maven pom.xml 文件中的 build>plugins 下面包含以下内容， 其中 main.class 定义为一个属性，并指向主 Kotlin 或 Java 类：
+<plugin> <groupId>org.apache.maven.plugins</groupId> <artifactId>maven-jar-plugin</artifactId> <version>2.6</version> <configuration> <archive>
+1682
+
+[p.1683]
+Maven
+<manifest> <addClasspath>true</addClasspath> <mainClass>${main.class}</mainClass>
+</manifest> </archive> </configuration> </plugin>
+Create a self-contained JAR file
+要创建一个独立的（self-contained）JAR 文件，包含模块中的代码及其依赖项，请在 Maven pom.xml 文件中的 build->plugins 下面包含以下内容其中 main.class 定义为一个属性，并 指向主 Kotlin 或 Java 类：
+<plugin> <groupId>org.apache.maven.plugins</groupId> <artifactId>maven-assembly-plugin</artifactId> <version>2.6</version> <executions> <execution> <id>make-assembly</id> <phase>package</phase> <goals> <goal>single</goal> </goals> <configuration> <archive> <manifest> <mainClass>${main.class}</mainClass> </manifest> </archive> <descriptorRefs> <descriptorRef>jar-with-dependencies</descriptorRef> </descriptorRefs> </configuration> </execution> </executions>
+</plugin>
+这个独立的 JAR 文件可以直接传给 JRE 来运行应用程序：
+java -jar target/mymodule-0.0.1-SNAPSHOT-jar-with-dependencies.jar
+指定编译器选项
+可以将额外的编译器选项与参数指定为 Maven 插件节点的 <configuration> 元素下的标签 ：
+1683
+
+[p.1684]
+Maven
+
+<plugin> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-maven-plugin</artifactId> <version>${kotlin.version}</version> <extensions>true</extensions> <!-- If you want to enable automatic addition of exe
+cutions to your build --> <executions>……</executions> <configuration> <nowarn>true</nowarn> <!-- 禁用警告 --> <args> <arg>-Xjsr305=strict</arg> <!-- 对 JSR-305 注解启用严格模式 --> ... </args> </configuration>
+</plugin>
+
+许多选项还可以通过属性来配置：
+<project ……> <properties> <kotlin.compiler.languageVersion>2.1</kotlin.compiler.languageVersion> </properties>
+</project>
+
+支持以下属性：
+
+JVM 特有的属性
+名称
+nowarn
+
+属性名
+
+描述 不生成警告
+
+languageVersion
+
+kotlin.compiler.languageVersion
+
+提供与指定 语言版本源 代码兼容性
+
+apiVersion
+
+kotlin.compiler.apiVersion
+
+只允许使用 来自捆绑库 的指定版本 中的声明
+包含要编译
+
+可能的值
+true、 false
+"1.8"、 "1.9"、 "2.0"、 "2.1"、 "2.2"（实 验性的）
+"1.8"、 "1.9"、 "2.0"、 "2.1"、 "2.2"（实 验性的）
+
+默认 值 false
+该项 目源
+
+1684
+
+[p.1685]
+Maven
+sourceDirs
+compilerPlugins pluginOptions args
+
+jvmTarget
+
+kotlin.compiler.jvmTarget
+
+jdkHome
+
+kotlin.compiler.jdkHome
+
+源文件的目 录
+
+启用编译器 插件
+编译器插件 的选项
+额外的编译 器参数
+生成的 JVM 字节码的目 标版本
+Include a custom JDK from the specified location into the classpath instead of the default JAVA_HOME
+
+"1.8"、 "9"、 "10"、 ……、 "20"、 "23"
+
+代码 根目 录 [] [] []
+"1.8"
+
+Use BOM
+To use a Kotlin Bill of Materials (BOM), write a dependency on kotlin-bom :
+<dependencyManagement> <dependencies> <dependency> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-bom</artifactId> <version>2.1.21</version> <type>pom</type> <scope>import</scope> </dependency> </dependencies>
+</dependencyManagement>
+
+生成文档
+
+1685
+
+[p.1686]
+Maven 标准的 Javadoc 生成插件（ maven-javadoc-plugin ）不支持 Kotlin 代码。要生成 Kotlin 项目的 文档，请使用 Dokka。 Dokka 支持混合语言项目，并且可以生成多种格式的输出，包括标准 Javadoc。 For more information about how to configure Dokka in your Maven project, see Maven.
+Enable OSGi support
+Learn how to enable OSGi support in your Maven project.
+1686
+

@@ -1,0 +1,52 @@
+# Kotlin/Wasm 与 WASI 入门（第 1198-1202 页）
+
+[p.1198]
+Kotlin/Wasm 与 WASI 入门
+Kotlin/Wasm 与 WASI 入门
+Kotlin/Wasm is in Alpha. It may be changed at any time. Join the Kotlin/Wasm community.
+This tutorial demonstrates how to run a simple Kotlin/Wasm application using the WebAssembly System Interface (WASI) in various WebAssembly virtual machines. You can find examples of an application running on Node.js, Deno, and WasmEdge virtual machines. The output is a simple application that uses the standard WASI API. Currently, Kotlin/Wasm supports WASI 0.1, also known as Preview 1. Support for WASI 0.2 is planned for future releases.
+The Kotlin/Wasm toolchain provides Node.js tasks ( wasmWasiNode* ) out of the box. Other task variants in the project, such as those utilizing Deno or WasmEdge, are included as custom tasks.
+Before you start
+1. Download and install the latest version of IntelliJ IDEA. 2. Clone the Kotlin/Wasm WASI template repository by selecting File | New | Project from
+Version Control in IntelliJ IDEA. You can also clone it from the command line:
+git clone git@github.com:Kotlin/kotlin-wasm-wasi-template.git
+Run the application
+1. Open the Gradle tool window by selecting View | Tool Windows | Gradle. In the Gradle tool window, you can find the Gradle tasks under kotlin-wasm-wasi-example once the project loads. You need at least Java 11 as your Gradle JVM for the tasks to load successfully.
+1198
+
+[p.1199]
+Kotlin/Wasm 与 WASI 入门 2. From kotlin-wasm-wasi-example | Tasks | kotlin node, select and run one of the following Gradle tasks: wasmWasiNodeRun to run the application in Node.js. wasmWasiDenoRun to run the application in Deno. wasmWasiWasmEdgeRun to run the application in WasmEdge. When using Deno on a Windows platform, ensure deno.exe is installed. For more information, see Deno's installation documentation.
+1199
+
+[p.1200]
+Kotlin/Wasm 与 WASI 入门 Alternatively, run one of the following commands in the terminal from the kotlin-wasm-wasitemplate root directory:
+To run the application in Node.js:
+./gradlew wasmWasiNodeRun
+To run the application in Deno:
+./gradlew wasmWasiDenoRun
+To run the application in WasmEdge:
+./gradlew wasmWasiWasmEdgeRun
+The terminal displays a message when your application is built successfully:
+Test the application
+You can also test that the Kotlin/Wasm application works correctly across various virtual machines. In the Gradle tool window, run one of the following Gradle tasks from kotlin-wasm-wasi-example | Tasks | verification:
+wasmWasiNodeTest to test the application in Node.js. wasmWasiDenoTest to test the application in Deno. wasmWasiWasmEdgeTest to test the application in WasmEdge.
+1200
+
+[p.1201]
+Kotlin/Wasm 与 WASI 入门
+Alternatively, run one of the following commands in the terminal from the kotlin-wasm-wasitemplate root directory:
+To test the application in Node.js:
+./gradlew wasmWasiNodeTest
+1201
+
+[p.1202]
+Kotlin/Wasm 与 WASI 入门 To test the application in Deno:
+./gradlew wasmWasiDenoTest
+To test the application in WasmEdge:
+./gradlew wasmWasiWasmEdgeTest
+The terminal displays the test results:
+下一步做什么？
+Join the Kotlin/Wasm community in Kotlin Slack: Try more Kotlin/Wasm examples:
+Compose image viewer Jetsnack application Node.js example Compose example
+1202
+

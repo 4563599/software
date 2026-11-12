@@ -1,0 +1,99 @@
+# Dokka 插件（第 1770-1775 页）
+
+[p.1770]
+Dokka 插件
+Dokka 插件
+Dokka was built from the ground up to be easily extensible and highly customizable, which allows the community to implement plugins for missing or very specific features that are not provided out of the box. Dokka plugins range anywhere from supporting other programming language sources to exotic output formats. You can add support for your own KDoc tags or annotations, teach Dokka how to render different DSLs that are found in KDoc descriptions, visually redesign Dokka's pages to be seamlessly integrated into your company's website, integrate it with other tools and so much more. If you want to learn how to create Dokka plugins, see Developer guides.
+Apply Dokka plugins
+Dokka plugins are published as separate artifacts, so to apply a Dokka plugin you only need to add it as a dependency. From there, the plugin extends Dokka by itself - no further action is needed.
+Plugins that use the same extension points or work in a similar way can interfere with each other. This may lead to visual bugs, general undefined behaviour or even failed builds. However, it should not lead to concurrency issues since Dokka does not expose any mutable data structures or objects. If you notice problems like this, it's a good idea to check which plugins are applied and what they do.
+Let's have a look at how you can apply the mathjax plugin to your project:
+【Kotlin】 The Gradle plugin for Dokka creates convenient dependency configurations that allow you to apply plugins universally or for a specific output format only.
+dependencies { // Is applied universally dokkaPlugin("org.jetbrains.dokka:mathjax-plugin:2.0.0") // Is applied for the single-module dokkaHtml task only dokkaHtmlPlugin("org.jetbrains.dokka:kotlin-as-java-plugin:2.0.0")
+1770
+
+[p.1771]
+Dokka 插件
+// Is applied for HTML format in multi-project builds dokkaHtmlPartialPlugin("org.jetbrains.dokka:kotlin-as-java-plugin:2.0.0") }
+When documenting multi-project builds, you need to apply Dokka plugins within subprojects as well as in their parent project.
+
+【Groovy】 The Gradle plugin for Dokka creates convenient dependency configurations that allow you to apply Dokka plugins universally or for a specific output format only.
+dependencies { // Is applied universally dokkaPlugin 'org.jetbrains.dokka:mathjax-plugin:2.0.0'
+// Is applied for the single-module dokkaHtml task only dokkaHtmlPlugin 'org.jetbrains.dokka:kotlin-as-java-plugin:2.0.0'
+// Is applied for HTML format in multi-project builds dokkaHtmlPartialPlugin 'org.jetbrains.dokka:kotlin-as-java-plugin:2.0.0' }
+When documenting multi-project builds, you need to apply Dokka plugins within subprojects as well as in their parent project.
+
+【Maven】
+<plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> ... <configuration> <dokkaPlugins> <plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>mathjax-plugin</artifactId> <version>2.0.0</version> </plugin> </dokkaPlugins>
+
+1771
+
+[p.1772]
+Dokka 插件
+</configuration> </plugin>
+【CLI】 If you are using the CLI runner with command line options, Dokka plugins should be passed as .jar files to -pluginsClasspath :
+java -jar dokka-cli-2.0.0.jar \ -pluginsClasspath "./dokka-base-2.0.0.jar;...;./mathjax-plugin-2.0.0.jar" \ ...
+If you are using JSON configuration, Dokka plugins should be specified under pluginsClasspath .
+{ ... "pluginsClasspath": [ "./dokka-base-2.0.0.jar", "...", "./mathjax-plugin-2.0.0.jar" ], ...
+}
+Configure Dokka plugins
+Dokka plugins can also have configuration options of their own. To see which options are available, consult the documentation of the plugins you are using. Let's have a look at how you can configure the DokkaBase plugin, which is responsible for generating HTML documentation, by adding a custom image to the assets ( customAssets option), by adding custom style sheets ( customStyleSheets option), and by modifying the footer message ( footerMessage option):
+【Kotlin】 Gradle's Kotlin DSL allows for type-safe plugin configuration. This is achievable by adding the plugin's artifact to the classpath dependencies in the buildscript block, and then importing plugin and configuration classes:
+1772
+
+[p.1773]
+Dokka 插件
+import org.jetbrains.dokka.base.DokkaBase import org.jetbrains.dokka.gradle.DokkaTask import org.jetbrains.dokka.base.DokkaBaseConfiguration
+buildscript { dependencies { classpath("org.jetbrains.dokka:dokka-base:2.0.0") }
+}
+tasks.withType<DokkaTask>().configureEach { pluginConfiguration<DokkaBase, DokkaBaseConfiguration> { customAssets = listOf(file("my-image.png")) customStyleSheets = listOf(file("my-styles.css")) footerMessage = "(c) 2022 MyOrg" }
+}
+Alternatively, plugins can be configured via JSON. With this method, no additional dependencies are needed.
+import org.jetbrains.dokka.gradle.DokkaTask
+tasks.withType<DokkaTask>().configureEach { val dokkaBaseConfiguration = """ { "customAssets": ["${file("assets/my-image.png")}"], "customStyleSheets": ["${file("assets/my-styles.css")}"], "footerMessage": "(c) 2022 MyOrg" } """ pluginsMapConfiguration.set( mapOf( // fully qualified plugin name to json configuration "org.jetbrains.dokka.base.DokkaBase" to dokkaBaseConfiguration ) )
+}
+
+【Groovy】
+import org.jetbrains.dokka.gradle.DokkaTask
+tasks.withType(DokkaTask.class) { String dokkaBaseConfiguration = """ { "customAssets": ["${file("assets/my-image.png")}"],
+
+1773
+
+[p.1774]
+Dokka 插件
+"customStyleSheets": ["${file("assets/my-styles.css")}"], "footerMessage": "(c) 2022 MyOrg" } """ pluginsMapConfiguration.set(
+// fully qualified plugin name to json configuration ["org.jetbrains.dokka.base.DokkaBase": dokkaBaseConfiguration] ) }
+【Maven】
+<plugin> <groupId>org.jetbrains.dokka</groupId> <artifactId>dokka-maven-plugin</artifactId> ... <configuration> <pluginsConfiguration> <!-- Fully qualified plugin name --> <org.jetbrains.dokka.base.DokkaBase> <!-- Options by name --> <customAssets> <asset>${project.basedir}/my-image.png</asset> </customAssets> <customStyleSheets> <stylesheet>${project.basedir}/my-styles.css</stylesheet> </customStyleSheets> <footerMessage>(c) MyOrg 2022 Maven</footerMessage> </org.jetbrains.dokka.base.DokkaBase> </pluginsConfiguration> </configuration>
+</plugin>
+【CLI】
+If you are using the CLI runner with command line options, use the -pluginsConfiguration option that accepts JSON configuration in the form of fullyQualifiedPluginName=json .
+If you need to configure multiple plugins, you can pass multiple values separated by ^^ .
+java -jar dokka-cli-2.0.0.jar \ ... -pluginsConfiguration "org.jetbrains.dokka.base.DokkaBase={\"customAssets\": [\"m
+y-image.png\"], \"customStyleSheets\": [\"my-styles.css\"], \"footerMessage\": \"(c) 2 022 MyOrg CLI\"}"
+1774
+
+[p.1775]
+Dokka 插件
+If you are using JSON configuration, there exists a similar pluginsConfiguration array that accepts JSON configuration in values .
+{ "moduleName": "Dokka Example", "pluginsConfiguration": [ { "fqPluginName": "org.jetbrains.dokka.base.DokkaBase", "serializationFormat": "JSON", "values": "{\"customAssets\": [\"my-image.png\"], \"customStyleSheets\": [\"my-s
+tyles.css\"], \"footerMessage\": \"(c) 2022 MyOrg\"}" }
+] }
+
+Notable plugins
+
+Here are some notable Dokka plugins that you might find useful:
+
+Name
+Android documentation plugin
+Versioning plugin
+MermaidJS HTML plugin
+Mathjax HTML plugin
+Kotlin as Java plugin
+
+Description Improves the documentation experience on Android Adds version selector and helps to organize documentation for different versions of your application/library Renders MermaidJS diagrams and visualizations found in KDocs Pretty prints mathematics found in KDocs Renders Kotlin signatures as seen from Java's perspective
+
+If you are a Dokka plugin author and would like to add your plugin to this list, get in touch with maintainers via Slack or GitHub.
+
+1775
+

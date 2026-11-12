@@ -1,0 +1,742 @@
+# 从 Java 到 Kotlin 迁移指南（第 1001-1037 页）
+
+[p.1001]
+从 Java 到 Kotlin 迁移指南
+从 Java 到 Kotlin 迁移指南
+字符串 集合 可空性 标准输入
+1001
+
+[p.1002]
+从 Java 到 Kotlin 迁移指南
+Java 与 Kotlin 中的字符串
+This guide contains examples of how to perform typical tasks with strings in Java and Kotlin. It will help you migrate from Java to Kotlin and write your code in the authentically Kotlin way.
+字符串连接
+In Java, you can do this in the following way:
+// Java String name = "Joe"; System.out.println("Hello, " + name); System.out.println("Your name is " + name.length() + " characters long");
+In Kotlin, use the dollar sign ( $ ) before the variable name to interpolate the value of this variable into your string:
+fun main() { //sampleStart
+// Kotlin val name = "Joe" println("Hello, $name") println("Your name is ${name.length} characters long") //sampleEnd }
+You can interpolate the value of a complicated expression by surrounding it with curly braces, like in ${name.length} . See string templates for more information.
+构建字符串
+In Java, you can use the StringBuilder:
+// Java StringBuilder countDown = new StringBuilder(); for (int i = 5; i > 0; i--) {
+countDown.append(i); countDown.append("\n"); } System.out.println(countDown);
+1002
+
+[p.1003]
+从 Java 到 Kotlin 迁移指南
+
+In Kotlin, use buildString() – an inline function that takes logic to construct a string as a lambda argument:
+fun main() { //sampleStart
+// Kotlin val countDown = buildString {
+for (i in 5 downTo 1) { append(i) appendLine()
+} } println(countDown) //sampleEnd }
+Under the hood, the buildString uses the same StringBuilder class as in Java, and you access it via an implicit this inside the lambda.
+Learn more about lambda coding conventions.
+
+由集合内元素创建字符串
+In Java, you use the Stream API to filter, map, and then collect the items:
+// Java List<Integer> numbers = List.of(1, 2, 3, 4, 5, 6); String invertedOddNumbers = numbers
+.stream() .filter(it -> it % 2 != 0) .map(it -> -it) .map(Object::toString) .collect(Collectors.joining("; ")); System.out.println(invertedOddNumbers);
+
+In Kotlin, use the joinToString() function, which Kotlin defines for every List:
+fun main() { //sampleStart
+// Kotlin val numbers = listOf(1, 2, 3, 4, 5, 6) val invertedOddNumbers = numbers
+.filter { it % 2 != 0 } .joinToString(separator = ";") {"${-it}"} println(invertedOddNumbers) //sampleEnd }
+
+1003
+
+[p.1004]
+从 Java 到 Kotlin 迁移指南
+In Java, if you want spaces between your delimiters and following items, you need to add a space to the delimiter explicitly.
+Learn more about joinToString() usage.
+如果字符串为空白就设置默认值
+In Java, you can use the ternary operator:
+// Java public void defaultValueIfStringIsBlank() {
+String nameValue = getName(); String name = nameValue.isBlank() ? "John Doe" : nameValue; System.out.println(name); } public String getName() { Random rand = new Random(); return rand.nextBoolean() ? "" : "David"; }
+Kotlin provides the inline function ifBlank() that accepts the default value as an argument:
+// Kotlin import kotlin.random.Random //sampleStart fun main() {
+val name = getName().ifBlank { "John Doe" } println(name) } fun getName(): String = if (Random.nextBoolean()) "" else "David" //sampleEnd
+替换字符串首尾处的（多个）字符
+In Java, you can use the replaceAll()) function. The replaceAll() function in this case accepts regular expressions ^## and ##$ , which define strings starting and ending with ## respectively:
+1004
+
+[p.1005]
+从 Java 到 Kotlin 迁移指南
+// Java String input = "##place##holder##"; String result = input.replaceAll("^##|##$", ""); System.out.println(result);
+In Kotlin, use the removeSurrounding() function with the string delimiter ## :
+fun main() { //sampleStart
+// Kotlin val input = "##place##holder##" val result = input.removeSurrounding("##") println(result) //sampleEnd }
+正则替换
+In Java, you can use the Pattern and the Matcher classes, for example, to obfuscate some data:
+// Java String input = "login: Pokemon5, password: 1q2w3e4r5t"; Pattern pattern = Pattern.compile("\\w*\\d+\\w*"); Matcher matcher = pattern.matcher(input); String replacementResult = matcher.replaceAll(it -> "xxx"); System.out.println("Initial input: '" + input + "'"); System.out.println("Anonymized input: '" + replacementResult + "'");
+In Kotlin, you use the Regex class that simplifies working with regular expressions. Additionally, use raw strings to simplify a regex pattern by reducing the count of backslashes:
+fun main() { //sampleStart
+// Kotlin val regex = Regex("""\w*\d+\w*""") // multiline string val input = "login: Pokemon5, password: 1q2w3e4r5t" val replacementResult = regex.replace(input, replacement = "xxx") println("Initial input: '$input'") println("Anonymized input: '$replacementResult'") //sampleEnd }
+字符串拆分
+1005
+
+[p.1006]
+从 Java 到 Kotlin 迁移指南
+In Java, to split a string with the period character ( . ), you need to use shielding ( \\ ). This happens because the split()) function of the String class accepts a regular expression as an argument:
+// Java System.out.println(Arrays.toString("Sometimes.text.should.be.split".split("\\.")));
+In Kotlin, use the Kotlin function split(), which accepts varargs of delimiters as input parameters:
+fun main() { //sampleStart
+// Kotlin println("Sometimes.text.should.be.split".split(".")) //sampleEnd }
+If you need to split with a regular expression, use the overloaded split() version that accepts the Regex as a parameter.
+取子串
+In Java, you can use the substring()) function, which accepts an inclusive beginning index of a character to start taking the substring from. To take a substring after this character, you need to increment the index:
+// Java String input = "What is the answer to the Ultimate Question of Life, the Universe, and
+Everything? 42"; String answer = input.substring(input.indexOf("?") + 1); System.out.println(answer);
+In Kotlin, you use the substringAfter() function and don't need to calculate the index of the character you want to take a substring after:
+fun main() { //sampleStart
+// Kotlin val input = "What is the answer to the Ultimate Question of Life, the Universe, an d Everything? 42" val answer = input.substringAfter("?") println(answer) //sampleEnd }
+1006
+
+[p.1007]
+从 Java 到 Kotlin 迁移指南
+Additionally, you can take a substring after the last occurrence of a character:
+fun main() { //sampleStart
+// Kotlin val input = "To be, or not to be, that is the question." val question = input.substringAfterLast(",") println(question) //sampleEnd }
+使用多行字符串
+Before Java 15, there were several ways to create a multiline string. For example, using the join()) function of the String class:
+// Java String lineSeparator = System.getProperty("line.separator"); String result = String.join(lineSeparator,
+"Kotlin", "Java"); System.out.println(result);
+In Java 15, text blocks appeared. There is one thing to keep in mind: if you print a multiline string and the triple-quote is on the next line, there will be an extra empty line:
+// Java String result = """
+Kotlin Java
+"""; System.out.println(result);
+The output:
+If you put the triple-quote on the same line as the last word, this difference in behavior disappears.
+1007
+
+[p.1008]
+从 Java 到 Kotlin 迁移指南
+In Kotlin, you can format your line with the quotes on the new line, and there will be no extra empty line in the output. The left-most character of any line identifies the beginning of the line. The difference with Java is that Java automatically trims indents, and in Kotlin you should do it explicitly:
+fun main() { //sampleStart
+// Kotlin val result = """
+Kotlin Java
+""".trimIndent() println(result) //sampleEnd }
+The output:
+To have an extra empty line, you should add this empty line to your multiline string explicitly. In Kotlin, you can also use the trimMargin() function to customize the indents:
+// Kotlin fun main() {
+val result = """ # Kotlin # Java
+""".trimMargin("#") println(result)
+}
+Learn more about multiline strings.
+下一步做什么？
+Look through other Kotlin idioms. Learn how to convert existing Java code to Kotlin with the Java to Kotlin converter. If you have a favorite idiom, we invite you to share it by sending a pull request.
+1008
+
+[p.1009]
+从 Java 到 Kotlin 迁移指南 1009
+
+[p.1010]
+从 Java 到 Kotlin 迁移指南
+
+Java 与 Kotlin 中的集合
+Collections are groups of a variable number of items (possibly zero) that are significant to the problem being solved and are commonly operated on. This guide explains and compares collection concepts and operations in Java and Kotlin. It will help you migrate from Java to Kotlin and write your code in the authentically Kotlin way.
+The first part of this guide contains a quick glossary of operations on the same collections in Java and Kotlin. It is divided into operations that are the same and operations that exist only in Kotlin. The second part of the guide, starting from Mutability, explains some of the differences by looking at specific cases.
+For an introduction to collections, see the Collections overview or watch this video by Sebastian Aigner, Kotlin Developer Advocate.
+All of the examples below use Java and Kotlin standard library APIs only.
+
+在 Java 与 Kotlin 中相同的操作
+
+In Kotlin, there are many operations on collections that look exactly the same as their counterparts in Java.
+
+对 list、 set、 queue 与 deque 的操作
+
+描述
+Add an element or elements
+Check whether a collection contains an element or elements
+Check whether a collection is empty
+Remove under a certain condition
+Leave only selected elements
+
+共有操作 add() ,
+addAll()
+contains() ,
+containsAll()
+isEmpty()
+removeIf()
+retainAll()
+
+更多 Kotlin 替代方式
+Use the plusAssign ( += ) operator: collection += element , collection += anotherCollection .
+Use the in keyword to call contains() in the operator form: element in collection .
+Use isNotEmpty() to check whether a collection is not empty.
+
+1010
+
+[p.1011]
+从 Java 到 Kotlin 迁移指南
+
+Remove all elements from a collection
+Get a stream from a collection
+Get an iterator from a collection
+
+clear() stream() iterator()
+
+Kotlin has its own way to process streams: sequences and methods like map() and filter() .
+
+对 map 的操作
+
+描述
+
+共有操作
+
+Add an element or elements
+
+put() , putAll() ,
+putIfAbsent()
+
+Replace an element or elements
+
+put() , replace() ,
+replaceAll()
+
+Get an element
+
+get()
+
+Check whether a map contains an element or elements
+Check whether a map is empty
+Remove an element
+Remove all elements from a map
+Get a stream from a map
+
+containsKey() ,
+containsValue()
+isEmpty()
+remove(key) ,
+remove(key, value)
+clear()
+stream() on entries, keys, or values
+
+更多 Kotlin 替代方式 In Kotlin, the assignment map[key] = value behaves the same as put(key, value) . Also, you may use the plusAssign ( += ) operator: map += Pair(key, value) or map += anotherMap .
+Use the indexing operator map[key] = value instead of put() and replace() .
+Use the indexing operator to get an element: map[index] .
+Use the in keyword to call contains() in the operator form: element in map .
+Use isNotEmpty() to check whether a map is not empty.
+Use the minusAssign ( -= ) operator: map -= key .
+
+仅针对 list 的操作
+
+描述
+Get an index of an element
+Get the last index of
+
+共有操作
+indexOf()
+
+更多 Kotlin 替代方式
+
+1011
+
+[p.1012]
+从 Java 到 Kotlin 迁移指南
+
+an element
+Get an element
+Take a sublist Replace an element or elements
+
+get()
+subList()
+set() ,
+replaceAll()
+
+Use the indexing operator to get an element: list[index] .
+Use the indexing operator instead of set() : list[index] = value .
+
+略有不同的操作
+
+对任意集合类型的操作
+
+描述
+Get a collection's size
+Get flat access to nested collection elements
+Apply the given function to every element
+Apply the provided operation to collection elements sequentially and return the accumulated result
+Group elements by a classifier and count them
+Filter by a condition
+Check
+
+size()
+
+Java
+
+collectionOfCollections.forEach(flatCollection::addAll)
+or collectionOfCollections.stream().flatMap().collect()
+
+stream().map().collect()
+
+stream().reduce()
+stream().collect(Collectors.groupingBy(classifier, counting()))
+stream().filter().collect()
+
+Kotlin count() ,
+size flatten()
+or flatMap()
+map()
+reduce() ,
+fold()
+eachCount() filter()
+
+1012
+
+[p.1013]
+从 Java 到 Kotlin 迁移指南
+
+Check whether collection elements satisfy a condition
+Sort elements
+Take the first N elements
+Take elements with a predicate
+Skip the first N elements
+Skip elements with a predicate
+Build maps from collection elements and certain values associated with them
+
+stream().noneMatch() , stream().anyMatch() ,
+stream().allMatch() stream().sorted().collect() stream().limit(N).collect() stream().takeWhile().collect() stream().skip(N).collect() stream().dropWhile().collect()
+stream().collect(toMap(keyMapper, valueMapper))
+
+none() , any() ,
+all() sorted() take(N) takeWhile() drop(N) dropWhile()
+associate()
+
+To perform all of the operations listed above on maps, you first need to get an entrySet of a map.
+
+对 list 的操作
+
+描述
+Sort a list into natural order
+Sort a list into descending order
+Remove an element from a list
+Fill all elements of a list with a certain value
+
+Java
+sort(null)
+sort(comparator)
+remove(index) ,
+remove(element)
+Collections.fill()
+
+Kotlin
+sort()
+sortDescending()
+removeAt(index) , remove(element) or
+collection -= element
+fill()
+
+1013
+
+[p.1014]
+从 Java 到 Kotlin 迁移指南
+
+Get unique elements from a list
+
+stream().distinct().toList()
+
+distinct()
+
+Java 标准库中不存在的操作
+zip() , unzip() – transform a collection. aggregate() – group by a condition. takeLast() , takeLastWhile() , dropLast() , dropLastWhile() – take or drop elements by a predicate. slice() , chunked() , windowed() – retrieve collection parts. Plus ( + ) and minus ( - ) operators – add or remove elements.
+If you want to take a deep dive into zip() , chunked() , windowed() , and some other operations, watch this video by Sebastian Aigner about advanced collection operations in Kotlin:
+YouTube 视频：Advanced Collection Operations
+
+可变性
+In Java, there are mutable collections:
+// Java // This list is mutable! public List<Customer> getCustomers() { ... }
+Partially mutable ones:
+// Java List<String> numbers = Arrays.asList("one", "two", "three", "four"); numbers.add("five"); // Fails in runtime with `UnsupportedOperationException`
+And immutable ones:
+// Java
+
+1014
+
+[p.1015]
+从 Java 到 Kotlin 迁移指南
+
+// Java List<String> numbers = new LinkedList<>(); // This list is immutable! List<String> immutableCollection = Collections.unmodifiableList(numbers); immutableCollection.add("five"); // Fails in runtime with `UnsupportedOperationExcepti on`
+
+If you write the last two pieces of code in IntelliJ IDEA, the IDE will warn you that you're trying to modify an immutable object. This code will compile and fail in runtime with UnsupportedOperationException . You can't tell whether a collection is mutable by looking at its type.
+Unlike in Java, in Kotlin you explicitly declare mutable or read-only collections depending on your needs. If you try to modify a read-only collection, the code won't compile:
+
+// Kotlin
+
+val numbers = mutableListOf("one", "two", "three", "four")
+
+numbers.add("five")
+
+// This is OK
+
+val immutableNumbers = listOf("one", "two")
+
+//immutableNumbers.add("five") // Compilation error - Unresolved reference: add
+
+Read more about immutability on the Kotlin coding conventions page.
+
+协变性
+In Java, you can't pass a collection with a descendant type to a function that takes a collection of the ancestor type. For example, if Rectangle extends Shape , you can't pass a collection of Rectangle elements to a function that takes a collection of Shape elements. To make the code compilable, use the ? extends Shape type so the function can take collections with any inheritors of Shape :
+// Java class Shape {}
+class Rectangle extends Shape {}
+public void doSthWithShapes(List<? extends Shape> shapes) { /* If using just List<Shape>, the code won't compile when calling this function with the List<Rectangle> as the argument as below */ }
+public void main() { var rectangles = List.of(new Rectangle(), new Rectangle()); doSthWithShapes(rectangles);
+}
+1015
+
+[p.1016]
+从 Java 到 Kotlin 迁移指南
+In Kotlin, read-only collection types are covariant. This means that if a Rectangle class inherits from the Shape class, you can use the type List<Rectangle> anywhere the List<Shape> type is required. In other words, the collection types have the same subtyping relationship as the element types. Maps are covariant on the value type, but not on the key type. Mutable collections aren't covariant – this would lead to runtime failures.
+// Kotlin open class Shape(val name: String)
+class Rectangle(private val rectangleName: String) : Shape(rectangleName)
+fun doSthWithShapes(shapes: List<Shape>) { println("The shapes are: ${shapes.joinToString { it.name }}")
+}
+fun main() { val rectangles = listOf(Rectangle("rhombus"), Rectangle("parallelepiped")) doSthWithShapes(rectangles)
+}
+Read more about collection types here.
+区间与数列
+In Kotlin, you can create intervals using ranges. For example, Version(1, 11)..Version(1, 30) includes all of the versions from 1.11 to 1.30 . You can check that your version is in the range by using the in operator: Version(0, 9) in versionRange .
+In Java, you need to manually check whether a Version fits both bounds:
+// Java class Version implements Comparable<Version> {
+int major; int minor;
+Version(int major, int minor) { this.major = major; this.minor = minor;
+}
+@Override public int compareTo(Version o) {
+if (this.major != o.major) { return this.major - o.major;
+} return this.minor - o.minor;
+1016
+
+[p.1017]
+从 Java 到 Kotlin 迁移指南
+} return this.minor - o.minor; } }
+public void compareVersions() { var minVersion = new Version(1, 11); var maxVersion = new Version(1, 31);
+System.out.println( versionIsInRange(new Version(0, 9), minVersion, maxVersion));
+System.out.println( versionIsInRange(new Version(1, 20), minVersion, maxVersion));
+}
+public Boolean versionIsInRange(Version versionToCheck, Version minVersion, Version maxVersion) {
+return versionToCheck.compareTo(minVersion) >= 0 && versionToCheck.compareTo(maxVersion) <= 0;
+}
+In Kotlin, you operate with a range as a whole object. You don't need to create two variables and compare a Version with them:
+// Kotlin class Version(val major: Int, val minor: Int): Comparable<Version> {
+override fun compareTo(other: Version): Int { if (this.major != other.major) { return this.major - other.major } return this.minor - other.minor
+} }
+fun main() { val versionRange = Version(1, 11)..Version(1, 30)
+println(Version(0, 9) in versionRange) println(Version(1, 20) in versionRange) }
+As soon as you need to exclude one of the bounds, like to check whether a version is greater than or equal to ( >= ) the minimum version and less than ( < ) the maximum version, these inclusive ranges won't help.
+按照多个维度比较
+1017
+
+[p.1018]
+从 Java 到 Kotlin 迁移指南
+In Java, to compare objects by several criteria, you may use the comparing() and thenComparingX() functions from the Comparator interface. For example, to compare people by their name and age:
+class Person implements Comparable<Person> { String name; int age;
+public String getName() { return name;
+}
+public int getAge() { return age;
+}
+Person(String name, int age) { this.name = name; this.age = age;
+}
+@Override public String toString() {
+return this.name + " " + age; } }
+public void comparePersons() { var persons = List.of(new Person("Jack", 35), new Person("David", 30), new Person("Jack", 25)); System.out.println(persons.stream().sorted(Comparator .comparing(Person::getName) .thenComparingInt(Person::getAge)).collect(toList()));
+}
+In Kotlin, you just enumerate which fields you want to compare:
+data class Person( val name: String, val age: Int
+)
+fun main() { val persons = listOf(Person("Jack", 35), Person("David", 30), Person("Jack", 25)) println(persons.sortedWith(compareBy(Person::name, Person::age)))
+}
+1018
+
+[p.1019]
+从 Java 到 Kotlin 迁移指南
+序列
+In Java, you can generate a sequence of numbers this way:
+// Java int sum = IntStream.iterate(1, e -> e + 3)
+.limit(10).sum(); System.out.println(sum); // Prints 145
+In Kotlin, use sequences. Multi-step processing of sequences is executed lazily when possible – actual computing happens only when the result of the whole processing chain is requested.
+fun main() { //sampleStart
+// Kotlin val sum = generateSequence(1) {
+it + 3 }.take(10).sum() println(sum) // Prints 145 //sampleEnd }
+Sequences may reduce the number of steps that are needed to perform some filtering operations. See the sequence processing example, which shows the difference between Iterable and Sequence .
+从列表中删除元素
+In Java, the remove() ) function accepts an index of an element to remove.
+When removing an integer element, use the Integer.valueOf() function as the argument for the remove() function:
+// Java public void remove() {
+var numbers = new ArrayList<>(); numbers.add(1); numbers.add(2); numbers.add(3); numbers.add(1); numbers.remove(1); // This removes by index System.out.println(numbers); // [1, 3, 1] numbers.remove(Integer.valueOf(1)); System.out.println(numbers); // [3, 1] }
+1019
+
+[p.1020]
+从 Java 到 Kotlin 迁移指南
+In Kotlin, there are two types of element removal: by index with removeAt() and by value with remove() .
+fun main() { //sampleStart
+// Kotlin val numbers = mutableListOf(1, 2, 3, 1) numbers.removeAt(0) println(numbers) // [2, 3, 1] numbers.remove(1) println(numbers) // [2, 3] //sampleEnd }
+遍历 map
+In Java, you can traverse a map via forEach ):
+// Java numbers.forEach((k,v) -> System.out.println("Key = " + k + ", Value = " + v));
+In Kotlin, use a for loop or a forEach , similar to Java's forEach , to traverse a map:
+// Kotlin for ((k, v) in numbers) {
+println("Key = $k, Value = $v") } // Or numbers.forEach { (k, v) -> println("Key = $k, Value = $v") }
+获取可能会空的集合的首末元素
+In Java, you can safely get the first and the last items by checking the size of the collection and using indices:
+// Java var list = new ArrayList<>(); //... if (list.size() > 0) {
+System.out.println(list.get(0)); System.out.println(list.get(list.size() - 1)); }
+1020
+
+[p.1021]
+从 Java 到 Kotlin 迁移指南
+You can also use the getFirst() ) and getLast() ) functions for Deque and its inheritors:
+// Java var deque = new ArrayDeque<>(); //... if (deque.size() > 0) {
+System.out.println(deque.getFirst()); System.out.println(deque.getLast()); }
+In Kotlin, there are the special functions firstOrNull() and lastOrNull() . Using the Elvis operator , you can perform further actions right away depending on the result of a function. For example, firstOrNull() :
+// Kotlin val emails = listOf<String>() // Might be empty val theOldestEmail = emails.firstOrNull() ?: "" val theFreshestEmail = emails.lastOrNull() ?: ""
+由 list 创建 set
+In Java, to create a Set from a List , you can use the Set.copyOf ) function:
+// Java public void listToSet() {
+var sourceList = List.of(1, 2, 3, 1); var copySet = Set.copyOf(sourceList); System.out.println(copySet); }
+In Kotlin, use the function toSet() :
+fun main() { //sampleStart
+// Kotlin val sourceList = listOf(1, 2, 3, 1) val copySet = sourceList.toSet() println(copySet) //sampleEnd }
+元素分组
+1021
+
+[p.1022]
+从 Java 到 Kotlin 迁移指南
+In Java, you can group elements with the Collectors function groupingBy() :
+// Java public void analyzeLogs() {
+var requests = List.of( new Request("https://kotlinlang.org/docs/home.html", 200), new Request("https://kotlinlang.org/docs/home.html", 400), new Request("https://kotlinlang.org/docs/comparison-to-java.html", 200)
+); var urlsAndRequests = requests.stream().collect(
+Collectors.groupingBy(Request::getUrl)); System.out.println(urlsAndRequests); }
+In Kotlin, use the function groupBy() :
+data class Request( val url: String, val responseCode: Int
+)
+fun main() { //sampleStart
+// Kotlin val requests = listOf(
+Request("https://kotlinlang.org/docs/home.html", 200), Request("https://kotlinlang.org/docs/home.html", 400), Request("https://kotlinlang.org/docs/comparison-to-java.html", 200) ) println(requests.groupBy(Request::url)) //sampleEnd }
+过滤元素
+In Java, to filter elements from a collection, you need to use the Stream API. The Stream API has intermediate and terminal operations. filter() is an intermediate operation, which returns a stream. To receive a collection as the output, you need to use a terminal operation, like collect() . For example, to leave only those pairs whose keys end with 1 and whose values are greater than 10 :
+// Java public void filterEndsWith() {
+var numbers = Map.of("key1", 1, "key2", 2, "key3", 3, "key11", 11); var filteredNumbers = numbers.entrySet().stream()
+.filter(entry -> entry.getKey().endsWith("1") && entry.getValue() > 10)
+1022
+
+[p.1023]
+从 Java 到 Kotlin 迁移指南
+.collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)); System.out.println(filteredNumbers); }
+In Kotlin, filtering is built into collections, and filter() returns the same collection type that was filtered. So, all you need to write is the filter() and its predicate:
+fun main() { //sampleStart
+// Kotlin val numbers = mapOf("key1" to 1, "key2" to 2, "key3" to 3, "key11" to 11) val filteredNumbers = numbers.filter { (key, value) -> key.endsWith("1") && value > 10 } println(filteredNumbers) //sampleEnd }
+Learn more about filtering maps here.
+按类型过滤元素
+In Java, to filter elements by type and perform actions on them, you need to check their types with the instanceof operator and then do the type cast:
+// Java public void objectIsInstance() {
+var numbers = new ArrayList<>(); numbers.add(null); numbers.add(1); numbers.add("two"); numbers.add(3.0); numbers.add("four"); System.out.println("All String elements in upper case:"); numbers.stream().filter(it -> it instanceof String)
+.forEach( it -> System.out.println(((String) it).toUpperCase())); }
+In Kotlin, you just call filterIsInstance<NEEDED_TYPE>() on your collection, and the type cast is done by Smart casts:
+// Kotlin fun main() { //sampleStart
+// Kotlin val numbers = listOf(null, 1, "two", 3.0, "four") println("All String elements in upper case:") numbers.filterIsInstance<String>().forEach {
+1023
+
+[p.1024]
+从 Java 到 Kotlin 迁移指南
+println(it.uppercase()) } //sampleEnd }
+检验谓词
+Some tasks require you to check whether all, none, or any elements satisfy a condition. In Java, you can do all of these checks via the Stream API functions allMatch() ), noneMatch() ), and anyMatch() ):
+// Java public void testPredicates() {
+var numbers = List.of("one", "two", "three", "four"); System.out.println(numbers.stream().noneMatch(it -> it.endsWith("e"))); // false System.out.println(numbers.stream().anyMatch(it -> it.endsWith("e"))); // true System.out.println(numbers.stream().allMatch(it -> it.endsWith("e"))); // false }
+In Kotlin, the extension functions none() , any() , and all() are available for every Iterable object:
+fun main() { //sampleStart // Kotlin
+val numbers = listOf("one", "two", "three", "four") println(numbers.none { it.endsWith("e") }) println(numbers.any { it.endsWith("e") }) println(numbers.all { it.endsWith("e") }) //sampleEnd }
+Learn more about test predicates.
+集合转换操作
+元素合拢
+In Java, you can make pairs from elements with the same positions in two collections by iterating simultaneously over them:
+// Java public void zip() {
+var colors = List.of("red", "brown");
+1024
+
+[p.1025]
+从 Java 到 Kotlin 迁移指南
+var animals = List.of("fox", "bear", "wolf");
+for (int i = 0; i < Math.min(colors.size(), animals.size()); i++) { String animal = animals.get(i); System.out.println("The " + animal.substring(0, 1).toUpperCase() + animal.substring(1) + " is " + colors.get(i));
+} }
+If you want to do something more complex than just printing pairs of elements into the output, you can use Records. In the example above, the record would be record AnimalDescription(String animal, String color) {} .
+In Kotlin, use the zip() function to do the same thing:
+fun main() { //sampleStart
+// Kotlin val colors = listOf("red", "brown") val animals = listOf("fox", "bear", "wolf")
+println(colors.zip(animals) { color, animal -> "The ${animal.replaceFirstChar { it.uppercase() }} is $color" })
+//sampleEnd }
+zip() returns the List of Pair objects.
+If collections have different sizes, the result of zip() is the smaller size. The last elements of the larger collection are not included in the result.
+
+元素关联
+In Java, you can use the Stream API to associate elements with characteristics:
+// Java public void associate() {
+var numbers = List.of("one", "two", "three", "four"); var wordAndLength = numbers.stream()
+.collect(toMap(number -> number, String::length)); System.out.println(wordAndLength); }
+In Kotlin, use the associate() function:
+
+1025
+
+[p.1026]
+从 Java 到 Kotlin 迁移指南
+fun main() { //sampleStart
+// Kotlin val numbers = listOf("one", "two", "three", "four") println(numbers.associateWith { it.length }) //sampleEnd }
+下一步做什么？
+Visit Kotlin Koans – complete exercises to learn Kotlin syntax. Each exercise is created as a failing unit test and your job is to make it pass. Look through other Kotlin idioms. Learn how to convert existing Java code to Kotlin with the Java to Kotlin converter. Discover collections in Kotlin. If you have a favorite idiom, we invite you to share it by sending a pull request.
+1026
+
+[p.1027]
+从 Java 到 Kotlin 迁移指南
+Java 与 Kotlin 中的可空性
+Nullability is the ability of a variable to hold a null value. When a variable contains null , an attempt to dereference the variable leads to a NullPointerException . There are many ways to write code in order to minimize the probability of receiving null pointer exceptions. This guide covers differences between Java's and Kotlin's approaches to handling possibly nullable variables. It will help you migrate from Java to Kotlin and write your code in authentic Kotlin style. The first part of this guide covers the most important difference – support for nullable types in Kotlin and how Kotlin processes types from Java code. The second part, starting from Checking the result of a function call, examines several specific cases to explain certain differences. Learn more about null safety in Kotlin.
+Support for nullable types
+The most important difference between Kotlin's and Java's type systems is Kotlin's explicit support for nullable types. It is a way to indicate which variables can possibly hold a null value. If a variable can be null , it's not safe to call a method on the variable because this can cause a NullPointerException . Kotlin prohibits such calls at compile time and thereby prevents lots of possible exceptions. At runtime, objects of nullable types and objects of non-nullable types are treated the same: A nullable type isn't a wrapper for a non-nullable type. All checks are performed at compile time. That means there's almost no runtime overhead for working with nullable types in Kotlin.
+We say "almost" because, even though intrinsic checks are generated, their overhead is minimal.
+In Java, if you don't write null checks, methods may throw a NullPointerException :
+// Java int stringLength(String a) {
+return a.length(); } void main() {
+stringLength(null); // Throws a `NullPointerException` }
+This call will have the following output:
+1027
+
+[p.1028]
+从 Java 到 Kotlin 迁移指南
+java.lang.NullPointerException: Cannot invoke "String.length()" because "a" is null at test.java.Nullability.stringLength(Nullability.java:8) at test.java.Nullability.main(Nullability.java:12) at java.base/java.util.ArrayList.forEach(ArrayList.java:1511) at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+In Kotlin, all regular types are non-nullable by default unless you explicitly mark them as nullable. If you don't expect a to be null , declare the stringLength() function as follows:
+// Kotlin fun stringLength(a: String) = a.length
+The parameter a has the String type, which in Kotlin means it must always contain a String instance and it cannot contain null . Nullable types in Kotlin are marked with a question mark ? , for example, String? . The situation with a NullPointerException at runtime is impossible if a is String because the compiler enforces the rule that all arguments of stringLength() not be null . An attempt to pass a null value to the stringLength(a: String) function will result in a compiletime error, "Null can not be a value of a non-null type String":
+If you want to use this function with any arguments, including null , use a question mark after the argument type String? and check inside the function body to ensure that the value of the argument is not null :
+// Kotlin fun stringLength(a: String?): Int = if (a != null) a.length else 0
+After the check is passed successfully, the compiler treats the variable as if it were of the non-nullable type String in the scope where the compiler performs the check. If you don't perform this check, the code will fail to compile with the following message: "Only safe (?.) or non-nullable asserted (!!.) calls are allowed on a nullable receiver of type String?".
+1028
+
+[p.1029]
+从 Java 到 Kotlin 迁移指南
+You can write the same shorter – use the safe-call operator ?. (If-not-null shorthand), which allows you to combine a null check and a method call into a single operation:
+// Kotlin fun stringLength(a: String?): Int = a?.length ?: 0
+Platform types
+In Java, you can use annotations showing whether a variable can or cannot be null . Such annotations aren't part of the standard library, but you can add them separately. For example, you can use the JetBrains annotations @Nullable and @NotNull (from the org.jetbrains.annotations package) or annotations from Eclipse ( org.eclipse.jdt.annotation ). Kotlin can recognize such annotations when you're calling Java code from Kotlin code and will treat types according to their annotations. If your Java code doesn't have these annotations, then Kotlin will treat Java types as platform types. But since Kotlin doesn't have nullability information for such types, its compiler will allow all operations on them. You will need to decide whether to perform null checks, because:
+Just as in Java, you'll get a NullPointerException if you try to perform an operation on null . The compiler won't highlight any redundant null checks, which it normally does when you perform a null-safe operation on a value of a non-nullable type. Learn more about calling Java from Kotlin in regard to null-safety and platform types.
+Support for definitely non-nullable types
+In Kotlin, if you want to override a Java method that contains @NotNull as an argument, you need Kotlin's definitely non-nullable types. For example, consider this load() method in Java:
+import org.jetbrains.annotations.*;
+public interface Game<T> { public T save(T x) {} @NotNull public T load(@NotNull T x) {}
+}
+To override the load() method in Kotlin successfully, you need T1 to be declared as definitely non-nullable ( T1 & Any ):
+1029
+
+[p.1030]
+从 Java 到 Kotlin 迁移指南
+interface ArcadeGame<T1> : Game<T1> { override fun save(x: T1): T1 // T1 is definitely non-nullable override fun load(x: T1 & Any): T1 & Any
+}
+Learn more about generic types that are definitely non-nullable.
+Checking the result of a function call
+One of the most common situations where you need to check for null is when you obtain a result from a function call. In the following example, there are two classes, Order and Customer . Order has a reference to an instance of Customer . The findOrder() function returns an instance of the Order class, or null if it can't find the order. The objective is to process the customer instance of the retrieved order. Here are the classes in Java:
+//Java record Order (Customer customer) {} record Customer (String name) {}
+In Java, call the function and do an if-not-null check on the result to proceed with the dereferencing of the required property:
+// Java Order order = findOrder(); if (order != null) {
+processCustomer(order.getCustomer()); }
+Converting the Java code above to Kotlin code directly results in the following:
+// Kotlin data class Order(val customer: Customer) data class Customer(val name: String) val order = findOrder()
+1030
+
+[p.1031]
+从 Java 到 Kotlin 迁移指南
+// Direct conversion if (order != null){
+processCustomer(order.customer) }
+Use the safe-call operator ?. (If-not-null shorthand) in combination with any of the scope functions from the standard library. The let function is usually used for this:
+// Kotlin val order = findOrder() order?.let {
+processCustomer(it.customer) }
+Here is a shorter version of the same:
+// Kotlin findOrder()?.customer?.let(::processCustomer)
+Default values instead of null
+Checking for null is often used in combination with setting the default value in case the null check is successful. The Java code with a null check:
+// Java Order order = findOrder(); if (order == null) {
+order = new Order(new Customer("Antonio")) }
+To express the same in Kotlin, use the Elvis operator (If-not-null-else shorthand):
+// Kotlin val order = findOrder() ?: Order(Customer("Antonio"))
+Functions returning a value or null
+1031
+
+[p.1032]
+从 Java 到 Kotlin 迁移指南
+
+In Java, you need to be careful when working with list elements. You should always check whether an element exists at an index before you attempt to use the element:
+// Java var numbers = new ArrayList<Integer>(); numbers.add(1); numbers.add(2);
+System.out.println(numbers.get(0)); //numbers.get(5) // Exception!
+
+The Kotlin standard library often provides functions whose names indicate whether they can possibly return a null value. This is especially common in the collections API:
+
+fun main() { //sampleStart
+// Kotlin // The same code as in Java: val numbers = listOf(1, 2)
+
+println(numbers[0]) mpty
+//numbers.get(5)
+
+// Can throw IndexOutOfBoundsException if the collection is e // Exception!
+
+// More abilities: println(numbers.firstOrNull()) println(numbers.getOrNull(5)) // null //sampleEnd }
+
+Aggregate operations
+When you need to get the biggest element or null if there are no elements, in Java you would use the Stream API:
+// Java var numbers = new ArrayList<Integer>(); var max = numbers.stream().max(Comparator.naturalOrder()).orElse(null); System.out.println("Max: " + max);
+In Kotlin, use aggregate operations:
+// Kotlin val numbers = listOf<Int>() println("Max: ${numbers.maxOrNull()}")
+1032
+
+[p.1033]
+从 Java 到 Kotlin 迁移指南
+Learn more about collections in Java and Kotlin.
+Casting types safely
+When you need to safely cast a type, in Java you would use the instanceof operator and then check how well it worked:
+// Java int getStringLength(Object y) {
+return y instanceof String x ? x.length() : -1; } void main() {
+System.out.println(getStringLength(1)); // Prints `-1` }
+To avoid exceptions in Kotlin, use the safe cast operator as? , which returns null on failure:
+// Kotlin fun main() {
+println(getStringLength(1)) // Prints `-1` } fun getStringLength(y: Any): Int {
+val x: String? = y as? String // null return x?.length ?: -1 // Returns -1 because `x` is null }
+In the Java example above, the function getStringLength() returns a result of the primitive type int . To make it return null , you can use the boxed type Integer . However, it's more resource-efficient to make such functions return a negative value and then check the value – you would do the check anyway, but no additional boxing is performed this way.
+下一步做什么？
+Browse other Kotlin idioms. Learn how to convert existing Java code to Kotlin with the Java-to-Kotlin (J2K) converter. Check out other migration guides:
+Strings in Java and Kotlin Collections in Java and Kotlin
+1033
+
+[p.1034]
+从 Java 到 Kotlin 迁移指南 If you have a favorite idiom, feel free to share it with us by sending a pull request!
+1034
+
+[p.1035]
+从 Java 到 Kotlin 迁移指南
+标准输入
+Java Scanner is a slow tool. Use it only when you need the specific functionalities it offers. Otherwise, it's generally preferable to use Kotlin's readln() function to read standard input.
+To read from the standard input, Java provides the Scanner class. Kotlin offers two main ways to read from the standard input: the Scanner class, similar to Java, and the readln() function.
+Read from the standard input with Java Scanner
+In Java, the standard input is typically accessed through the System.in object. You need to import the Scanner class, create an object, and use methods like .nextLine() and .nextInt() to read different data types:
+//Java implementation import java.util.Scanner; public class Main {
+public static void main(String[] args) { Scanner scanner = new Scanner(System.in); // Reads a single line of input. For example: Hi there! System.out.print("Enter a line: "); String line = scanner.nextLine(); System.out.println("You entered: " + line); // You entered: Hi there! // Reads an integer. For example: 08081990 System.out.print("Enter an integer: "); int number = scanner.nextInt(); System.out.println("You entered: " + number); // You entered: 08081990 scanner.close();
+} }
+Use Java Scanner in Kotlin
+Due to Kotlin's interoperability with Java libraries, you can access Java Scanner from Kotlin code out of the box.
+1035
+
+[p.1036]
+从 Java 到 Kotlin 迁移指南
+To use Java Scanner in Kotlin, you need to import the Scanner class and initialize it by passing a System.in object that represents the standard input stream and dictates how to read the data. You can use the available reading methods for reading values different from strings, such as .nextLine() , .next() , and .nextInt() :
+// Imports Java Scanner import java.util.Scanner
+fun main() { // Initializes the Scanner val scanner = Scanner(System.`in`)
+// Reads a whole string line. For example: "Hello, Kotlin" val line = scanner.nextLine() print(line) // Hello, Kotlin
+// Reads a string. For example: "Hello" val string = scanner.next() print(string) // Hello
+// Reads a number. For example: 123 val num = scanner.nextInt() print(num) // 123 }
+Other useful methods for reading input with Java Scanner are .hasNext() , .useDelimiter() , and .close() :
+The .hasNext() method checks if there's more data available in the input. It returns the boolean value true if there are remaining elements to iterate and false if no more elements are left in the input. The .useDelimiter() method sets the delimiter for reading input elements. The delimiter is whitespaces by default, but you can specify other characters. For example, .useDelimiter(",") reads the input elements separated by commas. The .close() method closes the input stream associated with the Scanner, preventing further use of the Scanner for reading input. Always use the .close() method when you're finished using Java Scanner. Closing the Java Scanner releases the resources it consumes and ensures proper program behavior.
+1036
+
+[p.1037]
+从 Java 到 Kotlin 迁移指南
+Read from the standard input with readln()
+In Kotlin, apart from the Java Scanner, you have the readln() function. It is the most straightforward way to read input. This function reads a line of text from the standard input and returns it as a string:
+// Reads a string. For example: Charlotte val name = readln() // Reads a string and converts it into an integer. For example: 43 val age = readln().toInt() println("Hello, $name! You are $age years old.") // Hello, Charlotte! You are 43 years old.
+For more information, see Read standard input.
+1037
+

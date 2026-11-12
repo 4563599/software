@@ -1,0 +1,184 @@
+# KSP 快速入门（第 1909-1917 页）
+
+[p.1909]
+KSP 快速入门
+KSP 快速入门
+For a quick start, you can create your own processor or get a sample one.
+Add a processor
+To add a processor, you need to include the KSP Gradle Plugin and add a dependency on the processor:
+1. Add the KSP Gradle Plugin com.google.devtools.ksp to your build.gradle(.kts) file:
+【Kotlin】
+plugins { id("com.google.devtools.ksp") version "2.1.21-2.0.1"
+}
+【Groovy】
+plugins { id 'com.google.devtools.ksp' version '2.1.21-2.0.1'
+}
+1. Add a dependency on the processor. This example uses Dagger. Replace it with the processor you want to add.
+【Kotlin】
+dependencies { implementation("com.google.dagger:dagger-compiler:2.51.1") ksp("com.google.dagger:dagger-compiler:2.51.1")
+}
+1909
+
+[p.1910]
+KSP 快速入门
+【Groovy】
+dependencies { implementation 'com.google.dagger:dagger-compiler:2.51.1' ksp 'com.google.dagger:dagger-compiler:2.51.1'
+}
+
+1. Run ./gradlew build . You can find the generated code in the build/generated/ksp directory.
+Here is a full example:
+【Kotlin】
+plugins { id("com.google.devtools.ksp") version "2.1.21-2.0.1" kotlin("jvm")
+}
+repositories { mavenCentral()
+}
+dependencies { implementation(kotlin("stdlib-jdk8")) implementation("com.google.dagger:dagger-compiler:2.51.1") ksp("com.google.dagger:dagger-compiler:2.51.1")
+}
+
+【Groovy】
+plugins { id 'com.google.devtools.ksp' version '2.1.21-2.0.1' id 'org.jetbrains.kotlin.jvm' version '2.1.21'
+}
+repositories { mavenCentral()
+}
+dependencies { implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.21' implementation 'com.google.dagger:dagger-compiler:2.51.1'
+
+1910
+
+[p.1911]
+KSP 快速入门
+ksp 'com.google.dagger:dagger-compiler:2.51.1' }
+Create a processor of your own
+1. Create an empty gradle project. 2. Specify version 2.1.21 of the Kotlin plugin in the root project for use in other project modules:
+【Kotlin】
+plugins { kotlin("jvm") version "2.1.21" apply false
+} buildscript {
+dependencies { classpath(kotlin("gradle-plugin", version = "2.1.21"))
+} }
+【Groovy】
+plugins { id 'org.jetbrains.kotlin.jvm' version '2.1.21' apply false
+} buildscript {
+dependencies { classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21'
+} }
+1. Add a module for hosting the processor. 2. In the module's build script, apply Kotlin plugin and add the KSP API to the dependencies
+block.
+1911
+
+[p.1912]
+KSP 快速入门
+【Kotlin】
+plugins { kotlin("jvm")
+}
+repositories { mavenCentral()
+}
+dependencies { implementation("com.google.devtools.ksp:symbol-processing-api:2.1.21-2.0.1")
+}
+【Groovy】
+plugins { id 'org.jetbrains.kotlin.jvm' version '2.1.21'
+}
+repositories { mavenCentral()
+}
+dependencies { implementation 'com.google.devtools.ksp:symbol-processing-api:2.1.21-2.0.1'
+}
+1. You'll need to implement com.google.devtools.ksp.processing.SymbolProcessor and com.google.devtools.ksp.processing.SymbolProcessorProvider . Your implementation of SymbolProcessorProvider will be loaded as a service to instantiate the SymbolProcessor you implement. Note the following: Implement SymbolProcessorProvider.create() to create a SymbolProcessor . Pass dependencies that your processor needs (such as CodeGenerator , processor options) through the parameters of SymbolProcessorProvider.create() . Your main logic should be in the SymbolProcessor.process() method. Use resolver.getSymbolsWithAnnotation() to get the symbols you want to process, given the fully-qualified name of an annotation. A common use case for KSP is to implement a customized visitor (interface com.google.devtools.ksp.symbol.KSVisitor ) for operating on symbols. A simple template visitor is com.google.devtools.ksp.symbol.KSDefaultVisitor . For sample implementations of the SymbolProcessorProvider and SymbolProcessor
+1912
+
+[p.1913]
+KSP 快速入门
+interfaces, see the following files in the sample project.
+src/main/kotlin/BuilderProcessor.kt src/main/kotlin/TestProcessor.kt
+After writing your own processor, register your processor provider to the package by including its fully-qualified name in src/main/resources/METAINF/services/com.google.devtools.ksp.processing.SymbolProcessorProvider .
+Use your own processor in a project
+1. Create another module that contains a workload where you want to try out your processor.
+【Kotlin】
+pluginManagement { repositories { gradlePluginPortal() }
+}
+
+【Groovy】
+pluginManagement { repositories { gradlePluginPortal() }
+}
+
+1. In the module's build script, apply the com.google.devtools.ksp plugin with the specified version and add your processor to the list of dependencies.
+
+【Kotlin】
+plugins { id("com.google.devtools.ksp") version "2.1.21-2.0.1"
+}
+dependencies {
+
+1913
+
+[p.1914]
+KSP 快速入门
+implementation(kotlin("stdlib-jdk8")) implementation(project(":test-processor")) ksp(project(":test-processor")) }
+
+【Groovy】
+plugins { id 'com.google.devtools.ksp' version '2.1.21-2.0.1'
+}
+dependencies { implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.21' implementation project(':test-processor') ksp project(':test-processor')
+}
+
+1. Run ./gradlew build . You can find the generated code under build/generated/ksp .
+Here's a sample build script to apply the KSP plugin to a workload:
+【Kotlin】
+plugins { id("com.google.devtools.ksp") version "2.1.21-2.0.1" kotlin("jvm")
+}
+repositories { mavenCentral()
+}
+dependencies { implementation(kotlin("stdlib-jdk8")) implementation(project(":test-processor")) ksp(project(":test-processor"))
+}
+
+【Groovy】
+plugins {
+
+1914
+
+[p.1915]
+KSP 快速入门
+id 'com.google.devtools.ksp' version '2.1.21-2.0.1' id 'org.jetbrains.kotlin.jvm' version '2.1.21' } repositories { mavenCentral() } dependencies { implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.21' implementation project(':test-processor') ksp project(':test-processor') }
+Pass options to processors
+Processor options in SymbolProcessorEnvironment.options are specified in gradle build scripts:
+ksp { arg("option1", "value1") arg("option2", "value2") ...
+}
+Make IDE aware of generated code
+Generated source files are registered automatically since KSP 1.8.0-1.0.9. If you're using KSP 1.0.9 or newer and don't need to make the IDE aware of generated resources, feel free to skip this section.
+By default, IntelliJ IDEA or other IDEs don't know about the generated code. So it will mark references to generated symbols unresolvable. To make an IDE be able to reason about the generated symbols, mark the following paths as generated source roots:
+build/generated/ksp/main/kotlin/ build/generated/ksp/main/java/
+If your IDE supports resource directories, also mark the following one:
+build/generated/ksp/main/resources/
+1915
+
+[p.1916]
+KSP 快速入门
+It may also be necessary to configure these directories in your KSP consumer module's build script:
+【Kotlin】
+kotlin { sourceSets.main { kotlin.srcDir("build/generated/ksp/main/kotlin") } sourceSets.test { kotlin.srcDir("build/generated/ksp/test/kotlin") }
+}
+
+【Groovy】
+kotlin { sourceSets { main.kotlin.srcDirs += 'build/generated/ksp/main/kotlin' test.kotlin.srcDirs += 'build/generated/ksp/test/kotlin' }
+}
+
+If you are using IntelliJ IDEA and KSP in a Gradle plugin then the above snippet will give the following warning:
+Execution optimizations have been disabled for task ':publishPluginJar' to ensure corr ectness due to the following reasons: Gradle detected a problem with the following location: '../build/generated/ksp/main/ko tlin'. Reason: Task ':publishPluginJar' uses this output of task ':kspKotlin' without declari ng an explicit or implicit dependency.
+In this case, use the following script instead:
+
+【Kotlin】
+plugins { // ...
+
+1916
+
+[p.1917]
+KSP 快速入门
+idea } idea {
+module { // Not using += due to https://github.com/gradle/gradle/issues/8749 sourceDirs = sourceDirs + file("build/generated/ksp/main/kotlin") // or tasks[
+"kspKotlin"].destination testSourceDirs = testSourceDirs + file("build/generated/ksp/test/kotlin") generatedSourceDirs = generatedSourceDirs + file("build/generated/ksp/main/kot
+lin") + file("build/generated/ksp/test/kotlin") }
+}
+【Groovy】
+plugins { // ... id 'idea'
+} idea {
+module { // Not using += due to https://github.com/gradle/gradle/issues/8749 sourceDirs = sourceDirs + file('build/generated/ksp/main/kotlin') // or tasks[
+"kspKotlin"].destination testSourceDirs = testSourceDirs + file('build/generated/ksp/test/kotlin') generatedSourceDirs = generatedSourceDirs + file('build/generated/ksp/main/kot
+lin') + file('build/generated/ksp/test/kotlin') }
+}
+1917
+

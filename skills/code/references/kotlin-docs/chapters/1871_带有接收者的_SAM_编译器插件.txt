@@ -1,0 +1,45 @@
+# 带有接收者的 SAM 编译器插件（第 1871-1873 页）
+
+[p.1871]
+带有接收者的 SAM 编译器插件
+
+带有接收者的 SAM 编译器插件
+The sam-with-receiver compiler plugin makes the first parameter of the annotated Java "single abstract method" (SAM) interface method a receiver in Kotlin. This conversion only works when the SAM interface is passed as a Kotlin lambda, both for SAM adapters and SAM constructors (see the SAM conversions documentation for more details). Here is an example:
+public @interface SamWithReceiver {}
+@SamWithReceiver public interface TaskRunner {
+void run(Task task); }
+fun test(context: TaskContext) { val runner = TaskRunner { // Here 'this' is an instance of 'Task'
+println("$name is started") context.executeTask(this) println("$name is finished") } }
+Gradle
+The usage is the same to all-open and no-arg, except the fact that sam-with-receiver does not have any built-in presets, and you need to specify your own list of special-treated annotations.
+【Kotlin】
+plugins { kotlin("plugin.sam.with.receiver") version "2.1.21"
+}
+
+【Groovy】
+
+1871
+
+[p.1872]
+带有接收者的 SAM 编译器插件
+plugins { id "org.jetbrains.kotlin.plugin.sam.with.receiver" version "2.1.21"
+}
+Then specify the list of SAM-with-receiver annotations:
+samWithReceiver { annotation("com.my.SamWithReceiver")
+}
+Maven
+<plugin> <artifactId>kotlin-maven-plugin</artifactId> <groupId>org.jetbrains.kotlin</groupId> <version>${kotlin.version}</version>
+<configuration> <compilerPlugins> <plugin>sam-with-receiver</plugin> </compilerPlugins>
+<pluginOptions> <option> sam-with-receiver:annotation=com.my.SamWithReceiver </option>
+</pluginOptions> </configuration>
+<dependencies> <dependency> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-maven-sam-with-receiver</artifactId> <version>${kotlin.version}</version> </dependency>
+</dependencies> </plugin>
+Command-line compiler
+Add the plugin JAR file to the compiler plugin classpath and specify the list of sam-with-receiver annotations:
+1872
+
+[p.1873]
+带有接收者的 SAM 编译器插件
+-Xplugin=$KOTLIN_HOME/lib/sam-with-receiver-compiler-plugin.jar -P plugin:org.jetbrains.kotlin.samWithReceiver:annotation=com.my.SamWithReceiver
+1873
+

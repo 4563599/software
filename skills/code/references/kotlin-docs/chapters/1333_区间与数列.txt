@@ -1,0 +1,48 @@
+# 区间与数列（第 1333-1335 页）
+
+[p.1333]
+区间与数列
+区间与数列
+Ranges and progressions define sequences of values in Kotlin, supporting range operators, iteration, custom step values, and arithmetic progressions.
+Ranges
+Kotlin 可通过调用 kotlin.ranges 包中的 rangeTo() 及 .rangeUntil() 函数轻松地创建两个 值的区间 。 A range represents an ordered set of values with a defined start and end. By default, it increments by 1 at each step. For example, 1..4 represents the numbers 1, 2, 3, and 4. To create:
+a closed-ended range, call the .rangeTo() function with the .. operator. This includes both the start and end values. an open-ended range, call the .rangeUntil() function with the ..< operator. This includes the start value but excludes the end value. For example:
+fun main() { //sampleStart
+// Closed-ended range: includes both 1 and 4 println(4 in 1..4) // true
+// Open-ended range: includes 1, excludes 4 println(4 in 1..<4) // false //sampleEnd }
+Ranges are particularly useful for iterating over for loops:
+fun main() { //sampleStart
+for (i in 1..4) print(i) // 1234 //sampleEnd }
+1333
+
+[p.1334]
+区间与数列
+如需反向迭代数字，请使用 downTo 函数取代 .. 。
+fun main() { //sampleStart
+for (i in 4 downTo 1) print(i) // 4321 //sampleEnd }
+也可以使用 step() 函数以自定义步长迭代数字，而不是默认增量 1：
+fun main() { //sampleStart
+for (i in 0..8 step 2) print(i) println() // 02468 for (i in 0..<8 step 2) print(i) println() // 0246 for (i in 8 downTo 0 step 2) print(i) // 86420 //sampleEnd }
+数列
+整数类型（例如 Int 、 Long 与 Char ）的区间可视为等差数列。 在 Kotlin 中，这些数列由 特殊类型定义： IntProgression 、 LongProgression 与 CharProgression 。 数列具有三个基本属性： first 元素、 last 元素和一个非零的 step 。 首个元素为 first ，后续元素是前一个元素加上一个 step 。 以确定的步长在数列上进行迭代等效于 Java/JavaScript 中基于索引的 for 循环。
+for (int i = first; i <= last; i += step) { // ……
+}
+通过迭代数列隐式创建区间时，此数列的 first 与 last 元素是区间的端点， step 为 1 。
+fun main() { //sampleStart
+for (i in 1..10) print(i) // 12345678910 //sampleEnd }
+1334
+
+[p.1335]
+区间与数列
+要指定数列步长，请在区间上使用 step 函数。
+fun main() { //sampleStart
+for (i in 1..8 step 2) print(i) // 1357 //sampleEnd }
+数列的 last 元素是这样计算的： 对于正步长：不大于结束值且满足 (last - first) % step == 0 的最大值。 对于负步长：不小于结束值且满足 (last - first) % step == 0 的最小值。
+因此， last 元素并非总与指定的结束值相同。
+fun main() { //sampleStart
+for (i in 1..9 step 3) print(i) // 最后一个元素是 7 // 147 //sampleEnd }
+数列实现 Iterable<N> ，其中 N 分别是 Int 、 Long 或 Char ，因此可以在各种集合函数 （如 map 、 filter 与其他）中使用它们。
+fun main() { //sampleStart
+println((1..10).filter { it % 2 == 0 }) // [2, 4, 6, 8, 10] //sampleEnd }
+1335
+

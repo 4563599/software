@@ -1,0 +1,174 @@
+# 操作符重载（第 783-787 页）
+
+[p.783]
+操作符重载
+
+操作符重载
+在 Kotlin 中可以为类型提供预定义的一组操作符的自定义实现。这些操作符具有预定义的符 号表示（如 + 或 * ）与优先级。为了实现这样的操作符，需要为相应的类型提供一个指定 名称的成员函数或扩展函数。这个类型会成为二元操作符左侧的类型及一元操作符的参数类 型。 To overload an operator, mark the corresponding function with the operator modifier:
+interface IndexedContainer { operator fun get(index: Int)
+}
+When overriding your operator overloads, you can omit operator :
+class OrdersList: IndexedContainer { override fun get(index: Int) { /*...*/ }
+}
+
+一元操作
+
+一元前缀操作符
+
+表达式
++a -a !a
+
+a.unaryPlus() a.unaryMinus() a.not()
+
+翻译为
+
+这个表是说，当编译器处理例如表达式 +a 时，它执行以下步骤：
+确定 a 的类型，令其为 T 。 为接收者 T 查找一个带有 operator 修饰符的无参函数 unaryPlus（） ，即成员函数或 扩展函数。 如果函数不存在或不明确，则导致编译错误。 如果函数存在且其返回类型为 R ，那就表达式 +a 具有类型 R 。
+这些操作以及所有其他操作都针对基本类型做了优化，不会为它们引入函数调用的开 销。
+
+783
+
+[p.784]
+操作符重载
+
+以下是如何重载一元减运算符的示例：
+
+data class Point(val x: Int, val y: Int)
+
+operator fun Point.unaryMinus() = Point(-x, -y)
+
+val point = Point(10, 20)
+
+fun main() { println(-point)
+}
+
+// 输出“Point(x=-10, y=-20)”
+
+递增与递减
+
+表达式
+a++ a--
+
+a.inc() + 见下文 a.dec() + 见下文
+
+翻译为
+
+inc() 和 dec() 函数必须返回一个值，它用于赋值给使用 ++ 或 -- 操作的变量。它们不 应该改变在其上调用 inc() 或 dec() 的对象。
+编译器执行以下步骤来解析后缀形式的操作符，例如 a++ ：
+确定 a 的类型，令其为 T 。 查找一个适用于类型为 T 的接收者的、带有 operator 修饰符的无参数函数 inc() 。 检测函数的返回类型是 T 的子类型。
+计算表达式的步骤是：
+把 a 的初始值存储到临时存储 a0 中。 把 a0.inc() 结果赋值给 a 。 把 a0 作为该表达式的结果返回。
+对于 a-- ，步骤是完全类似的。
+对于前缀形式 ++a 和 --a 以相同方式解析，其步骤是：
+把 a.inc() 结果赋值给 a 。 把 a 的新值作为该表达式结果返回。
+
+二元操作
+算术运算符
+
+784
+
+[p.785]
+操作符重载
+
+a+b a-b a*b a/b a%b a..b a..<b
+
+表达式
+
+a.plus(b) a.minus(b) a.times(b) a.div(b) a.rem(b) a.rangeTo(b) a.rangeUntil(b)
+
+翻译为
+
+对于此表中的操作，编译器只是解析成翻译为列中的表达式。 下面是一个从给定值起始的 Counter 类的示例，它可以使用重载的 + 运算符来增加计数：
+
+data class Counter(val dayIndex: Int) { operator fun plus(increment: Int): Counter { return Counter(dayIndex + increment) }
+}
+
+in 操作符
+
+a in b a !in b
+
+表达式
+
+b.contains(a) !b.contains(a)
+
+翻译为
+
+对于 in 和 !in ，过程是相同的，但是参数的顺序是相反的。
+
+索引访问操作符
+
+表达式
+a[i] a[i, j] a[i_1, ……, i_n] a[i] = b a[i, j] = b a[i_1, ……, i_n] = b
+
+翻译为
+a.get(i) a.get(i, j) a.get(i_1, ……, i_n) a.set(i, b) a.set(i, j, b) a.set(i_1, ……, i_n, b)
+
+方括号转换为调用带有适当数量参数的 get 和 set 。
+
+invoke 操作符
+
+785
+
+[p.786]
+操作符重载
+
+表达式
+a() a(i) a(i, j) a(i_1, ……, i_n)
+
+翻译为
+a.invoke() a.invoke(i) a.invoke(i, j) a.invoke(i_1, ……, i_n)
+
+圆括号转换为调用带有适当数量参数的 invoke 。
+
+广义赋值
+
+a += b a -= b a *= b a /= b a %= b
+
+表达式
+
+a.plusAssign(b) a.minusAssign(b) a.timesAssign(b) a.divAssign(b) a.remAssign(b)
+
+翻译为
+
+对于赋值操作，例如 a += b ，编译器执行以下步骤：
+如果右列的函数可用： 如果相应的二元函数（即 plusAssign() 对应于 plus() ）也可用， a is a mutable variable, and the return type of plus is a subtype of the type of a , 那么报告错误（无 法区分）。 确保其返回类型是 Unit ，否则报告错误。 生成 a.plusAssign(b) 的代码。
+否则试着生成 a = a + b 的代码（这里包含类型检测： a + b 的类型必须是 a 的子类 型）。
+赋值在 Kotlin 中不是表达式。
+
+相等与不等操作符
+
+表达式
+a == b a != b
+
+翻译为
+a?.equals(b) ?: (b === null) !(a?.equals(b) ?: (b === null))
+
+这些操作符只使用函数 equals(other: Any?): Boolean ， 可以覆盖它来提供自定义的相等性 检测实现。不会调用任何其他同名函数（如 equals(other: Foo) ）。
+=== 和 !== （同一性检测）不可重载，因此不存在对他们的约定。
+
+786
+
+[p.787]
+操作符重载
+
+这个 == 操作符有些特殊：它被翻译成一个复杂的表达式，用于筛选 null 值。 null == null 总是 true，对于非空的 x ， x == null 总是 false 而不会调用 x.equals() 。
+
+比较操作符
+
+表达式
+a>b a<b a >= b a <= b
+
+a.compareTo(b) > 0 a.compareTo(b) < 0 a.compareTo(b) >= 0 a.compareTo(b) <= 0
+
+翻译为
+
+所有的比较都转换为对 compareTo 的调用，这个函数需要返回 Int 值
+
+属性委托操作符
+provideDelegate 、 getValue 以及 setValue 操作符函数已在委托属性中描述。
+
+具名函数的中缀调用
+可以通过中缀函数的调用 来模拟自定义中缀操作符。
+
+787
+

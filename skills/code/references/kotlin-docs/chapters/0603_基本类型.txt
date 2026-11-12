@@ -1,0 +1,548 @@
+# 基本类型（第 603-632 页）
+
+[p.603]
+基本类型
+基本类型
+概述 数字 无符号整型 布尔 字符 字符串 数组
+603
+
+[p.604]
+基本类型
+基本类型
+在 Kotlin 中，所有东西都是对象，在这个意义上讲可以在任何变量上调用成员函数与属性。 While certain types have an optimized internal representation as primitive values at runtime (such as numbers, characters, booleans and others), they appear and behave like regular classes to you. 本节会描述 Kotlin 中使用的基本类型：
+数字及其无符号版 布尔 字符 字符串 数组 Learn how to perform type checks and casts in Kotlin. To learn about other Kotlin types, such as Nothing , Any , and Unit , look through the Kotlin API reference:
+Any Nothing Unit
+604
+
+[p.605]
+基本类型
+
+数字
+
+整数类型
+
+Kotlin 提供了一组表示数字的内置类型。 对于整数，有四种不同大小与取值范围的类型：
+
+类型
+Byte Short Int Long
+
+大小（比特 数）
+8 16 32
+64
+
+最小值
+-128 -32768 -2,147,483,648 (-231) -9,223,372,036,854,775,808 (-263)
+
+最大值
+127 32767 2,147,483,647 (231 - 1) 9,223,372,036,854,775,807 (263 - 1)
+
+In addition to signed integer types, Kotlin also provides unsigned integer types. As unsigned integers are aimed at a different set of use cases, they are covered separately. See .
+
+当初始化一个没有显式指定类型的变量时，编译器会自动推断为自 Int 起足以表示该值的最 小类型。 如果不超过 Int 的取值范围，那么类型是 Int 。 如果超出了该范围，那么类型是 Long 。 如需显式指定 Long 值，请给该值追加后缀 L 。 To use the Byte or Short type, specify it explicitly in the declaration. 显式指定类型会触发编译器检测该值不会超出指定类型的 取值范围。
+val one = 1 // Int val threeBillion = 3000000000 // Long val oneLong = 1L // Long val oneByte: Byte = 1
+
+浮点类型
+
+对于实数，Kotlin 提供了浮点类型 Float 与 Double 类型，遵循 IEEE 754 标准。 Float 表 达 IEEE 754 单精度，而 Double 表达双精度。
+这两个类型的大小不同，并为两种不同精度的浮点数提供存储：
+
+类型
+Float
+
+大小（比特数） 32
+
+有效数字比特数 24
+
+指数比特数 8
+
+十进制位数 6-7
+
+605
+
+[p.606]
+基本类型
+
+Double
+
+64
+
+53
+
+11
+
+15-16
+
+可以仅使用带小数部分的数字初始化 Double 与 Float 变量。 小数部分与整数部分之间用 句点（ . ）分隔
+对于以小数初始化的变量，编译器会推断为 Double 类型：
+
+val pi = 3.14
+
+// Double
+
+val one: Double = 1 // 初始化类型不匹配
+
+// Int is inferred
+
+val oneDouble = 1.0 // Double
+
+如需将一个值显式指定为 Float 类型，请添加 f 或 F 后缀。 如果以这种方式提供的值包 含多于 7 位十进制数，那么会将其舍入：
+
+val e = 2.7182818284 val eFloat = 2.7182818284f
+
+// Double // Float，实际值为 2.7182817
+
+与一些其他语言不同，Kotlin 中的数字没有隐式拓宽转换。 例如，具有 Double 参数的函数 只能对 Double 值调用，而不能对 Float 、 Int 或者其他数字值调用：
+fun main() { //sampleStart
+fun printDouble(x: Double) { print(x) }
+val x = 1.0 val xInt = 1 val xFloat = 1.0f
+printDouble(x)
+printDouble(xInt) // 参数类型不匹配
+printDouble(xFloat) // 参数类型不匹配 //sampleEnd }
+
+如需将数值转换为不同的类型，请使用显式转换。
+
+数字字面常量
+
+606
+
+[p.607]
+基本类型
+数值常量字面值有以下几种: 十进制： 123 Long 类型，以大写 L 结尾： 123L 十六进制： 0x0F 二进制： 0b00001011
+Kotlin 不支持八进制。
+Kotlin 同样支持浮点数的常规表示方法: Doubles (default when the fractional part does not end with a letter): 123.5 , 123.5e10 Float，以字母 f 或 F 结尾： 123.5f
+你可以使用下划线使数字常量更易读：
+val oneMillion = 1_000_000 val creditCardNumber = 1234_5678_9012_3456L val socialSecurityNumber = 999_99_9999L val hexBytes = 0xFF_EC_DE_5E val bytes = 0b11010010_01101001_10010100_10010010 val bigFractional = 1_234_567.7182818284
+无符号整数字面值也有特殊后缀。
+更多内容请参阅无符号整型字面值。
+Boxing and caching numbers on the Java Virtual Machine
+The way the JVM stores numbers can make your code behave counterintuitively because of the cache used by default for small (byte-sized) numbers. The JVM stores numbers as primitive types: int , double , and so on. When you use generic types or create a nullable number reference such as Int? , numbers are boxed in Java classes such as Integer or Double .
+607
+
+[p.608]
+基本类型
+The JVM applies a memory optimization technique to Integer and other objects that represent numbers between −128 and 127 . All nullable references to such objects refer to the same cached object. For example, nullable objects in the following code are referentially equal:
+fun main() { //sampleStart
+val a: Int = 100 val boxedA: Int? = a val anotherBoxedA: Int? = a
+println(boxedA === anotherBoxedA) // true //sampleEnd }
+For numbers outside this range, the nullable objects are different but structurally equal:
+fun main() { //sampleStart
+val b: Int = 10000 val boxedB: Int? = b val anotherBoxedB: Int? = b
+println(boxedB === anotherBoxedB) // false println(boxedB == anotherBoxedB) // true //sampleEnd }
+For this reason, Kotlin warns about using referential equality with boxable numbers and literals with the following message: "Identity equality for arguments of types ... and ... is prohibited." When comparing Int , Short , Long , and Byte types (as well as Char and Boolean ), use structural equality checks to get consistent results.
+显式数字转换
+由于不同的表示方式，数字类型并不是彼此的子类型。 As a consequence, smaller types are not implicitly converted to bigger types and vice versa. For example, assigning a value of type Byte to an Int variable requires an explicit conversion:
+fun main() { //sampleStart
+val byte: Byte = 1 // OK，字面值会静态检测
+val intAssignedByte: Int = byte // Initializer type mismatch
+608
+
+[p.609]
+基本类型
+
+val intConvertedByte: Int = byte.toInt()
+println(intConvertedByte) //sampleEnd }
+
+所有数字类型都支持转换为其他类型：
+toByte(): Byte (deprecated for Float and Double)
+toShort(): Short toInt(): Int toLong(): Long toFloat(): Float toDouble(): Double
+很多情况都不需要显式类型转换，因为类型会从上下文推断出来， 而算术运算符会有重载自 动处理类型转换。例如：
+
+fun main() { //sampleStart
+val l = 1L + 3 println(l is Long) //sampleEnd }
+
+// Long + Int => Long // true
+
+Reasoning against implicit conversions
+Kotlin doesn't support implicit conversions because they can lead to unexpected behavior. If numbers of different types were converted implicitly, we could sometimes lose equality and identity silently. For example, imagine if Int was a subtype of Long :
+
+// Hypothetical code, does not actually compile:
+
+val a: Int? = 1 // A boxed Int (java.lang.Integer)
+
+val b: Long? = a // Implicit conversion yields a boxed Long (java.lang.Long)
+
+print(b == a)
+
+// Prints "false" as Long.equals() checks not only the value but wh
+
+ether the other number is Long as well
+
+数字运算
+Kotlin支持数字运算的标准集： + 、 - 、 * 、 / 、 % 。它们已定义为相应的类成员：
+fun main() {
+609
+
+[p.610]
+基本类型
+//sampleStart println(1 + 2) println(2_500_000_000L - 1L) println(3.14 * 2.71) println(10.0 / 3)
+//sampleEnd }
+可以在自定义数字类中覆盖这些操作符。 详情请参见操作符重载。
+整数除法
+整数间的除法总是返回整数。会丢弃任何小数部分。
+fun main() { //sampleStart
+val x = 5 / 2 println(x == 2.5) // Operator '==' cannot be applied to 'Int' and 'Double'
+println(x == 2) // true //sampleEnd }
+对于任何两个整数类型之间的除法来说都是如此：
+fun main() { //sampleStart
+val x = 5L / 2 println (x == 2) // Error, as Long (x) cannot be compared to Int (2)
+println(x == 2L) // true //sampleEnd }
+如需返回带小数部分的除法结果，请将其中的一个参数显式转换为浮点类型：
+fun main() { //sampleStart
+val x = 5 / 2.toDouble() println(x == 2.5) //sampleEnd }
+610
+
+[p.611]
+基本类型
+位运算
+Kotlin 对整数提供了一组位运算。它们直接使用数字的比特表示在二进制级别进行操作。 位 运算有可以通过中缀形式调用的函数表示。只能应用于 Int 与 Long ：
+fun main() { //sampleStart
+val x = 1 val xShiftedLeft = (x shl 2) println(xShiftedLeft) // 4
+val xAnd = x and 0x000FF000 println(xAnd) // 0 //sampleEnd }
+完整的位运算列表：
+shl(bits) – 有符号左移 shr(bits) – 有符号右移 ushr(bits) – 无符号右移 and(bits) – 位与 or(bits) – 位或 xor(bits) – 位异或 inv() – 位非
+浮点数比较
+本节讨论的浮点数操作如下：
+相等性检测： a == b 与 a != b 比较操作符： a < b 、 a > b 、 a <= b 、 a >= b 区间实例以及区间检测： a..b 、 x in a..b 、 x !in a..b
+当其中的操作数 a 与 b 都是静态已知的 Float 或 Double 或者它们对应的可空类型（声 明为该类型，或者推断为该类型，或者智能类型转换的结果是该类型），两数字所形成的操 作或者区间遵循 IEEE 754 浮点运算标准。
+然而，为了支持泛型场景并提供全序支持，对于并非静态类型就是浮点数的情况，行为是不 同的。例如是 Any 、 Comparable<...> 或者 Collection<T> 类型。 这种情况下，这些操作 使用为 Float 与 Double 实现的 equals 与 compareTo 。 因此：
+认为 NaN 与其自身相等
+611
+
+[p.612]
+基本类型
+
+认为 NaN 比包括正无穷大（ POSITIVE_INFINITY ）在内的任何其他元素都大 认为 -0.0 小于 0.0
+以下示例显示了静态类型作为浮点数 （ Double.NaN ）的操作数与静态类型并非作为浮点数的 操作数（ listOf(T) ）之间的行为差异。
+
+fun main() { //sampleStart // 静态类型作为浮点数的操作数 println(Double.NaN == Double.NaN)
+
+// false
+
+// 静态类型并非作为浮点数的操作数 // 所以 NaN 等于它本身 println(listOf(Double.NaN) == listOf(Double.NaN)) // true
+
+// 静态类型作为浮点数的操作数 println(0.0 == -0.0)
+
+// true
+
+// 静态类型并非作为浮点数的操作数 // 所以 -0.0 小于 0.0 println(listOf(0.0) == listOf(-0.0))
+
+// false
+
+println(listOf(Double.NaN, Double.POSITIVE_INFINITY, 0.0, -0.0).sorted()) // [-0.0, 0.0, Infinity, NaN] //sampleEnd }
+
+612
+
+[p.613]
+基本类型
+
+无符号整型
+
+除了整数类型，对于无符号整数，Kotlin 还提供了以下类型：
+
+Type
+UByte UShort UInt ULong
+
+Size (bits) 8 16 32 64
+
+Min value 0 0 0 0
+
+Max value
+255
+65,535 4,294,967,295 (232 - 1) 18,446,744,073,709,551,615 (264 - 1)
+
+无符号类型支持其对应有符号类型的大多数操作。
+无符号数实现为具有单个存储属性的内联类， 该属性类型为与其宽度相同的对应有符号 类型。 If you want to convert between unsigned and signed integer types, make sure you update your code so that any function calls and operations support the new type.
+
+无符号数组与区间
+无符号数组及其对应操作处于 Beta 状态。 它们可能随时进行不兼容变更。 需要选择加 入（详见下文）。
+与原生类型相同，每个无符号类型都有表示相应类型数组的类型： UByteArray : 无符号字节数组。 UShortArray : 无符号短整型数组。 UIntArray : 无符号整型数组。 ULongArray : 无符号长整型数组。
+与有符号整型数组一样，它们提供了类似于 Array 类的 API 而没有装箱开销。
+When you use unsigned arrays, you receive a warning that indicates that this feature is not stable yet. To remove the warning, opt-in with the @ExperimentalUnsignedTypes annotation. It's up to you to decide if your clients have to explicitly opt-in into usage of your API, but keep in mind that unsigned arrays are not a stable feature, so an API that uses them can be broken by changes in the language. Learn more about opt-in requirements.
+
+613
+
+[p.614]
+基本类型
+区间与数列也支持 UInt 与 ULong （通过这些类 UIntRange 、 UIntProgression 、 ULongRange 、 ULongProgression ）。 Together with the unsigned integer types, these classes are stable.
+无符号整数字面值
+为使无符号整型更易用，可以在整型字面值后附加一个后缀来表示指定无符号类型（类似于 Float 用 F 或 Long 用 L ）：
+u and U letters signify unsigned literals without specifying the exact type. If no expected type is provided, the compiler uses UInt or ULong depending on the size of the literal:
+val b: UByte = 1u // UByte，已提供预期类型 val s: UShort = 1u // UShort，已提供预期类型 val l: ULong = 1u // ULong，已提供预期类型 val a1 = 42u // UInt：未提供预期类型，常量适于 UInt val a2 = 0xFFFF_FFFF_FFFFu // ULong：未提供预期类型，常量不适于 UInt
+uL 与 UL 显式指定字面值应为无符号长整型：
+val a = 1UL // ULong，即使未提供预期类型并且常量适于 UInt
+使用场景
+The main use case of unsigned numbers is utilizing the full bit range of an integer to represent positive values.
+For example, to represent hexadecimal constants that do not fit in signed types such as color in 32-bit AARRGGBB format:
+data class Color(val representation: UInt) val yellow = Color(0xFFCC00CCu)
+You can use unsigned numbers to initialize byte arrays without explicit toByte() literal casts:
+val byteOrderMarkUtf8 = ubyteArrayOf(0xEFu, 0xBBu, 0xBFu)
+614
+
+[p.615]
+基本类型 Another use case is interoperability with native APIs. Kotlin allows representing native declarations that contain unsigned types in the signature. The mapping won't substitute unsigned integers with signed ones keeping the semantics unaltered.
+非目标
+While unsigned integers can only represent positive numbers and zero, it's not a goal to use them where application domain requires non-negative integers. For example, as a type of collection size or collection index value. There are a couple of reasons:
+Using signed integers can help to detect accidental overflows and signal error conditions, such as List.lastIndex being -1 for an empty list. Unsigned integers cannot be treated as a range-limited version of signed ones because their range of values is not a subset of the signed integers range. Neither signed, nor unsigned integers are subtypes of each other.
+615
+
+[p.616]
+基本类型
+布尔
+Boolean 类型表示可以有 true 与 false 两个值的布尔对象。 Boolean has a nullable counterpart declared as Boolean? .
+On the JVM, booleans stored as the primitive boolean type typically use 8 bits.
+布尔值的内置运算有： || ——析取（逻辑或） && ——合取（逻辑与） ! ——否定（逻辑非）
+For example:
+fun main() { //sampleStart
+val myTrue: Boolean = true val myFalse: Boolean = false val boolNull: Boolean? = null println(myTrue || myFalse) // true println(myTrue && myFalse) // false println(!myTrue) // false println(boolNull) // null //sampleEnd }
+The || and && operators work lazily, which means: If the first operand is true , the || operator does not evaluate the second operand. If the first operand is false , the && operator does not evaluate the second operand.
+在 JVM 平台，布尔对象的可空引用是装箱的 Java 类，类似于数字。
+616
+
+[p.617]
+基本类型
+字符
+字符用 Char 类型表示。 字符字面值用单引号括起来: '1' 。 On the JVM, a character stored as primitive type: char , represents a 16-bit Unicode character.
+特殊字符可以以转义反斜杠 \ 开始。 支持这几个转义序列： \t ——制表符 \b ——退格符 \n ——换行（LF） \r ——回车（CR） \' ——单引号 \" ——双引号 \\ ——反斜杠 \$ ——美元符
+编码其他字符要用 Unicode 转义序列语法： '\uFF00' 。
+fun main() { //sampleStart
+val aChar: Char = 'a' println(aChar) println('\n') // 输出一个额外的换行符 println('\uFF00') //sampleEnd }
+如果字符变量的值是数字，那么可以使用 digitToInt() 函数将其显式转换为 Int 数字。 在JVM 平台，当需要可空引用时字符会是装箱的 Java 类，类似于数字。 装箱操作不保留 同一性。
+617
+
+[p.618]
+基本类型
+字符串
+Kotlin 中字符串用 String 类型表示。 On the JVM, an object of String type in UTF-16 encoding uses approximately 2 bytes per character.
+通常，字符串值是双引号（ " ）中的字符序列：
+val str = "abcd 123"
+字符串的元素——字符可以使用索引运算符访问: s[i] 。 可以使用 for 循环遍历这些字 符：
+fun main() { val str = "abcd"
+//sampleStart for (c in str) { println(c) }
+//sampleEnd }
+字符串是不可变的。 一旦初始化了一个字符串，就不能改变它的值或者给它赋新值。 所有转 换字符串的操作都以一个新的 String 对象来返回结果，而保持原始字符串不变：
+fun main() { //sampleStart
+val str = "abcd" // 创建并输出一个新的 String 对象 println(str.uppercase()) // ABCD // 原始字符串保持不变 println(str) // abcd //sampleEnd }
+如需连接字符串，可以用 + 操作符。这也适用于连接字符串与其他类型的值， 只要表达式 中的第一个元素是字符串：
+618
+
+[p.619]
+基本类型
+fun main() { //sampleStart
+val s = "abc" + 1 println(s + "def") // abc1def //sampleEnd }
+在大多数情况下，优先使用字符串模板或多行字符串而不是字符串连接。
+字符串字面值
+Kotlin 有两种类型的字符串字面值: 转义字符串 多行字符串
+转义字符串
+转义字符串可以包含转义字符。
+以下是转义字符串的一个示例：
+val s = "Hello, world!\n"
+转义采用传统的反斜杠（ \ ）方式。
+所支持的转义序列请参见 字符 页。
+多行字符串
+多行字符串可以包含换行以及任意文本。 它使用三个引号（ """ ）分界符括起来，内部没有 转义并且可以包含换行以及任何其他字符：
+val text = """ for (c in "foo")
+619
+
+[p.620]
+基本类型
+print(c) """
+如需删掉多行字符串中的前导空格，请使用 trimMargin() 函数：
+val text = """ |Tell me and I forget. |Teach me and I remember. |Involve me and I learn. |(Benjamin Franklin)
+""".trimMargin()
+默认以竖线 | 作为边界前缀，但你可以选择其他字符并作为参数传入，比如 trimMargin(">") 。
+字符串模板
+字符串字面值可以包含模板表达式——一些小段代码，会求值并把结果合并到字符串中。 When a template expression is processed, Kotlin automatically calls the .toString() function on the expression's result to convert it into a string. 模板表达式以美元符（ $ ）开头，要么由一个变 量名构成:
+fun main() { //sampleStart
+val i = 10 println("i = $i") // i = 10
+val letters = listOf("a","b","c","d","e") println("Letters: $letters") // Letters: [a, b, c, d, e]
+//sampleEnd }
+要么是用花括号括起来的表达式:
+fun main() { //sampleStart
+val s = "abc" println("$s.length is ${s.length}") // abc.length is 3 //sampleEnd }
+620
+
+[p.621]
+基本类型
+在多行字符串及转义字符串中都可以使用模板。不过，多行字符串不支持反斜杠转义。 如需 在多行字符串中允许出现在标识符（identifier）开头的任意符号之前插入美元符 $ ， 请使用 以下语法：
+val price = """ ${'$'}_9.99 """
+To avoid ${'$'} sequences in strings, you can use the Experimental multi-dollar string interpolation feature.
+Multi-dollar string interpolation
+The multi-dollar string interpolation is Experimental and opt-in is required (see details below). It may be changed at any time. We would appreciate your feedback in YouTrack.
+Multi-dollar string interpolation allows you to specify how many consecutive dollar signs are required to trigger interpolation. Interpolation is the process of embedding variables or expressions directly into a string. While you can escape literals for single-line strings, multiline strings in Kotlin don't support backslash escaping. To include dollar signs ( $ ) as literal characters, you must use the ${'$'} construct to prevent string interpolation. This approach can make code harder to read, especially when strings contain multiple dollar signs. Multi-dollar string interpolation simplifies this by letting you treat dollar signs as literal characters in both single-line and multiline strings. For example:
+val KClass<*>.jsonSchema : String get() = $$""" { "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/product.schema.json", "$dynamicAnchor": "meta" "title": "$${simpleName ?: qualifiedName ?: "unknown"}", "type": "object" } """
+Here, the $$ prefix specifies that two consecutive dollar signs are required to trigger string interpolation. Single dollar signs remain as literal characters.
+621
+
+[p.622]
+基本类型
+You can adjust how many dollar signs trigger interpolation. For example, using three consecutive dollar signs ( $$$ ) allows $ and $$ to remain as literals while enabling interpolation with $$$ :
+val productName = "carrot" val requestedData =
+$$$"""{ "currency": "$", "enteredAmount": "42.45 $$", "$$serviceField": "none", "product": "$$$productName"
+} """
+println(requestedData) //{ // "currency": "$", // "enteredAmount": "42.45 $$", // "$$serviceField": "none", // "product": "carrot" //}
+Here, the $$$ prefix allows the string to include $ and $$ without requiring the ${'$'} construct for escaping. To enable the feature, use the following compiler option in the command line:
+kotlinc -Xmulti-dollar-interpolation main.kt
+Alternatively, update the compilerOptions {} block of your Gradle build file:
+// build.gradle.kts kotlin {
+compilerOptions { freeCompilerArgs.add("-Xmulti-dollar-interpolation")
+} }
+This feature doesn't affect existing code that uses single-dollar string interpolation. You can continue using a single $ as before and apply multi-dollar signs when you need to handle literal dollar signs in strings.
+String formatting
+String formatting with the String.format() function is only available in Kotlin/JVM.
+622
+
+[p.623]
+基本类型
+To format a string to your specific requirements, use the String.format() function. The String.format() function accepts a format string and one or more arguments. The format string contains one placeholder (indicated by % ) for a given argument, followed by format specifiers. Format specifiers are formatting instructions for the respective argument, consisting of flags, width, precision, and conversion type. Collectively, format specifiers shape the output's formatting. Common format specifiers include %d for integers, %f for floating-point numbers, and %s for strings. You can also use the argument_index$ syntax to reference the same argument multiple times within the format string in different formats.
+For a detailed understanding and an extensive list of format specifiers, see Java's Class Formatter documentation.
+Let's look at an example:
+fun main() { //sampleStart
+// Formats an integer, adding leading zeroes to reach a length of seven characters val integerNumber = String.format("%07d", 31416) println(integerNumber) // 0031416
+// Formats a floating-point number to display with a + sign and four decimal places
+val floatNumber = String.format("%+.4f", 3.141592) println(floatNumber) // +3.1416
+// Formats two strings to uppercase, each taking one placeholder val helloString = String.format("%S %S", "hello", "world") println(helloString) // HELLO WORLD
+// Formats a negative number to be enclosed in parentheses, then repeats the same number in a different format (without parentheses) using `argument_index$`.
+val negativeNumberInParentheses = String.format("%(d means %1\$d", -31416) println(negativeNumberInParentheses) //(31416) means -31416 //sampleEnd }
+{interpolate-variables="false" kotlin-runnable="true" kotlin-min-compiler-version="1.3"}
+623
+
+[p.624]
+基本类型 The String.format() function provides similar functionality to string templates. However, the String.format() function is more versatile because there are more formatting options available. In addition, you can assign the format string from a variable. This can be useful when the format string changes, for example, in localization cases that depend on the user locale. Be careful when using the String.format() function because it can be easy to mismatch the number or position of the arguments with their corresponding placeholders.
+624
+
+[p.625]
+基本类型
+数组
+数组是一种保存固定数量相同类型或其子类型的值的数据结构。 Kotlin 中最常见的数组类型 是对象类型数组，由 Array 类表示。
+如果在对象类型数组中使用原生类型，那么会对性能产生影响，因为原生值都装箱成了 对象。 为了避免装箱开销，请改用原生类型数组。
+何时使用数组
+当需要满足特殊的底层需求时，可以在 Kotlin 中使用数组。 例如，如果性能要求超出了常规 应用程序的需要，或者需要构建自定义的数据结构。 如果没有这些限制，那么请改用集合。 与数组相比，集合具有以下优点：
+集合可以是只读的，这提供了更多的控制权而支持编写具有明确意图的健壮代码。 易于对集合增删元素。相比之下，数组大小是固定的。 对数组增删元素的唯一方式是每 次创建一个新数组，效率很低：
+fun main() { //sampleStart
+var riversArray = arrayOf("Nile", "Amazon", "Yangtze") // 使用 += 赋值操作创建了一个新的 riversArray， // 复制了原始元素并添加了“Mississippi” riversArray += "Mississippi" println(riversArray.joinToString()) // Nile, Amazon, Yangtze, Mississippi //sampleEnd }
+可以使用相等操作符（ == ）来检验两个集合是否在结构上相等。但不能对数组使用这个 操作符。 相反，必须使用一个特殊函数，关于这点可以参阅比较数组了解更多信息。 关于集合的更多信息请参见集合概述。
+创建数组
+To create arrays in Kotlin, you can use:
+625
+
+[p.626]
+基本类型
+functions, such as arrayOf() , arrayOfNulls() ) or emptyArray() . the Array constructor. This example uses the arrayOf() function and passes item values to it:
+fun main() { //sampleStart
+// Creates an array with values [1, 2, 3] val simpleArray = arrayOf(1, 2, 3) println(simpleArray.joinToString()) // 1, 2, 3 //sampleEnd }
+This example uses the arrayOfNulls() ) function to create an array of a given size filled with null elements:
+fun main() { //sampleStart
+// Creates an array with values [null, null, null] val nullArray: Array<Int?> = arrayOfNulls(3) println(nullArray.joinToString()) // null, null, null //sampleEnd }
+This example uses the emptyArray() function to create an empty array :
+var exampleArray = emptyArray<String>()
+You can specify the type of the empty array on the left-hand or right-hand side of the assignment due to Kotlin's type inference. For example:
+var exampleArray = emptyArray<String>() var exampleArray: Array<String> = emptyArray()
+The Array constructor takes the array size and a function that returns values for array elements given its index:
+fun main() {
+626
+
+[p.627]
+基本类型
+//sampleStart // Creates an Array<Int> that initializes with zeros [0, 0, 0] val initArray = Array<Int>(3) { 0 } println(initArray.joinToString()) // 0, 0, 0
+// 创建一个 Array<String> 初始化为 ["0", "1", "4", "9", "16"] val asc = Array(5) { i -> (i * i).toString() } asc.forEach { print(it) } // 014916 //sampleEnd }
+Like in most programming languages, indices start from 0 in Kotlin.
+嵌套数组
+Arrays can be nested within each other to create multidimensional arrays:
+fun main() { //sampleStart
+// Creates a two-dimensional array val twoDArray = Array(2) { Array<Int>(2) { 0 } } println(twoDArray.contentDeepToString()) // [[0, 0], [0, 0]]
+// Creates a three-dimensional array val threeDArray = Array(3) { Array(3) { Array<Int>(3) { 0 } } } println(threeDArray.contentDeepToString()) // [[[0, 0, 0], [0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0], [0, 0, 0]]] //sampleEnd }
+Nested arrays don't have to be the same type or the same size.
+访问与修改元素
+Arrays are always mutable. To access and modify elements in an array, use the indexed access operator [] :
+fun main() { //sampleStart
+627
+
+[p.628]
+基本类型
+val simpleArray = arrayOf(1, 2, 3) val twoDArray = Array(2) { Array<Int>(2) { 0 } }
+// Accesses the element and modifies it simpleArray[0] = 10 twoDArray[0][0] = 2
+// Prints the modified element println(simpleArray[0].toString()) // 10 println(twoDArray[0][0].toString()) // 2 //sampleEnd }
+Arrays in Kotlin are invariant. This means that Kotlin doesn't allow you to assign an Array<String> to an Array<Any> to prevent a possible runtime failure. Instead, you can use Array<out Any> . For more information, see Type Projections.
+使用数组
+In Kotlin, you can work with arrays by using them to pass a variable number of arguments to a function or perform operations on the arrays themselves. For example, comparing arrays, transforming their contents or converting them to collections.
+向函数传入可变数量的实参
+In Kotlin, you can pass a variable number of arguments to a function via the vararg parameter. This is useful when you don't know the number of arguments in advance, like when formatting a message or creating an SQL query. To pass an array containing a variable number of arguments to a function, use the spread operator ( * ). The spread operator passes each element of the array as individual arguments to your chosen function:
+fun main() { val lettersArray = arrayOf("c", "d") printAllStrings("a", "b", *lettersArray) // abcd
+}
+fun printAllStrings(vararg strings: String) { for (string in strings) { print(string) }
+}
+628
+
+[p.629]
+基本类型
+For more information, see Variable number of arguments (varargs).
+比较数组
+To compare whether two arrays have the same elements in the same order, use the .contentEquals() and .contentDeepEquals() functions:
+fun main() { //sampleStart
+val simpleArray = arrayOf(1, 2, 3) val anotherArray = arrayOf(1, 2, 3)
+// Compares contents of arrays println(simpleArray.contentEquals(anotherArray)) // true
+// Using infix notation, compares contents of arrays after an element // is changed simpleArray[0] = 10 println(simpleArray contentEquals anotherArray) // false //sampleEnd }
+Don't use equality ( == ) and inequality ( != ) operators to compare the contents of arrays. These operators check whether the assigned variables point to the same object. To learn more about why arrays in Kotlin behave this way, see our blog post.
+转换数组
+Kotlin has many useful functions to transform arrays. This document highlights a few but this isn't an exhaustive list. For the full list of functions, see our API reference.
+Sum
+To return the sum of all elements in an array, use the .sum() function:
+fun main() { //sampleStart
+val sumArray = arrayOf(1, 2, 3)
+// Sums array elements println(sumArray.sum()) // 6
+629
+
+[p.630]
+基本类型
+//sampleEnd }
+The .sum() function can only be used with arrays of numeric data types, such as Int .
+Shuffle
+To randomly shuffle the elements in an array, use the .shuffle() function:
+fun main() { //sampleStart
+val simpleArray = arrayOf(1, 2, 3)
+// Shuffles elements [3, 2, 1] simpleArray.shuffle() println(simpleArray.joinToString())
+// Shuffles elements again [2, 3, 1] simpleArray.shuffle() println(simpleArray.joinToString()) //sampleEnd }
+将数组转换为集合
+If you work with different APIs where some use arrays and some use collections, then you can convert your arrays to collections and vice versa.
+转换为 List 或 Set
+To convert an array to a List or Set , use the .toList() and .toSet() functions.
+fun main() { //sampleStart
+val simpleArray = arrayOf("a", "b", "c", "c")
+// Converts to a Set println(simpleArray.toSet()) // [a, b, c]
+// Converts to a List println(simpleArray.toList()) // [a, b, c, c] //sampleEnd }
+630
+
+[p.631]
+基本类型
+
+转换为 Map
+To convert an array to a Map , use the .toMap() function.
+Only an array of Pair<K,V> can be converted to a Map . The first value of a Pair instance becomes a key, and the second becomes a value. This example uses the infix notation to call the to function to create tuples of Pair :
+fun main() { //sampleStart
+val pairArray = arrayOf("apple" to 120, "banana" to 150, "cherry" to 90, "apple" t o 140)
+// Converts to a Map // The keys are fruits and the values are their number of calories // Note how keys must be unique, so the latest value of "apple" // overwrites the first println(pairArray.toMap()) // {apple=140, banana=150, cherry=90}
+//sampleEnd }
+
+原生类型数组
+
+If you use the Array class with primitive values, these values are boxed into objects. As an alternative, you can use primitive-type arrays, which allow you to store primitives in an array without the side effect of boxing overhead:
+
+Primitive-type array
+BooleanArray ByteArray CharArray DoubleArray FloatArray IntArray LongArray ShortArray
+
+Equivalent in Java
+boolean[] byte[] char[] double[] float[] int[] long[] short[]
+
+These classes have no inheritance relation to the Array class, but they have the same set of functions and properties.
+
+631
+
+[p.632]
+基本类型 This example creates an instance of the IntArray class:
+fun main() { //sampleStart
+// Creates an array of Int of size 5 with the values initialized to zero val exampleArray = IntArray(5) println(exampleArray.joinToString()) // 0, 0, 0, 0, 0 //sampleEnd }
+To convert primitive-type arrays to object-type arrays, use the .toTypedArray() function. To convert object-type arrays to primitive-type arrays, use .toBooleanArray() , .toByteArray() , .toCharArray() , and so on.
+下一步做什么？
+To learn more about why we recommend using collections for most use cases, read our Collections overview. Learn about other basic types. If you are a Java developer, read our Java to Kotlin migration guide for Collections.
+632
+

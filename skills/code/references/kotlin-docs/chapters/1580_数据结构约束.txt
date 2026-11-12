@@ -1,0 +1,103 @@
+# 数据结构约束（第 1580-1582 页）
+
+[p.1580]
+数据结构约束
+数据结构约束
+Some data structures may require a part of operations not to be executed concurrently, such as singleproducer single-consumer queues. Lincheck provides out-of-the-box support for such contracts, generating concurrent scenarios according to the restrictions. Consider the single-consumer queue from the JCTools library. Let's write a test to check correctness of its poll() , peek() , and offer(x) operations. In your build.gradle(.kts) file, add the JCTools dependency:
+【Kotlin】
+dependencies { // jctools dependency testImplementation("org.jctools:jctools-core:3.3.0")
+}
+【Groovy】
+dependencies { // jctools dependency testImplementation "org.jctools:jctools-core:3.3.0"
+}
+To meet the single-consumer restriction, ensure that all poll() and peek() consuming operations are called from a single thread. For that, we can set the nonParallelGroup parameter of the corresponding @Operation annotations to the same value, e.g. "consumers" . Here is the resulting test:
+import org.jctools.queues.atomic.* import org.jetbrains.kotlinx.lincheck.annotations.* import org.jetbrains.kotlinx.lincheck.check import org.jetbrains.kotlinx.lincheck.strategy.managed.modelchecking.* import org.jetbrains.kotlinx.lincheck.strategy.stress.* import org.junit.*
+1580
+
+[p.1581]
+数据结构约束
+
+class MPSCQueueTest { private val queue = MpscLinkedAtomicQueue<Int>()
+@Operation fun offer(x: Int) = queue.offer(x)
+@Operation(nonParallelGroup = "consumers") fun poll(): Int? = queue.poll()
+@Operation(nonParallelGroup = "consumers") fun peek(): Int? = queue.peek()
+@Test fun stressTest() = StressOptions().check(this::class)
+@Test fun modelCheckingTest() = ModelCheckingOptions().check(this::class) }
+
+Here is an example of the scenario generated for this test:
+
+= Iteration 15 / 100 =
+
+| --------------------- |
+
+| Thread 1 | Thread 2 |
+
+| --------------------- |
+
+| poll() |
+
+|
+
+| poll() |
+
+|
+
+| peek() |
+
+|
+
+| peek() |
+
+|
+
+| peek() |
+
+|
+
+| --------------------- |
+
+| offer(-1) | offer(0) |
+
+| offer(0) | offer(-1) |
+
+| peek() | offer(-1) |
+
+| offer(1) | offer(1) |
+
+| peek() | offer(1) |
+
+| --------------------- |
+
+| peek() |
+
+|
+
+| offer(-2) |
+
+|
+
+| offer(-2) |
+
+|
+
+| offer(2) |
+
+|
+
+| offer(-2) |
+
+|
+
+| --------------------- |
+
+Note that all consuming poll() and peek() invocations are performed from a single thread, thus satisfying the "single-consumer" restriction.
+Get the full code.
+
+1581
+
+[p.1582]
+数据结构约束
+Next step
+Learn how to check your algorithm for progress guarantees with the model checking strategy.
+1582
+

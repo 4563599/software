@@ -1,0 +1,77 @@
+# 全开放编译器插件（第 1863-1867 页）
+
+[p.1863]
+全开放编译器插件
+
+全开放编译器插件
+Kotlin has classes and their members final by default, which makes it inconvenient to use frameworks and libraries such as Spring AOP that require classes to be open . The all-open compiler plugin adapts Kotlin to the requirements of those frameworks and makes classes annotated with a specific annotation and their members open without the explicit open keyword.
+For instance, when you use Spring, you don't need all the classes to be open, but only classes annotated with specific annotations like @Configuration or @Service . The all-open plugin allows you to specify such annotations.
+Kotlin provides all-open plugin support both for Gradle and Maven with the complete IDE integration.
+For Spring, you can use the kotlin-spring compiler plugin.
+
+Gradle
+Add the plugin in your build.gradle(.kts) file:
+【Kotlin】
+plugins { kotlin("plugin.allopen") version "2.1.21"
+}
+【Groovy】
+plugins { id "org.jetbrains.kotlin.plugin.allopen" version "2.1.21"
+}
+Then specify the list of annotations that will make classes open:
+
+1863
+
+[p.1864]
+全开放编译器插件
+【Kotlin】
+allOpen { annotation("com.my.Annotation") // annotations("com.another.Annotation", "com.third.Annotation")
+}
+【Groovy】
+allOpen { annotation("com.my.Annotation") // annotations("com.another.Annotation", "com.third.Annotation")
+}
+If the class (or any of its superclasses) is annotated with com.my.Annotation , the class itself and all its members will become open. It also works with meta-annotations:
+@com.my.Annotation annotation class MyFrameworkAnnotation @MyFrameworkAnnotation class MyClass // will be all-open
+MyFrameworkAnnotation is annotated with the all-open meta-annotation com.my.Annotation , so it becomes an all-open annotation as well.
+Maven
+Add the plugin in your pom.xml file:
+<plugin> <artifactId>kotlin-maven-plugin</artifactId> <groupId>org.jetbrains.kotlin</groupId> <version>${kotlin.version}</version> <configuration> <compilerPlugins> <!-- Or "spring" for the Spring support --> <plugin>all-open</plugin>
+1864
+
+[p.1865]
+全开放编译器插件
+</compilerPlugins> <pluginOptions>
+<!-- Each annotation is placed on its own line --> <option>all-open:annotation=com.my.Annotation</option> <option>all-open:annotation=com.their.AnotherAnnotation</option> </pluginOptions> </configuration> <dependencies> <dependency> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-maven-allopen</artifactId> <version>${kotlin.version}</version> </dependency> </dependencies> </plugin>
+Please refer to the Gradle section for the detailed information about how all-open annotations work.
+Spring support
+If you use Spring, you can enable the kotlin-spring compiler plugin instead of specifying Spring annotations manually. The kotlin-spring is a wrapper on top of all-open , and it behaves exactly the same way. Add the spring plugin in your build.gradle(.kts) file:
+【Kotlin】
+plugins { id("org.jetbrains.kotlin.plugin.spring") version "2.1.21"
+}
+【Groovy】
+plugins { id "org.jetbrains.kotlin.plugin.spring" version "2.1.21"
+}
+1865
+
+[p.1866]
+全开放编译器插件
+In Maven, the spring plugin is provided by the kotlin-maven-allopen plugin dependency, so to enable it in your pom.xml file:
+<compilerPlugins> <plugin>spring</plugin>
+</compilerPlugins> <dependencies>
+<dependency> <groupId>org.jetbrains.kotlin</groupId> <artifactId>kotlin-maven-allopen</artifactId> <version>${kotlin.version}</version>
+</dependency> </dependencies>
+The plugin specifies the following annotations:
+@Component @Async @Transactional @Cacheable @SpringBootTest
+Thanks to meta-annotations support, classes annotated with @Configuration , @Controller , @RestController , @Service or @Repository are automatically opened since these annotations are meta-annotated with @Component . Of course, you can use both kotlin-allopen and kotlin-spring in the same project.
+If you generate the project template by the start.spring.io service, the kotlin-spring plugin will be enabled by default.
+Command-line compiler
+All-open compiler plugin JAR is available in the binary distribution of the Kotlin compiler. You can attach the plugin by providing the path to its JAR file using the -Xplugin kotlinc option:
+-Xplugin=$KOTLIN_HOME/lib/allopen-compiler-plugin.jar
+You can specify all-open annotations directly, using the annotation plugin option, or enable the preset:
+1866
+
+[p.1867]
+全开放编译器插件
+# The plugin option format is: "-P plugin:<plugin id>:<key>=<value>". # Options can be repeated. -P plugin:org.jetbrains.kotlin.allopen:annotation=com.my.Annotation -P plugin:org.jetbrains.kotlin.allopen:preset=spring
+Presets that available for the all-open plugin are: spring , micronaut , and quarkus .
+1867
+

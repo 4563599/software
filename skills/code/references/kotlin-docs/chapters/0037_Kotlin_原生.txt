@@ -1,0 +1,28 @@
+# Kotlin 原生（第 37-38 页）
+
+[p.37]
+Kotlin 原生
+Kotlin/Native
+Kotlin/Native 是一种将 Kotlin 代码编译为无需虚拟机就可运行的原生二进制文件的技术。 Kotlin/Native 包含一个基于 LLVM 的 Kotlin 编译器后端以及Kotlin 标准库的原生实现。
+为什么选用 Kotlin/Native？
+Kotlin/Native 的主要设计目标是让 Kotlin 可以为不希望或者不可能使用虚拟机的平台（例如嵌 入式设备或者 iOS）编译。它非常适合当你需要生成无需额外运行时或虚拟机的自包含程序的 情况。 It's easy to include compiled Kotlin code in existing projects written in C, C++, Swift, Objective-C, and other languages. You can also use existing native code, static or dynamic C libraries, Swift/Objective-C frameworks, graphical engines, and anything else directly from Kotlin/Native.
+目标平台
+Kotlin/Native 支持以下平台： Linux Windows（通过 MinGW） Android NDK Apple 目标平台，面向 macOS、 iOS、 tvOS 与 watchOS 如需编译苹果目标，需要安装 Xcode 及其命令行工具。
+参见所支持目标的完整列表。
+互操作
+Kotlin/Native 支持与不同操作系统的原生编程语言的双向互操作。 The compiler can create executables for many platforms, static or dynamic C libraries, and Swift/Objective-C frameworks.
+与 C 语言互操作
+37
+
+[p.38]
+Kotlin 原生
+Kotlin/Native provides interoperability with C. You can use existing C libraries directly from Kotlin code. To learn more, complete the following tutorials:
+Create a dynamic library with C headers for C/C++ projects Learn how C types are mapped into Kotlin Create a native HTTP client using C interop and libcurl
+与 Swift/Objective-C 互操作
+Kotlin/Native provides interoperability with Swift through Objective-C. You can use Kotlin code directly from Swift/Objective-C applications on macOS and iOS. To learn more, complete the Kotlin/Native as an Apple framework tutorial.
+在多个平台之间共享代码
+Kotlin/Native includes a set of prebuilt platform libraries that help share Kotlin code between projects. POSIX, gzip, OpenGL, Metal, Foundation, and many other popular libraries and Apple frameworks are pre-imported and included as Kotlin/Native libraries in the compiler package. Kotlin/Native is a part of the Kotlin Multiplatform technology that helps share common code across multiple platforms, including Android, iOS, JVM, web, and native. Multiplatform libraries provide the necessary APIs for common Kotlin code and allow writing shared parts of projects in Kotlin all in one place.
+内存管理器
+Kotlin/Native uses an automatic memory manager that is similar to the JVM and Go. It has its own tracing garbage collector, which is also integrated with Swift/Objective-C's ARC. The memory consumption is controlled by a custom memory allocator. It optimizes memory usage and helps prevent sudden surges in memory allocation.
+38
+

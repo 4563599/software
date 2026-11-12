@@ -1,0 +1,111 @@
+# 用于数据分析的库（第 890-893 页）
+
+[p.890]
+用于数据分析的库
+
+用于数据分析的 Kotlin 与 Java 库
+From data collection to model building, Kotlin offers robust libraries facilitating different tasks in the data pipeline.
+In addition to its own libraries, Kotlin is 100% interoperable with Java. This interoperability helps to leverage the entire ecosystem of tried-and-true Java libraries with excellent performance. With this perk, you can easily use either Kotlin or Java libraries when working on Kotlin data projects.
+
+Kotlin libraries
+
+Library
+Kotlin DataFrame
+
+Purpose
+Data collection Data cleaning and processing
+
+Features
+Operations for creating, sorting, and cleaning data frames, feature engineering, and more Processing of structured data Support for CSV, JSON, and other input formats Reading from SQL databases Connecting with different APIs to access data and increase type safety
+
+Kandy
+
+Data exploration and visualization
+
+Powerful, readable, and typesafe DSL for plotting charts of various types Open-source library written in Kotlin for the JVM Support for Kotlin Notebook, Datalore, and Jupyter Notebook Seamless integration with Kotlin DataFrame
+
+KotlinDL
+
+Model building
+
+Deep learning API written in Kotlin and inspired by Keras Training deep learning models from scratch or importing existing Keras and ONNX models for inference Transferring learning for tailoring existing pre-trained models to your tasks Support for the Android platform
+
+Multik
+
+Data cleaning and processing Model building
+
+Mathematical operations over multidimensional arrays (linear algebra, statistics, arithmetics, and other calculations) Creating, copying, indexing, slicing, and other array operations Kotlin-idiomatic library with benefits such as type and dimension safety and swappable computational engines, running on the JVM or as native code
+
+890
+
+[p.891]
+用于数据分析的库
+
+Kotlin for Apache Spark
+Lets-Plot
+KMath
+kravis
+
+Data collection Data cleaning and processing Data exploration and visualization Model building
+Data exploration and visualization
+Data cleaning and processing Data exploration and visualization Model building
+Data exploration and visualization
+
+Layer of compatibility between Apache Spark and Kotlin Apache Spark data transformation operations in Kotlin-idiomatic code Simple usage of Kotlin features, such as data classes and lambda expressions, in curly braces or method reference
+Plotting statistical data written in Kotlin Support for Kotlin Notebook, Datalore, and Jupyter with Kotlin Kernel Compatible with the JVM, JS, and Python Embedding charts in Compose Multiplatform applications
+Modular library to work with mathematical abstractions in Kotlin Multiplatform (JVM, JS, Native, and Wasm) APIs for algebraic structures, mathematical expressions, histograms, and streaming operations Interchangeable wrappers over existing Java and Kotlin libraries, including ND4J, Apache Commons Math, and Multik Inspired by Python's NumPy but with other additional features like type safety
+Visualization of tabular data Inspired by R's ggplot Support for Jupyter with Kotlin Kernel
+
+Java libraries
+
+Since Kotlin provides first-class interoperability with Java, you can use Java libraries for data tasks in your Kotlin code. Here are some examples of such libraries:
+
+Library Tablesaw
+
+Purpose
+Data collection Data cleaning and processing Data exploration and visualization
+
+Features
+Tools for loading, cleaning, transforming, filtering, and summarizing data Inspired by Plot.ly
+
+891
+
+[p.892]
+用于数据分析的库
+
+CoreNLP
+Smile
+Smile-NLP-kt ND4J Apache Commons Math NM Dev Apache OpenNLP Charts
+DeepLearning4J
+
+Data cleaning and processing
+Data cleaning and processing Data exploration and visualization Model building
+Data cleaning and processing
+Data cleaning and processing Model building
+Data cleaning and processing Model building
+Data cleaning and processing Model building
+Data cleaning and processing Model building
+Data exploration and visualization
+Model building
+
+Natural language processing toolkit Linguistic annotations for text, such as sentiment and quote attributions Support for eight languages
+Ready-made algorithms for machine learning and natural language processing Linear algebra, graph, interpolation, and visualization tools Provides functional Kotlin API, Scala API, Clojure API, and more
+Kotlin rewrite of the Scala implicits for the natural language processing part of Smile Operations in the format of Kotlin extension functions and interfaces Sentence breaking, stemming, bag of words, and other tasks
+Matrix mathematics library for the JVM Over 500 mathematical, linear algebra, and deep learning operations
+Mathematics and statistics operations for Java Correlations, distributions, linear algebra, geometry, and other operations Machine learning models
+Java math library of numerical algorithms Object-oriented numerical methods Linear algebra, optimization, statistics, calculus, and more operations
+Machine-learning-based toolkit for the processing of natural language text Tokenization, sentence segmentation, part-ofspeech tagging, and other tasks Built-in tools for data modeling and model validation
+JavaFX library for scientific charts Complex charts, such as logarithmic, heatmap, and force-directed graph
+Deep learning library for Java Importing and retraining models (Pytorch, Tensorflow, Keras) Deploying in JVM microservice
+892
+
+[p.893]
+用于数据分析的库 Timefold
+
+Model building
+
+environments, mobile devices, IoT, and Apache Spark
+Solver utility for optimization planning problems Compatible with object-oriented and functional programming
+
+893
+

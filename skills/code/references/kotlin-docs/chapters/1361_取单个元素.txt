@@ -1,0 +1,69 @@
+# 取单个元素（第 1361-1365 页）
+
+[p.1361]
+取单个元素
+
+取单个元素
+Kotlin 集合提供了一套从集合中检索单个元素的函数。 此页面描述的函数适用于 list 和 set。
+正如 list 的定义所言，list 是有序集合。 因此，list 中的每个元素都有其位置可供你引用。 除 了此页面上描述的函数外，list 还提供了更广泛的一套方法去按索引检索和搜索元素。 更多详 细信息，请参见 List 相关操作。
+反过来，从定义来看，set 并不是有序集合。 但是，Kotlin 中的 Set 按某些顺序存储元素。 这些可以是插入顺序（在 LinkedHashSet 中）、自然排序顺序（在 SortedSet 中）或者其他 顺序。 一组元素的顺序也可以是未知的。 在这种情况下，元素仍会以某种顺序排序，因此， 依赖元素位置的函数仍会返回其结果。 但是，除非调用者知道所使用的 Set 的具体实现， 否则这些结果对于调用者是不可预测的。
+按位置取
+为了检索特定位置的元素，有一个函数 elementAt() 。 用一个整数作为参数来调用它，你会 得到给定位置的集合元素。 第一个元素的位置是 0 ，最后一个元素的位置是 (size - 1) 。
+elementAt() 对于不提供索引访问或非静态已知提供索引访问的集合很有用。 在使用 List 的情况下，使用索引访问操作符 （ get() 或 [] ）更为习惯。
+
+fun main() { //sampleStart
+val numbers = linkedSetOf("one", "two", "three", "four", "five") println(numbers.elementAt(3))
+val numbersSortedSet = sortedSetOf("one", "two", "three", "four") println(numbersSortedSet.elementAt(0)) // 元素以升序存储 //sampleEnd }
+还有一些有用的别名来检索集合的第一个与最后一个元素： first() 与 last() 。
+
+fun main() { //sampleStart
+val numbers = listOf("one", "two", "three", "four", "five") println(numbers.first()) println(numbers.last()) //sampleEnd }
+
+1361
+
+[p.1362]
+取单个元素
+为了避免在检索位置不存在的元素时出现异常，请使用 elementAt() 的安全变体： 当指定位置超出集合范围时， elementAtOrNull() 返回 null。 elementAtOrElse() 还接受一个 lambda 表达式，该表达式能将一个 Int 参数映射为一 个集合元素类型的实例。 当使用一个越界位置来调用时， elementAtOrElse() 返回对给 定值调用该 lambda 表达式的结果。
+fun main() { //sampleStart
+val numbers = listOf("one", "two", "three", "four", "five") println(numbers.elementAtOrNull(5)) println(numbers.elementAtOrElse(5) { index -> "The value for index $index is undef ined"}) //sampleEnd }
+按条件取
+函数 first() 和 last() 还可以让你在集合中搜索与给定谓词匹配的元素。 当你使用测试集 合元素的谓词调用 first() 时，你会得到对其调用谓词产生 true 的第一个元素。 反过 来，带有一个谓词的 last() 返回与其匹配的最后一个元素。
+fun main() { //sampleStart
+val numbers = listOf("one", "two", "three", "four", "five", "six") println(numbers.first { it.length > 3 }) println(numbers.last { it.startsWith("f") }) //sampleEnd }
+如果没有元素与谓词匹配，两个函数都会抛异常。 为了避免它们，请改用 firstOrNull() 与 lastOrNull() ： 如果找不到匹配的元素，它们将返回 null 。
+fun main() { //sampleStart
+val numbers = listOf("one", "two", "three", "four", "five", "six") println(numbers.firstOrNull { it.length > 6 }) //sampleEnd }
+1362
+
+[p.1363]
+取单个元素
+如果别名的名称更适合，那么可以使用别名： 使用 find() 代替 firstOrNull() 使用 findLast() 代替 lastOrNull()
+fun main() { //sampleStart
+val numbers = listOf(1, 2, 3, 4) println(numbers.find { it % 2 == 0 }) println(numbers.findLast { it % 2 == 0 }) //sampleEnd }
+Retrieve with selector
+If you need to map the collection before retrieving the element, there is a function firstNotNullOf() . It combines 2 actions:
+Maps the collection with the selector function Returns the first non-null value in the result firstNotNullOf() throws the NoSuchElementException if the resulting collection doesn't have a non-nullable element. Use the counterpart firstNotNullOfOrNull() to return null in this case.
+fun main() { //sampleStart
+val list = listOf<Any>(0, "true", false) // Converts each element to string and returns the first one that has required len gth val longEnough = list.firstNotNullOf { item -> item.toString().takeIf { it.length >= 4 } } println(longEnough) //sampleEnd }
+随机取元素
+如果需要检索集合的一个随机元素，那么请调用 random() 函数。 你可以不带参数或者使用 一个 Random 对象作为随机源来调用它。
+fun main() { //sampleStart
+1363
+
+[p.1364]
+取单个元素
+val numbers = listOf(1, 2, 3, 4) println(numbers.random()) //sampleEnd }
+On empty collections, random() throws an exception. To receive null instead, use
+randomOrNull()
+检测元素存在与否
+如需检查集合中某个元素的存在，可以使用 contains() 函数。 如果存在一个集合元素等于 （ equals() ）函数参数，那么它返回 true 。 你可以使用 in 关键字以操作符的形式调用 contains() 。 如需一次检查多个实例的存在，可以使用这些实例的集合作为参数调用 containsAll() 。
+fun main() { //sampleStart
+val numbers = listOf("one", "two", "three", "four", "five", "six") println(numbers.contains("four")) println("zero" in numbers) println(numbers.containsAll(listOf("four", "two"))) println(numbers.containsAll(listOf("one", "zero"))) //sampleEnd }
+此外，你可以通过调用 isEmpty() 和 isNotEmpty() 来检查集合中是否包含任何元素。
+fun main() { //sampleStart
+val numbers = listOf("one", "two", "three", "four", "five", "six") println(numbers.isEmpty()) println(numbers.isNotEmpty()) val empty = emptyList<String>() println(empty.isEmpty()) println(empty.isNotEmpty()) //sampleEnd }
+1364
+
+[p.1365]
+取单个元素 1365
+

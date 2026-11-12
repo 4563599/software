@@ -1,0 +1,10 @@
+# 安全（第 2166-2166 页）
+
+[p.2166]
+安全
+安全
+We do our best to make sure our products are free of security vulnerabilities. To reduce the risk of introducing a vulnerability, you can follow these best practices:
+Always use the latest Kotlin release. For security purposes, we sign our releases published on Maven Central with these PGP keys:
+Key ID: kt-a@jetbrains.com Fingerprint: 2FBA 29D0 8D2E 25EE 84C1 32C3 0729 A0AF F899 9A87 Key size: RSA 3072 Use the latest versions of your application's dependencies. If you need to use a specific version of a dependency, periodically check if any new security vulnerabilities have been discovered. You can follow the guidelines from GitHub or browse known vulnerabilities in the CVE base. We are very eager and grateful to hear about any security issues you find. To report vulnerabilities that you discover in Kotlin, please post a message directly to our issue tracker or send us an email. For more information on how our responsible disclosure process works, please check the JetBrains Coordinated Disclosure Policy.
+2166
+

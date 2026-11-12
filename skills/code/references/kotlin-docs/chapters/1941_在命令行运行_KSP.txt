@@ -1,0 +1,20 @@
+# 在命令行运行 KSP（第 1941-1942 页）
+
+[p.1941]
+在命令行运行 KSP
+在命令行运行 KSP
+KSP is a Kotlin compiler plugin and needs to run with Kotlin compiler. Download and extract them.
+#!/bin/bash # Kotlin compiler wget https://github.com/JetBrains/kotlin/releases/download/v2.1.21/kotlin-compiler-2.1 .21.zip unzip kotlin-compiler-2.1.21.zip # KSP wget https://github.com/google/ksp/releases/download/2.1.21-2.0.1/artifacts.zip unzip artifacts.zip
+To run KSP with kotlinc , pass the -Xplugin option to kotlinc .
+-Xplugin=/path/to/symbol-processing-cmdline-2.1.21-2.0.1.jar
+This is different from the symbol-processing-2.1.21-2.0.1.jar , which is designed to be used with kotlin-compiler-embeddable when running with Gradle. The command line kotlinc needs symbol-processing-cmdline-2.1.21-2.0.1.jar . You'll also need the API jar.
+-Xplugin=/path/to/symbol-processing-api-2.1.21-2.0.1.jar
+See the complete example:
+#!/bin/bash KSP_PLUGIN_ID=com.google.devtools.ksp.symbol-processing KSP_PLUGIN_OPT=plugin:$KSP_PLUGIN_ID KSP_PLUGIN_JAR=./com/google/devtools/ksp/symbol-processing-cmdline/2.1.21-2.0.1/symbol -processing-cmdline-2.1.21-2.0.1.jar KSP_API_JAR=./com/google/devtools/ksp/symbol-processing-api/2.1.21-2.0.1/symbol-proces sing-api-2.1.21-2.0.1.jar KOTLINC=./kotlinc/bin/kotlinc AP=/path/to/your-processor.jar mkdir out $KOTLINC \
+1941
+
+[p.1942]
+在命令行运行 KSP
+-Xplugin=$KSP_PLUGIN_JAR \ -Xplugin=$KSP_API_JAR \ -Xallow-no-source-files \ -P $KSP_PLUGIN_OPT:apclasspath=$AP \ -P $KSP_PLUGIN_OPT:projectBaseDir=. \ -P $KSP_PLUGIN_OPT:classOutputDir=./out \ -P $KSP_PLUGIN_OPT:javaOutputDir=./out \ -P $KSP_PLUGIN_OPT:kotlinOutputDir=./out \ -P $KSP_PLUGIN_OPT:resourceOutputDir=./out \ -P $KSP_PLUGIN_OPT:kspOutputDir=./out \ -P $KSP_PLUGIN_OPT:cachesDir=./out \ -P $KSP_PLUGIN_OPT:incremental=false \ -P $KSP_PLUGIN_OPT:apoption=key1=value1 \ -P $KSP_PLUGIN_OPT:apoption=key2=value2 \ $*
+1942
+

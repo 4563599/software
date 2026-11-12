@@ -1,0 +1,300 @@
+# 基本语法（第 552-565 页）
+
+[p.552]
+基本语法
+基本语法
+这是一组基本语法元素及示例。在每段的末尾都有一个指向相关主题详述的链接。 也可以通过 JetBrains 学院的免费 Kotlin 核心课程学习所有 Kotlin 要领。
+包的定义与导入
+包的声明应处于源文件顶部：
+package my.demo import kotlin.text.* // ……
+目录与包的结构无需匹配：源代码可以在文件系统的任意位置。 参见包。
+程序入口点
+Kotlin 应用程序的入口点是 main 函数：
+fun main() { println("Hello world!")
+}
+main 的另一种形式接受可变数量的 String 参数：
+fun main(args: Array<String>) { println(args.contentToString())
+}
+输出打到标准输出
+print 将其参数打到标准输出：
+552
+
+[p.553]
+基本语法
+fun main() { //sampleStart
+print("Hello ") print("world!") //sampleEnd }
+println 输出其参数并添加换行符，以便接下来输出的内容出现在下一行：
+fun main() { //sampleStart
+println("Hello world!") println(42) //sampleEnd }
+Read from the standard input
+The readln() function reads from the standard input. This function reads the entire line the user enters as a string. You can use the println() , readln() , and print() functions together to print messages requesting and showing user input:
+// Prints a message to request input println("Enter any word: ")
+// Reads and stores the user input. For example: Happiness val yourWord = readln()
+// Prints a message with the input print("You entered the word: ") print(yourWord) // You entered the word: Happiness
+For more information, see Read standard input.
+函数
+带有两个 Int 参数、返回 Int 的函数：
+//sampleStart fun sum(a: Int, b: Int): Int {
+553
+
+[p.554]
+基本语法
+return a + b } //sampleEnd
+fun main() { print("sum of 3 and 5 is ") println(sum(3, 5))
+}
+函数体可以是表达式。其返回类型可以推断出来：
+//sampleStart fun sum(a: Int, b: Int) = a + b //sampleEnd
+fun main() { println("sum of 19 and 23 is ${sum(19, 23)}")
+}
+返回无意义的值的函数：
+//sampleStart fun printSum(a: Int, b: Int): Unit {
+println("sum of $a and $b is ${a + b}") } //sampleEnd
+fun main() { printSum(-1, 8)
+}
+Unit 返回类型可以省略：
+//sampleStart fun printSum(a: Int, b: Int) {
+println("sum of $a and $b is ${a + b}") } //sampleEnd
+fun main() { printSum(-1, 8)
+}
+参见函数。
+变量
+554
+
+[p.555]
+基本语法
+In Kotlin, you declare a variable starting with a keyword, val or var , followed by the name of the variable.
+Use the val keyword to declare variables that are assigned a value only once. These are immutable, read-only local variables that can’t be reassigned a different value after initialization:
+fun main() { //sampleStart
+// Declares the variable x and initializes it with the value of 5 val x: Int = 5 // 5 //sampleEnd println(x) }
+Use the var keyword to declare variables that can be reassigned. These are mutable variables, and you can change their values after initialization:
+fun main() { //sampleStart
+// Declares the variable x and initializes it with the value of 5 var x: Int = 5 // Reassigns a new value of 6 to the variable x x += 1 // 6 //sampleEnd println(x) }
+Kotlin supports type inference and automatically identifies the data type of a declared variable. When declaring a variable, you can omit the type after the variable name:
+fun main() { //sampleStart
+// Declares the variable x with the value of 5;`Int` type is inferred val x = 5 // 5 //sampleEnd println(x) }
+You can use variables only after initializing them. You can either initialize a variable at the moment of declaration or declare a variable first and initialize it later. In the second case, you must specify the data type:
+fun main() {
+555
+
+[p.556]
+基本语法
+//sampleStart // Initializes the variable x at the moment of declaration; type is not required val x = 5 // Declares the variable c without initialization; type is required val c: Int // Initializes the variable c after declaration c=3 // 5 // 3
+//sampleEnd println(x) println(c)
+}
+可以在顶层声明变量：
+//sampleStart val PI = 3.14 var x = 0
+fun incrementX() { x += 1
+} // x = 0; PI = 3.14 // incrementX() // x = 1; PI = 3.14 //sampleEnd
+fun main() { println("x = $x; PI = $PI") incrementX() println("incrementX()") println("x = $x; PI = $PI")
+}
+For information about declaring properties, see Properties.
+创建类与实例
+使用 class 关键字定义类：
+class Shape
+类的属性可以在其声明或主体中列出：
+class Rectangle(val height: Double, val length: Double) {
+556
+
+[p.557]
+基本语法
+val perimeter = (height + length) * 2 }
+具有类声明中所列参数的默认构造函数会自动可用：
+class Rectangle(val height: Double, val length: Double) { val perimeter = (height + length) * 2
+} fun main() {
+val rectangle = Rectangle(5.0, 2.0) println("The perimeter is ${rectangle.perimeter}") }
+类之间继承由冒号（ : ）声明。默认情况下类都是 final 的；如需让一个类可继承， 请将 其标记为 open ：
+open class Shape class Rectangle(val height: Double, val length: Double): Shape() {
+val perimeter = (height + length) * 2 }
+For more information about constructors and inheritance, see Classes and Objects and instances.
+注释
+与大多数现代语言一样，Kotlin 支持单行（或行末）与多行（块）注释：
+// 这是一个行注释 /* 这是一个多行的
+块注释。 */
+Kotlin 中的块注释可以嵌套：
+/* 注释从这里开始 /* 包含嵌套的注释 */ 并且在这里结束。 */
+参见编写 Kotlin 代码文档 查看关于文档注释语法的信息。
+字符串模板
+557
+
+[p.558]
+基本语法
+fun main() { //sampleStart
+var a = 1 // 模板中的简单名称： val s1 = "a is $a"
+a=2 // 模板中的任意表达式： val s2 = "${s1.replace("is", "was")}, but now is $a" //sampleEnd println(s2) }
+参见字符串模板。
+条件表达式
+//sampleStart fun maxOf(a: Int, b: Int): Int {
+if (a > b) { return a
+} else { return b
+} } //sampleEnd
+fun main() { println("max of 0 and 42 is ${maxOf(0, 42)}")
+}
+在 Kotlin 中， if 也可以用作表达式：
+//sampleStart fun maxOf(a: Int, b: Int) = if (a > b) a else b //sampleEnd
+fun main() { println("max of 0 and 42 is ${maxOf(0, 42)}")
+}
+参见 if 表达式。
+for 循环
+558
+
+[p.559]
+基本语法
+
+fun main() { //sampleStart
+val items = listOf("apple", "banana", "kiwifruit") for (item in items) {
+println(item) } //sampleEnd }
+或者：
+fun main() { //sampleStart
+val items = listOf("apple", "banana", "kiwifruit") for (index in items.indices) {
+println("item at $index is ${items[index]}") } //sampleEnd }
+参见 for 循环。
+
+while 循环
+
+fun main() { //sampleStart
+val items = listOf("apple", "banana", "kiwifruit") var index = 0 while (index < items.size) {
+println("item at $index is ${items[index]}") index++ } //sampleEnd }
+参见 while 循环。
+
+when 表达式
+
+//sampleStart
+
+fun describe(obj: Any): String =
+
+when (obj) {
+
+1
+
+-> "One"
+
+"Hello" -> "Greeting"
+
+559
+
+[p.560]
+基本语法
+
+is Long -> "Long"
+
+!is String -> "Not a string"
+
+else
+
+-> "Unknown"
+
+}
+
+//sampleEnd
+
+fun main() { println(describe(1)) println(describe("Hello")) println(describe(1000L)) println(describe(2)) println(describe("other"))
+}
+
+See when expressions and statements.
+
+使用区间（range）
+使用 in 操作符来检测某个数字是否在指定区间内：
+fun main() { //sampleStart
+val x = 10 val y = 9 if (x in 1..y+1) {
+println("fits in range") } //sampleEnd }
+
+检测某个数字是否在指定区间外：
+fun main() { //sampleStart
+val list = listOf("a", "b", "c")
+if (-1 !in 0..list.lastIndex) { println("-1 is out of range")
+} if (list.size !in list.indices) {
+println("list size is out of valid list indices range, too") } //sampleEnd }
+
+区间迭代：
+
+560
+
+[p.561]
+基本语法
+fun main() { //sampleStart
+for (x in 1..5) { print(x)
+} //sampleEnd }
+或数列迭代：
+fun main() { //sampleStart
+for (x in 1..10 step 2) { print(x)
+} println() for (x in 9 downTo 0 step 3) {
+print(x) } //sampleEnd }
+参见区间与数列。
+集合
+对集合进行迭代：
+fun main() { val items = listOf("apple", "banana", "kiwifruit")
+//sampleStart for (item in items) { println(item) }
+//sampleEnd }
+使用 in 操作符来判断集合内是否包含某实例：
+fun main() { val items = setOf("apple", "banana", "kiwifruit")
+//sampleStart when { "orange" in items -> println("juicy") "apple" in items -> println("apple is fine too") }
+561
+
+[p.562]
+基本语法
+//sampleEnd }
+使用 lambda 表达式来过滤（filter）与映射（map）集合：
+fun main() { //sampleStart
+val fruits = listOf("banana", "avocado", "apple", "kiwifruit") fruits
+.filter { it.startsWith("a") } .sortedBy { it } .map { it.uppercase() } .forEach { println(it) } //sampleEnd }
+参见集合概述。
+空值与空检测
+当可能用 null 值时，必须将引用显式标记为可空。可空类型名称以问号（ ? ）结尾。 如果 str 的内容不是数字返回 null ：
+fun parseInt(str: String): Int? { // ……
+}
+使用返回可空值的函数：
+fun parseInt(str: String): Int? { return str.toIntOrNull()
+}
+//sampleStart fun printProduct(arg1: String, arg2: String) {
+val x = parseInt(arg1) val y = parseInt(arg2)
+// 直接使用 `x * y` 会导致编译错误，因为它们可能为 null if (x != null && y != null) {
+// 在空检测后，x 与 y 会自动转换为非空值（non-nullable） println(x * y) } else { println("'$arg1' or '$arg2' is not a number")
+562
+
+[p.563]
+基本语法
+} } //sampleEnd
+fun main() { printProduct("6", "7") printProduct("a", "7") printProduct("a", "b")
+}
+或者：
+fun parseInt(str: String): Int? { return str.toIntOrNull()
+}
+fun printProduct(arg1: String, arg2: String) { val x = parseInt(arg1) val y = parseInt(arg2)
+//sampleStart // …… if (x == null) { println("Wrong number format in arg1: '$arg1'") return } if (y == null) { println("Wrong number format in arg2: '$arg2'") return }
+// 在空检测后，x 与 y 会自动转换为非空值 println(x * y) //sampleEnd }
+fun main() { printProduct("6", "7") printProduct("a", "7") printProduct("99", "b")
+}
+参见空安全。
+类型检测与自动类型转换
+is 操作符检测一个表达式是否某类型的一个实例。 如果一个不可变的局部变量或属性已经 判断出为某类型，那么检测后的分支中可以直接当作该类型使用，无需显式转换：
+563
+
+[p.564]
+基本语法
+//sampleStart fun getStringLength(obj: Any): Int? {
+if (obj is String) { // `obj` 在该条件分支内自动转换成 `String` return obj.length
+}
+// 在离开类型检测分支后，`obj` 仍然是 `Any` 类型 return null } //sampleEnd
+fun main() { fun printLength(obj: Any) { println("Getting the length of '$obj'. Result: ${getStringLength(obj) ?: "Erro
+r: The object is not a string"} ") } printLength("Incomprehensibilities") printLength(1000) printLength(listOf(Any()))
+}
+或者：
+//sampleStart fun getStringLength(obj: Any): Int? {
+if (obj !is String) return null
+// `obj` 在这一分支自动转换为 `String` return obj.length } //sampleEnd
+fun main() { fun printLength(obj: Any) { println("Getting the length of '$obj'. Result: ${getStringLength(obj) ?: "Erro
+r: The object is not a string"} ") } printLength("Incomprehensibilities") printLength(1000) printLength(listOf(Any()))
+}
+甚至：
+//sampleStart fun getStringLength(obj: Any): Int? {
+// `obj` 在 `&&` 右边自动转换成 `String` 类型 if (obj is String && obj.length > 0) {
+564
+
+[p.565]
+基本语法
+return obj.length } return null } //sampleEnd fun main() { fun printLength(obj: Any) {
+println("Getting the length of '$obj'. Result: ${getStringLength(obj) ?: "Erro r: The object is not a string"} ")
+} printLength("Incomprehensibilities") printLength("") printLength(1000) }
+参见类以及类型转换。
+565
+

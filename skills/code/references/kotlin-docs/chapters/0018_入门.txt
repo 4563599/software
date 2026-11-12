@@ -1,0 +1,57 @@
+# 入门（第 18-20 页）
+
+[p.18]
+入门
+Kotlin 入门
+最新 Kotlin 版本： 2.1.21 Kotlin 是一门现代但已成熟的编程语言，旨在让开发人员更幸福快乐。 它简洁、安全、可与 Java 及其他语言互操作，并提供了多种方式在多个平台间复用代码，以实现高效编程。 首先，何不参加 Kotlin 之旅1呢？ 该教程涵盖了 Kotlin 编程语言的基础知识并且可以完全在浏 览器中完成。
+安装 Kotlin
+Kotlin 已包含在每个 IntelliJ IDEA 与 Android Studio 版本中了。
+可下载并安装这两个 IDE 之一来开始使用 Kotlin。
+选择你的 Kotlin 使用场景
+【控制台】 在这里可学到如何使用 Kotlin 开发控制台应用程序并创建单元测试。
+1. 使用 IntelliJ IDEA 项目向导创建一个基本的 JVM 应用程序. 2. 编写第一个单元测试.
+【后端】 在这里可学到如何使用 Kotlin 服务端开发后端应用程序。
+1. 创建第一个后端应用程序：
+18
+
+[p.19]
+入门
+创建使用 Spring Boot 的 RESTful Web 服务 创建使用 Ktor 的 HTTP API 2. 了解如何在应用程序中混合使用 Kotlin 与 Java 代码.
+【跨平台】 在此可以了解到如何使用 Kotlin 多平台开发跨平台应用程序。
+1. 搭建用于跨平台开发的环境. 2. 创建第一个用于 iOS 与 Android 应用程序：
+从头开始创建跨平台应用程序，并： 共享业务逻辑，同时保持 UI 原生 共享业务逻辑与 UI
+让现有的 Android 应用程序能在 iOS 上运行 创建使用 Ktor 与 SQLdelight 的跨平台应用程序 3. 探索样例项目.
+【Android】 如需开始使用 Kotlin 用于 Android 开发，请阅读 谷歌对 Android 上 Kotlin 入门的建议。
+【数据分析】 无论是构建数据流水线，还是将机器学习模型投入生产，Kotlin 都是处理数据并充分发挥其价 值的绝佳选择。
+1. 在 IDE 中无缝创建并编辑 notebook： Kotlin Notebook 入门
+2. 探索并试验数据： DataFrame – 用于数据分析与处理的库。 Kandy – 用于数据可视化的绘图工具。
+3. 在 Twitter 上关注 Kotlin 用于数据分析： KotlinForData.
+加入 Kotlin 社区
+19
+
+[p.20]
+入门
+
+持续关注 Kotlin 生态系统的最新动态并分享你的经验。
+
+加入我们：
+
+Slack：获取邀请.
+
+StackOverflow：订阅“kotlin”标签。
+
+在 Youtube、 Twitter、 订阅 Kotlin 资讯。
+
+Bluesky 与
+
+Reddit 上关注 Kotlin。
+
+如果遇到任何困难或问题，请在我们的问题跟踪器中报告问题。
+
+还缺少什么？
+如果本页有任何遗漏或令人困惑之处，请提交反馈。
+
+1. 译注：此处双关，“tour of Kotlin”字面意为“科特林岛之旅”，此处意为“Kotlin（入门） 教程”。 ↩
+
+20
+

@@ -96,12 +96,15 @@ function Get-TNotesWindowApi {
         @{ Name = 'GetForegroundWindow'; Returns = [IntPtr]; Parameters = [Type[]]@() },
         # RECT is four 32-bit integers; an int array of four is filled in place.
         @{ Name = 'GetWindowRect'; Returns = [bool]; Parameters = [Type[]]@([IntPtr], [int[]]) },
+        @{ Name = 'GetWindowPlacement'; Returns = [bool]; Parameters = [Type[]]@([IntPtr], [IntPtr]) },
+        @{ Name = 'DwmSetWindowAttribute'; Library = 'dwmapi.dll'; Returns = [int]; Parameters = [Type[]]@([IntPtr], [int], [int].MakeByRefType(), [int]) },
         @{ Name = 'SetWindowPos'; Returns = [bool]; Parameters = [Type[]]@([IntPtr], [IntPtr], [int], [int], [int], [int], [int]) }
     )
     foreach ($signature in $signatures) {
+        $library = if ($signature.ContainsKey('Library')) { $signature.Library } else { 'user32.dll' }
         $method = $typeBuilder.DefinePInvokeMethod(
             $signature.Name,
-            'user32.dll',
+            $library,
             $methodAttributes,
             [System.Reflection.CallingConventions]::Standard,
             $signature.Returns,
@@ -117,6 +120,18 @@ function Get-TNotesWindowApi {
     return $typeBuilder.CreateType()
 }
 
+function Disable-TNotesWindowTransitions {
+    param(
+        [Parameter(Mandatory = $true)]
+        [IntPtr]$Handle
+    )
+
+    $api = Get-TNotesWindowApi
+    $disabled = 1
+    # DWMWA_TRANSITIONS_FORCEDISABLED is per window, not a system-wide animation setting.
+    return ($api::DwmSetWindowAttribute($Handle, 3, [ref]$disabled, 4) -ge 0)
+}
+
 function Show-TNotesWindow {
     param(
         [Parameter(Mandatory = $true)]
@@ -124,6 +139,7 @@ function Show-TNotesWindow {
     )
 
     $api = Get-TNotesWindowApi
+    [void](Disable-TNotesWindowTransitions -Handle $Handle)
     $SW_MINIMIZE = 6
     $SW_RESTORE = 9
     # Restore only a minimized window; restoring a maximized one would shrink it.
@@ -133,7 +149,15 @@ function Show-TNotesWindow {
     if (-not $api::SetForegroundWindow($Handle)) {
         # Windows refuses focus changes from background processes; minimize and restore still raises the window.
         [void]$api::ShowWindowAsync($Handle, $SW_MINIMIZE)
+        # These requests are queued in the browser thread. Wait for each transition so its
+        # restore rectangle cannot overwrite the anchor applied immediately after this call.
+        for ($attempt = 0; $attempt -lt 25 -and -not $api::IsIconic($Handle); $attempt++) {
+            Start-Sleep -Milliseconds 20
+        }
         [void]$api::ShowWindowAsync($Handle, $SW_RESTORE)
+    }
+    for ($attempt = 0; $attempt -lt 25 -and $api::IsIconic($Handle); $attempt++) {
+        Start-Sleep -Milliseconds 20
     }
 }
 
@@ -184,6 +208,32 @@ function Get-TNotesAnchoredLocation {
     return @($x, $y)
 }
 
+function Get-TNotesAnchoredBounds {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int[]]$Anchor,
+        [int]$Width,
+        [int]$Height,
+        [Parameter(Mandatory = $true)]
+        $WorkingArea,
+        [int]$Gap = 2
+    )
+
+    $areaHeight = $WorkingArea.Bottom - $WorkingArea.Top
+    $fitWidth = [Math]::Max(1, [Math]::Min($Width, $WorkingArea.Right - $WorkingArea.Left))
+    $fitHeight = [Math]::Max(1, [Math]::Min($Height, $areaHeight))
+    $above = [Math]::Max(0, [Math]::Min($areaHeight, $Anchor[1] - $Gap - $WorkingArea.Top))
+    $below = [Math]::Max(0, [Math]::Min($areaHeight, $WorkingArea.Bottom - $Anchor[1] - $Anchor[3] - $Gap))
+    # Shorten the window to fit above T; only prefer underneath when T is near the top.
+    if ($above -ge [Math]::Min(240, $fitHeight) -or $above -ge $below) {
+        if ($above -gt 0) { $fitHeight = [Math]::Min($fitHeight, $above) }
+    } elseif ($below -gt 0) {
+        $fitHeight = [Math]::Min($fitHeight, $below)
+    }
+    $location = Get-TNotesAnchoredLocation -Anchor $Anchor -Width $fitWidth -Height $fitHeight -WorkingArea $WorkingArea -Gap $Gap
+    return @($location[0], $location[1], $fitWidth, $fitHeight)
+}
+
 function Move-TNotesWindowToAnchor {
     param(
         [Parameter(Mandatory = $true)]
@@ -211,18 +261,48 @@ function Move-TNotesWindowToAnchor {
         return
     }
 
+    $width = $rectangle[2] - $rectangle[0]
+    $height = $rectangle[3] - $rectangle[1]
+    # WINDOWPLACEMENT stores the normal size even while a restore animation reports
+    # a tiny transient rectangle. Its 44-byte layout has rcNormalPosition at offset 28.
+    $normal = [Runtime.InteropServices.Marshal]::AllocHGlobal(44)
+    try {
+        [Runtime.InteropServices.Marshal]::WriteInt32($normal, 44)
+        if ($api::GetWindowPlacement($Handle, $normal)) {
+            $normalWidth = [Runtime.InteropServices.Marshal]::ReadInt32($normal, 36) - [Runtime.InteropServices.Marshal]::ReadInt32($normal, 28)
+            $normalHeight = [Runtime.InteropServices.Marshal]::ReadInt32($normal, 40) - [Runtime.InteropServices.Marshal]::ReadInt32($normal, 32)
+            if ($normalWidth -gt 0 -and $normalHeight -gt 0) { $width = $normalWidth; $height = $normalHeight }
+        }
+    } finally {
+        [Runtime.InteropServices.Marshal]::FreeHGlobal($normal)
+    }
+
     Add-Type -AssemblyName System.Windows.Forms, System.Drawing
     $center = New-Object System.Drawing.Point(($bounds[0] + [int]($bounds[2] / 2)), ($bounds[1] + [int]($bounds[3] / 2)))
-    $location = Get-TNotesAnchoredLocation `
+    $placement = Get-TNotesAnchoredBounds `
         -Anchor $bounds `
-        -Width ($rectangle[2] - $rectangle[0]) `
-        -Height ($rectangle[3] - $rectangle[1]) `
+        -Width $width `
+        -Height $height `
         -WorkingArea ([System.Windows.Forms.Screen]::FromPoint($center).WorkingArea)
-    if ($location[0] -ne $rectangle[0] -or $location[1] -ne $rectangle[1]) {
-        $SWP_NOSIZE = 0x0001
-        $SWP_NOZORDER = 0x0004
-        $SWP_NOACTIVATE = 0x0010
-        [void]$api::SetWindowPos($Handle, [IntPtr]::Zero, $location[0], $location[1], 0, 0, ($SWP_NOSIZE -bor $SWP_NOZORDER -bor $SWP_NOACTIVATE))
+    $stable = 0
+    # Chromium can change its restored bounds again after moving between monitors with
+    # different scaling. Keep the intended bounds until two consecutive reads agree.
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+        if (-not $api::GetWindowRect($Handle, $rectangle)) { return }
+        $sameSize = $placement[2] -eq ($rectangle[2] - $rectangle[0]) -and $placement[3] -eq ($rectangle[3] - $rectangle[1])
+        if ($placement[0] -eq $rectangle[0] -and $placement[1] -eq $rectangle[1] -and $sameSize) {
+            $stable++
+            if ($stable -ge 2) { return }
+        } else {
+            $stable = 0
+            $SWP_NOSIZE = 0x0001
+            $SWP_NOZORDER = 0x0004
+            $SWP_NOACTIVATE = 0x0010
+            $flags = $SWP_NOZORDER -bor $SWP_NOACTIVATE
+            if ($sameSize) { $flags = $flags -bor $SWP_NOSIZE }
+            [void]$api::SetWindowPos($Handle, [IntPtr]::Zero, $placement[0], $placement[1], $placement[2], $placement[3], $flags)
+        }
+        Start-Sleep -Milliseconds 40
     }
 }
 
@@ -254,6 +334,7 @@ function Open-TNotes {
     if ($window -ne [IntPtr]::Zero) {
         $api = Get-TNotesWindowApi
         if ($Toggle -and $api::GetForegroundWindow() -eq $window -and -not $api::IsIconic($window)) {
+            [void](Disable-TNotesWindowTransitions -Handle $window)
             [void]$api::ShowWindowAsync($window, 6)
             return 'Minimized'
         }

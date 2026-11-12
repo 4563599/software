@@ -1,4 +1,4 @@
-param([int]$Port,[string]$DataDirectory)
+param([int]$Port,[string]$DataDirectory,[switch]$PlacementOnly)
 # Opens real browser windows against a throwaway data directory and port; never touches the real vault.
 $ErrorActionPreference='Stop'
 $source=Split-Path -Parent $PSScriptRoot
@@ -64,12 +64,17 @@ try{
     Add-Type -AssemblyName System.Windows.Forms
     $area=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $api=Get-TNotesWindowApi
+    # This DWM attribute is write-only; successful HRESULT is the native API contract.
+    if(-not (Disable-TNotesWindowTransitions -Handle (Get-TNotesWindowHandle))){throw 'The notes window rejected disabling native transition animations.'}
     function Assert-AboveButton([int[]]$Button,[string]$When){
         $rectangle=New-Object int[] 4
         if(-not $api::GetWindowRect((Get-TNotesWindowHandle),$rectangle)){throw 'The window position could not be read.'}
         $expected=Get-TNotesAnchoredLocation -Anchor $Button -Width ($rectangle[2]-$rectangle[0]) -Height ($rectangle[3]-$rectangle[1]) -WorkingArea $area
-        if([Math]::Abs($rectangle[0]-$expected[0]) -gt 1 -or [Math]::Abs($rectangle[1]-$expected[1]) -gt 1){throw "$When the window is at $($rectangle[0]),$($rectangle[1]) instead of $($expected[0]),$($expected[1]) above the button."}
-        if($rectangle[3] -gt $Button[1] -or $rectangle[0] -lt $area.Left -or $rectangle[2] -gt $area.Right){throw "$When the window is not above the button or leaves the screen."}
+        if([Math]::Abs($rectangle[0]-$expected[0]) -gt 1 -or [Math]::Abs($rectangle[1]-$expected[1]) -gt 1){
+            $windowProcess=Get-Process -Id (Get-BrowserIds)[0]
+            throw "$When rectangle=$($rectangle -join ','), expected=$($expected -join ','), button=$($Button -join ','), title=$($windowProcess.MainWindowTitle), minimized=$($api::IsIconic((Get-TNotesWindowHandle)))."
+        }
+        if($rectangle[3] -gt $Button[1] -or $rectangle[0] -lt $area.Left -or $rectangle[2] -gt $area.Right){throw "$When the window is not above T or leaves the screen: rectangle=$($rectangle -join ','), button=$($Button -join ','), screen=$($area.Left),$($area.Top),$($area.Right),$($area.Bottom)."}
     }
     $cornerButton=@(($area.Right-60),($area.Bottom-60),52,52)
     $middleButton=@(($area.Left+800),($area.Bottom-60),52,52)
@@ -93,6 +98,25 @@ try{
     $state=$windows[0].GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Current.WindowVisualState
     if($state -eq [Windows.Automation.WindowVisualState]::Minimized){throw 'The minimized window was not restored.'}
     Assert-AboveButton $middleButton 'After the bar moved,'
+
+    if($PlacementOnly){
+        foreach($screen in [System.Windows.Forms.Screen]::AllScreens){
+            $area=$screen.WorkingArea
+            foreach($x in @(($area.Left+10),($area.Right-60))){
+                $button=@($x,($area.Bottom-60),52,52)
+                $null=Open-TNotes -Anchor ($button -join ',')
+                Start-Sleep -Milliseconds 300
+                Assert-AboveButton $button 'After raising on the target monitor,'
+                (Get-Windows)[0].GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).SetWindowVisualState([Windows.Automation.WindowVisualState]::Minimized)
+                Start-Sleep -Milliseconds 100
+                $null=Open-TNotes -Anchor ($button -join ',')
+                Start-Sleep -Milliseconds 300
+                Assert-AboveButton $button 'After restoring on the target monitor,'
+            }
+        }
+        Write-Output '{"single_window":"passed","opens_above_button":"passed","restores_above_button":"passed","all_monitors_fit":"passed"}'
+        return
+    }
 
     # The layout button grows the window to the library and back. Wherever the T button is, the window must
     # stay above it, stay on the screen, and return to exactly where it was.
@@ -135,5 +159,11 @@ try{
 }finally{
     Close-Browser
     if($backendId -gt 0){Stop-Process -Id $backendId -Force -ErrorAction SilentlyContinue}
-    if($ownsData){Start-Sleep -Milliseconds 500;Remove-Item -LiteralPath $DataDirectory -Recurse -Force -ErrorAction SilentlyContinue}
+    if($ownsData){
+        $resolved=[IO.Path]::GetFullPath($DataDirectory)
+        $temporaryRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
+        if(-not $resolved.StartsWith($temporaryRoot,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($resolved) -notlike 'tnotes-window-test-*'){throw 'Refusing to remove a test directory outside the temporary workspace.'}
+        Start-Sleep -Milliseconds 500
+        Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }

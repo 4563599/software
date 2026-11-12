@@ -23,8 +23,19 @@ if((Select-TNotesBrowserProcessIds -Processes $browserFixture -ProfileDirectory 
 $desk=[pscustomobject]@{Left=0;Top=0;Right=1920;Bottom=1040}
 $anchored=@(@(@(1848,968,52,52),810,'1450,156'),@(@(1000,968,52,52),810,'791,156'),@(@(1000,20,52,52),810,'791,74'),@(@(1000,500,52,52),1000,'791,0')) | ForEach-Object {((Get-TNotesAnchoredLocation -Anchor $_[0] -Width 470 -Height $_[1] -WorkingArea $desk) -join ',') -eq $_[2]}
 if($anchored -contains $false){throw 'Notes window placement above the T button regressed.'}
+$fitCases=@(
+ @(@(1848,968,52,52),470,810,$desk,'1450,156,470,810'),
+ @(@(3384,752,52,52),470,810,$screens[1],'2986,0,470,750'),
+ @(@(-1528,752,52,52),470,810,([pscustomobject]@{Left=-1536;Top=0;Right=0;Bottom=824}),'-1536,0,470,750'),
+ @(@(1000,20,52,52),470,810,$desk,'791,74,470,810'),
+ @(@(250,410,52,52),470,810,([pscustomobject]@{Left=0;Top=0;Right=320;Bottom=480}),'0,0,320,408')
+)
+foreach($case in $fitCases){
+ if(((Get-TNotesAnchoredBounds -Anchor $case[0] -Width $case[1] -Height $case[2] -WorkingArea $case[3]) -join ',') -ne $case[4]){throw 'Notes bounds do not fit above T on its monitor.'}
+}
 if((@(ConvertFrom-TNotesAnchor -Anchor 'p-1500,900,52,52') -join ',') -ne '-1500,900,52,52' -or @(ConvertFrom-TNotesAnchor -Anchor 'not a rectangle').Count -ne 0){throw 'Notes window anchor parsing regressed.'}
 & (Join-Path $PSScriptRoot 'ai-process-cleanup.tests.ps1')
 & (Join-Path $PSScriptRoot 'configure-notes.tests.ps1')
+& (Join-Path $PSScriptRoot 'notes-window-state.tests.ps1')
 & (Join-Path $root 'Install.ps1') -DryRun | Out-Null
 Write-Output 'PASS: Source parsing, C / AS selection, protected notes, and installation dry-run.'

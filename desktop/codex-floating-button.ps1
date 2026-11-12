@@ -322,7 +322,7 @@ try {
             ToolTip = $notesToolTipText; Action = { param($anchor) Invoke-TNotes -Anchor $anchor }
         }
     )
-    $barState = [pscustomobject]@{ Hover = -1; Pressed = -1; Busy = $false }
+    $barState = [pscustomobject]@{ Hover = -1; Pressed = -1; Busy = $false; Painted = $false; Ticks = 0; Failures = 0 }
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'CodexFloatingButton'
@@ -365,6 +365,24 @@ try {
         $path.AddArc($X, $Y + $Size - $diameter, $diameter, $diameter, 90, 90)
         $path.CloseFigure()
         return $path
+    }
+
+    function Write-ToolbarDiagnostic {
+        param(
+            [string]$Text
+        )
+
+        # A small private log in the user's data folder, capped in size; it never holds notes or other user data.
+        try {
+            $directory = Join-Path $env:LOCALAPPDATA 'TNotes'
+            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+            $file = Join-Path $directory 'toolbar-diagnostic.log'
+            if (-not (Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -lt 65536) {
+                Add-Content -LiteralPath $file -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $Text) -Encoding ASCII
+            }
+        }
+        catch {
+        }
     }
 
     function Update-ToolbarSurface {
@@ -464,7 +482,7 @@ try {
             # AC_SRC_OVER, no flags, constant alpha 255, AC_SRC_ALPHA.
             [int]$blend = 0x01FF0000
             $ULW_ALPHA = 2
-            [CodexWindowApi]::UpdateLayeredWindow(
+            $barState.Painted = [bool][CodexWindowApi]::UpdateLayeredWindow(
                 $form.Handle,
                 $screenDc,
                 [IntPtr]::Zero,
@@ -474,7 +492,7 @@ try {
                 0,
                 [ref]$blend,
                 $ULW_ALPHA
-            ) | Out-Null
+            )
         }
         finally {
             [CodexWindowApi]::SelectObject($memoryDc, $previousObject) | Out-Null
@@ -482,6 +500,18 @@ try {
             [CodexWindowApi]::DeleteDC($memoryDc) | Out-Null
             [CodexWindowApi]::ReleaseDC([IntPtr]::Zero, $screenDc) | Out-Null
             $bitmap.Dispose()
+        }
+
+        if (-not $barState.Painted) {
+            # The timer below keeps retrying; the first few failures are written down so they can be traced.
+            $barState.Failures++
+            if ($barState.Failures -le 3) {
+                Write-ToolbarDiagnostic 'The bar could not be drawn; retrying.'
+            }
+        }
+        elseif ($barState.Failures -gt 0) {
+            Write-ToolbarDiagnostic ('The bar is drawn again after ' + $barState.Failures + ' failed attempts.')
+            $barState.Failures = 0
         }
     }
 
@@ -515,7 +545,16 @@ try {
 
     $topMostTimer = New-Object System.Windows.Forms.Timer
     $topMostTimer.Interval = 750
-    $topMostTimer.Add_Tick($keepTopMost)
+    $topMostTimer.Add_Tick({
+        & $keepTopMost
+        # A layered window shows only what was last handed to it. If that never worked, or was lost (for
+        # example while the desktop was still starting at sign-in), the bar would stay invisible for good.
+        # So hand the picture over again at once while it is missing, and every few seconds otherwise.
+        $barState.Ticks++
+        if (-not $barState.Painted -or ($barState.Ticks % 4) -eq 0) {
+            Update-ToolbarSurface
+        }
+    })
     $form.Add_Shown({
         & $keepTopMost
         $topMostTimer.Start()

@@ -166,6 +166,43 @@ function browserPreferences(){
   await b.locator('#settings').click();await b.locator('#import-file').setInputFiles(later);await toast(b,'恢复 2 条记录，另存 1 条');
   assert(await rows(b)===20&&await row(b,'Only on A').count()===1,'Import did not add the records this computer lacked');
 
+  // The layout button grows the window to the library and back without drifting away from the T button.
+  // A simulated window frame stands in for the real one; single_window_test.ps1 covers the real window.
+  const frameOf=page=>page.evaluate(()=>({...window.qaFrame}));
+  const sameFrame=(actual,expected,label)=>assert(['x','y','w','h'].every(key=>actual[key]===expected[key]),label+': '+JSON.stringify(actual)+' instead of '+JSON.stringify(expected));
+  const simulate=async frame=>{
+   const context=await browser.newContext({viewport:{width:470,height:810}});
+   await context.addInitScript(start=>{
+    const state={...start};window.qaFrame=state;
+    const define=(name,get)=>Object.defineProperty(window,name,{get,configurable:true});
+    define('screenX',()=>state.x);define('screenY',()=>state.y);define('outerWidth',()=>state.w);define('outerHeight',()=>state.h);
+    Object.defineProperty(window,'screen',{value:{availLeft:0,availTop:0,availWidth:1920,availHeight:1040},configurable:true});
+    window.resizeTo=(w,h)=>{state.w=w;state.h=h;};window.moveTo=(x,y)=>{state.x=x;state.y=y;};
+   },frame);
+   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('dialog',dialog=>dialog.accept());
+   await page.goto('http://127.0.0.1:'+portA);await page.waitForFunction(()=>!document.querySelector('#auth-submit').disabled);
+   await page.locator('#master').fill(master);await page.locator('#remember').uncheck();await page.locator('#auth-submit').click();
+   await page.locator('#workspace').waitFor({state:'visible',timeout:20000});
+   return page;
+  };
+  for(const [name,start,big] of [
+   ['T at the right edge',{x:1450,y:156,w:470,h:810},{x:860,y:146,w:1060,h:820}],
+   ['T at the left edge',{x:0,y:156,w:470,h:810},{x:0,y:146,w:1060,h:820}],
+   ['T in the middle',{x:591,y:156,w:470,h:810},{x:296,y:146,w:1060,h:820}]]){
+   const page=await simulate(start);
+   await page.locator('#view').click();sameFrame(await frameOf(page),big,'Enlarged window ('+name+')');
+   await page.locator('#view').click();sameFrame(await frameOf(page),start,'Window did not return ('+name+')');
+   await page.context().close();
+  }
+  // Moved while enlarged (for example another click on T after the bar was dragged): it keeps its centre.
+  const moved=await simulate({x:591,y:156,w:470,h:810});
+  await moved.locator('#view').click();await moved.evaluate(()=>{window.qaFrame.x=100;});
+  await moved.locator('#view').click();sameFrame(await frameOf(moved),{x:395,y:156,w:470,h:810},'Window moved while enlarged');
+  // ...or stays against the screen edge it touches.
+  await moved.locator('#view').click();await moved.evaluate(()=>{window.qaFrame.x=860;});
+  await moved.locator('#view').click();sameFrame(await frameOf(moved),{x:1450,y:156,w:470,h:810},'Window moved to the right edge while enlarged');
+  await moved.context().close();
+
   // The backend writes the daily file by itself after a restart.
   for(const name of backups(chosenDir))fs.unlinkSync(path.join(chosenDir,name));
   backendA.kill();await new Promise(resolve=>backendA.once('exit',resolve));backendA=await startBackend(portA,dataA);
@@ -173,7 +210,7 @@ function browserPreferences(){
   assert(JSON.parse(fs.readFileSync(chosen,'utf8')).data.items.length===19,'Automatic backup is incomplete');
 
   assert(errors.length===0,errors.join('\n'));
-  console.log(JSON.stringify({browser_password_saving_off:'passed',fixed_layout:'passed',messages:'passed',shortcuts:'passed',search_tag_site:'passed',trash_restore:'passed',prompt_variables:'passed',backup_folder_retention:'passed',automatic_backup:'passed',import_merge:'passed',restore_empty_computer:'passed'}));
+  console.log(JSON.stringify({browser_password_saving_off:'passed',fixed_layout:'passed',messages:'passed',shortcuts:'passed',search_tag_site:'passed',trash_restore:'passed',prompt_variables:'passed',backup_folder_retention:'passed',automatic_backup:'passed',layout_toggle_placement:'passed',import_merge:'passed',restore_empty_computer:'passed'}));
  }finally{
   await browser.close();
  }

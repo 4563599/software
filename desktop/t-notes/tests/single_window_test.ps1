@@ -94,6 +94,34 @@ try{
     if($state -eq [Windows.Automation.WindowVisualState]::Minimized){throw 'The minimized window was not restored.'}
     Assert-AboveButton $middleButton 'After the bar moved,'
 
+    # The layout button grows the window to the library and back. Wherever the T button is, the window must
+    # stay above it, stay on the screen, and return to exactly where it was.
+    $page={param($id) [Windows.Automation.AutomationElement]::FromHandle((Get-TNotesWindowHandle)).FindFirst([Windows.Automation.TreeScope]::Descendants,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::AutomationIdProperty,$id)))}
+    $wait={param($id) for($i=0;$i -lt 60;$i++){$e=& $page $id;if($e -and $e.Current.IsEnabled){return $e};Start-Sleep -Milliseconds 250};$problem=& $page 'auth-error';throw "The page never showed $id. Sign-in message: '$(if($problem){$problem.Current.Name})'."}
+    $type={param($id,$text) (& $wait $id).GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($text)}
+    $press={param($id) (& $wait $id).GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()}
+    function Get-WindowRectangle{$rectangle=New-Object int[] 4;[void]$api::GetWindowRect((Get-TNotesWindowHandle),$rectangle);return $rectangle}
+    $randomBytes=New-Object byte[] 15
+    $generator=[Security.Cryptography.RandomNumberGenerator]::Create();$generator.GetBytes($randomBytes);$generator.Dispose()
+    $testPassphrase=[Convert]::ToBase64String($randomBytes)
+    & $press 'auth-mode';& $type 'username' 'window-test';& $type 'master' $testPassphrase;& $type 'master-confirm' $testPassphrase;& $press 'auth-submit'
+    $null=& $wait 'view'
+    $leftButton=@(($area.Left+10),($area.Bottom-60),52,52)
+    foreach($case in @(@('right edge',$cornerButton),@('left edge',$leftButton),@('middle',$middleButton))){
+        $name=$case[0];$button=$case[1]
+        $null=Open-TNotes -Anchor ($button -join ',');Start-Sleep -Milliseconds 800
+        $small=Get-WindowRectangle
+        Assert-AboveButton $button "Before the layout button ($name),"
+        & $press 'view';Start-Sleep -Milliseconds 1500
+        $big=Get-WindowRectangle
+        if(($big[2]-$big[0]) -le 900){throw "The layout button did not enlarge the window ($name)."}
+        if($big[0] -lt $area.Left -or $big[2] -gt $area.Right -or $big[1] -lt $area.Top){throw "The enlarged window left the screen ($name): $($big -join ',')."}
+        if($big[3] -gt $button[1] -or $big[0] -gt $button[0] -or $big[2] -lt ($button[0]+$button[2])){throw "The enlarged window is not above the T button ($name): $($big -join ',')."}
+        & $press 'view';Start-Sleep -Milliseconds 1500
+        $back=Get-WindowRectangle
+        for($index=0;$index -lt 4;$index++){if([Math]::Abs($back[$index]-$small[$index]) -gt 1){throw "The window did not return to its place ($name): was $($small -join ',') now $($back -join ',')."}}
+    }
+
     # As a switch, a click tucks the window away only while it is the one in front.
     $handle=Get-TNotesWindowHandle
     $inFront=$api::GetForegroundWindow() -eq $handle
@@ -103,7 +131,7 @@ try{
     if($inFront -and ($result -ne 'Minimized' -or -not $minimized)){throw "A click on the front window returned $result instead of tucking it away."}
     if(-not $inFront -and ($result -ne 'Focused' -or $minimized)){throw "A click on a background window returned $result instead of raising it."}
     $toggle=if($inFront){'front_window_minimized'}else{'background_window_raised'}
-    Write-Output ('{"simultaneous_launch_single_window":"passed","browser_password_saving_off":"passed","repeat_launch_reuses_window":"passed","rapid_clicks_single_window":"passed","opens_above_button":"passed","minimized_window_restored":"passed","toggle":"'+$toggle+'"}')
+    Write-Output ('{"simultaneous_launch_single_window":"passed","browser_password_saving_off":"passed","repeat_launch_reuses_window":"passed","rapid_clicks_single_window":"passed","opens_above_button":"passed","layout_toggle_stays_above_button":"passed","minimized_window_restored":"passed","toggle":"'+$toggle+'"}')
 }finally{
     Close-Browser
     if($backendId -gt 0){Stop-Process -Id $backendId -Force -ErrorAction SilentlyContinue}

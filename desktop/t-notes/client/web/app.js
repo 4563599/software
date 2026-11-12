@@ -192,17 +192,27 @@ function focusSearch(){
  if(!library&&!document.body.classList.contains('quick-list')){showQuickList();return;}
  const box=library?$('search'):$('quick-search');box.focus();box.select();
 }
-function resizeWindow(width,height){
- // The window sits just above the T button. It grows and shrinks from its bottom-right corner, so it
- // stays above the button and never ends up partly off the screen.
+let home=null,placed=null;
+// The window belongs just above the T button. Growing keeps its bottom edge and its centre (kept on the screen);
+// shrinking puts it back where it was. If it was moved in between (for example by another click on T), it stays
+// against the screen edge it touches, or else keeps its centre, so it never drifts away from the button.
+function resizeWindow(width,height,grow){
  try{
-  const area=window.screen,left=area.availLeft||0,top=area.availTop||0;
-  const right=window.screenX+window.outerWidth,bottom=window.screenY+window.outerHeight;
-  window.resizeTo(width,height);
-  window.moveTo(Math.max(left,Math.min(right-width,left+area.availWidth-width)),Math.max(top,Math.min(bottom-height,top+area.availHeight-height)));
+  const area=window.screen,left=area.availLeft||0,top=area.availTop||0,right=left+area.availWidth,bottom=top+area.availHeight;
+  const now={x:window.screenX,y:window.screenY,w:window.outerWidth,h:window.outerHeight};
+  const same=(a,b)=>!!b&&['x','y','w','h'].every(key=>Math.abs(a[key]-b[key])<=2);
+  const clamp=(value,low,high)=>Math.max(low,Math.min(value,high));
+  let centerX=now.x+now.w/2,base=now.y+now.h;
+  if(grow)home={centerX,base};
+  else if(home&&same(now,placed))({centerX,base}=home);
+  else if(now.x<=left+1)centerX=left+width/2;
+  else if(now.x+now.w>=right-1)centerX=right-width/2;
+  const x=clamp(Math.round(centerX-width/2),left,right-width),y=clamp(base-height,top,bottom-height);
+  placed=grow?{x,y,w:width,h:height}:null;if(!grow)home=null;
+  window.resizeTo(width,height);window.moveTo(x,y);
  }catch{}
 }
-function setView(value){if(!value&&!mayLeave())return;library=value;document.body.classList.toggle('library',library);$('app-title').textContent=library?'我的资料库':'随手记';resizeWindow(library?1060:470,library?820:810);if(!library){if(selected)loadEditor(selected,false,false);else openDefaultRecord();$('quick-search').focus({preventScroll:true});}else renderList();}
+function setView(value){if(!value&&!mayLeave())return;library=value;document.body.classList.toggle('library',library);$('app-title').textContent=library?'我的资料库':'随手记';resizeWindow(library?1060:470,library?820:810,library);if(!library){if(selected)loadEditor(selected,false,false);else openDefaultRecord();$('quick-search').focus({preventScroll:true});}else renderList();}
 function openPromptDialog(template){
  const variables=promptVariables(template);$('variables').replaceChildren();
  const update=()=>{let text=template;for(const input of $('variables').querySelectorAll('input'))text=text.split('{{'+input.dataset.variable+'}}').join(input.value);$('prompt-output').value=text;};

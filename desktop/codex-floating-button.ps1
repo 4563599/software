@@ -3,10 +3,6 @@ Set-StrictMode -Version Latest
 
 $createdNew = $false
 $mutex = New-Object System.Threading.Mutex($true, 'Local\CodexFloatingButton', [ref]$createdNew)
-if (-not $createdNew) {
-    $mutex.Dispose()
-    exit 0
-}
 
 try {
     Add-Type -AssemblyName System.Windows.Forms
@@ -64,7 +60,11 @@ try {
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'SetForegroundWindow' -ReturnType ([bool]) -ParameterTypes @([IntPtr])
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'IsIconic' -ReturnType ([bool]) -ParameterTypes @([IntPtr])
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'IsWindowVisible' -ReturnType ([bool]) -ParameterTypes @([IntPtr])
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'FindWindow' -ReturnType ([IntPtr]) -ParameterTypes @([string], [string])
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'GetWindowThreadProcessId' -ReturnType ([int]) -ParameterTypes @([IntPtr], [int].MakeByRefType())
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'GetWindowRect' -ReturnType ([bool]) -ParameterTypes @([IntPtr], [int[]])
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'GetWindowLong' -ReturnType ([int]) -ParameterTypes @([IntPtr], [int])
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'GetWindow' -ReturnType ([IntPtr]) -ParameterTypes @([IntPtr], [uint32])
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'SetWindowLong' -ReturnType ([int]) -ParameterTypes @([IntPtr], [int], [int])
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'SetWindowPos' -ReturnType ([bool]) -ParameterTypes @(
             [IntPtr],
@@ -100,6 +100,15 @@ try {
 
     $projectRoot = $PSScriptRoot
     . (Join-Path $projectRoot 'codex-floating-button-core.ps1')
+    if (-not $createdNew) {
+        $processes = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -Property ProcessId, SessionId, CommandLine)
+        $revealed = Restore-FloatingToolbarWindow -NativeApi ([CodexWindowApi]) -ScriptPath $PSCommandPath -Processes $processes `
+            -WorkingAreas @([System.Windows.Forms.Screen]::AllScreens | ForEach-Object { $_.WorkingArea }) `
+            -PrimaryWorkingArea ([System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea)
+        if ($revealed) { exit 0 }
+        Write-Warning 'The toolbar is already running but its window could not be revealed.'
+        exit 1
+    }
     . (Join-Path $projectRoot 'codex-network-check.ps1')
     . (Join-Path $projectRoot 'ai-process-cleanup.ps1')
 
@@ -122,6 +131,56 @@ try {
         # With the window already in front, the click tucks it away instead.
         try { Open-TNotes -Toggle -Anchor $Anchor | Out-Null }
         catch { [System.Windows.Forms.MessageBox]::Show('T Notes backend could not start. Your unsaved text is still in the current window.', 'T Notes') | Out-Null }
+    }
+
+    # The tool window keeps its text in a UTF-8 file; its title is how an open window is found again.
+    $devToolsScript = Join-Path $projectRoot 'dev-tools\DevTools.ps1'
+    $devToolsText = $null
+    try {
+        $devToolsText = [IO.File]::ReadAllText((Join-Path $projectRoot 'dev-tools\text.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
+    }
+    catch {
+    }
+
+    function Invoke-DevTools {
+        param(
+            # Screen rectangle of the tool button, "x,y,width,height"; the tool window opens directly above it.
+            [string]$Anchor = ''
+        )
+
+        if ($null -eq $devToolsText -or -not (Test-Path -LiteralPath $devToolsScript)) {
+            [System.Windows.Forms.MessageBox]::Show('Dev tools are not installed.', 'Dev Tools') | Out-Null
+            return
+        }
+
+        # Like T: one window. A click raises it above the button, or tucks it away when it is already in front.
+        $handle = [CodexWindowApi].GetMethod('FindWindow').Invoke($null, [object[]]@($null, [string]$devToolsText.Title))
+        if ($handle -ne [IntPtr]::Zero -and (Get-Command -Name 'Get-TNotesWindowApi' -CommandType Function -ErrorAction SilentlyContinue)) {
+            $ownerId = 0
+            [void][CodexWindowApi]::GetWindowThreadProcessId($handle, [ref]$ownerId)
+            $owner = Get-Process -Id $ownerId -ErrorAction SilentlyContinue
+            if ($null -ne $owner -and $owner.ProcessName -eq 'powershell') {
+                $api = Get-TNotesWindowApi
+                if (-not $api::IsIconic($handle) -and $api::GetForegroundWindow() -eq $handle) {
+                    [void]$api::ShowWindowAsync($handle, 6)
+                    return
+                }
+                # Same raising as the notes window, including the fallback when Windows refuses the focus change.
+                Show-TNotesWindow -Handle $handle
+                $parts = @(ConvertFrom-TNotesAnchor -Anchor $Anchor)
+                $rectangle = New-Object int[] 4
+                if ($parts.Count -eq 4 -and $api::GetWindowRect($handle, $rectangle)) {
+                    $area = [System.Windows.Forms.Screen]::FromPoint([System.Drawing.Point]::new($parts[0], $parts[1])).WorkingArea
+                    $location = Get-TNotesAnchoredLocation -Anchor $parts -Width ($rectangle[2] - $rectangle[0]) -Height ($rectangle[3] - $rectangle[1]) -WorkingArea $area
+                    # SWP_NOSIZE | SWP_NOZORDER
+                    [void]$api::SetWindowPos($handle, [IntPtr]::Zero, $location[0], $location[1], 0, 0, 0x0005)
+                }
+                return
+            }
+        }
+
+        $arguments = '-NoProfile -ExecutionPolicy RemoteSigned -WindowStyle Hidden -File "' + $devToolsScript + '" -Anchor "' + $Anchor + '"'
+        Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $arguments -WindowStyle Hidden
     }
 
     function Get-AiRelatedProcessIds {
@@ -273,8 +332,8 @@ try {
         throw "Icon image not found: $imagePath"
     }
 
-    # One shape and size for all three buttons; only the colour and the letter differ.
-    # The corner radius matches the C artwork (22% of its size) so all three outlines are identical.
+    # One shape and size for all buttons; only the colour and the letter differ.
+    # The corner radius matches the C artwork (22% of its size) so all outlines are identical.
     $barLayout = [pscustomobject]@{ ButtonSize = 52; Gap = 8; Margin = 8; Radius = 11 }
 
     # Scale the C artwork once; every repaint then copies it unscaled.
@@ -305,24 +364,34 @@ try {
     $studioToolTipText = (-join ([char[]](0x5F3A, 0x5236, 0x5173, 0x95ED))) + ' Android Studio'
     $notesToolTipText = (-join ([char[]](0x6253, 0x5F00))) + ' / ' + (-join ([char[]](0x6536, 0x8D77))) + ' T ' + (-join ([char[]](0x7B14, 0x8BB0)))
 
+    $devToolsToolTipText = if ($null -ne $devToolsText) { [string]$devToolsText.ToolbarTip } else { 'Dev tools' }
+    # A wrench from the Windows icon font; plain letters stand in where that font is missing.
+    $hasIconFont = @([System.Drawing.FontFamily]::Families | Where-Object { $_.Name -eq 'Segoe MDL2 Assets' }).Count -gt 0
+    $devToolsLabel = if ($hasIconFont) { @([string][char]0xE90F, 'Segoe MDL2 Assets', 24) } else { @('Dev', 'Segoe UI', 17) }
+
     $barButtons = @(
         [pscustomobject]@{
-            Image = $codexImage; Text = ''; FontSize = 0
+            Image = $codexImage; Text = ''; FontName = 'Segoe UI'; FontSize = 0
             From = [System.Drawing.Color]::Empty; To = [System.Drawing.Color]::Empty
             ToolTip = $codexToolTipText; Action = { Invoke-AiAppsShutdown }
         },
         [pscustomobject]@{
-            Image = $null; Text = 'AS'; FontSize = 22
+            Image = $null; Text = 'AS'; FontName = 'Segoe UI'; FontSize = 22
             From = [System.Drawing.Color]::FromArgb(20, 142, 226); To = [System.Drawing.Color]::FromArgb(0, 108, 188)
             ToolTip = $studioToolTipText; Action = { Invoke-AndroidStudioShutdown }
         },
         [pscustomobject]@{
-            Image = $null; Text = 'T'; FontSize = 31
+            Image = $null; Text = 'T'; FontName = 'Segoe UI'; FontSize = 31
             From = [System.Drawing.Color]::FromArgb(66, 133, 244); To = [System.Drawing.Color]::FromArgb(37, 99, 235)
             ToolTip = $notesToolTipText; Action = { param($anchor) Invoke-TNotes -Anchor $anchor }
+        },
+        [pscustomobject]@{
+            Image = $null; Text = $devToolsLabel[0]; FontName = $devToolsLabel[1]; FontSize = $devToolsLabel[2]
+            From = [System.Drawing.Color]::FromArgb(59, 130, 246); To = [System.Drawing.Color]::FromArgb(29, 78, 216)
+            ToolTip = $devToolsToolTipText; Action = { param($anchor) Invoke-DevTools -Anchor $anchor }
         }
     )
-    $barState = [pscustomobject]@{ Hover = -1; Pressed = -1; Busy = $false; Painted = $false; Ticks = 0; Failures = 0 }
+    $barState = [pscustomobject]@{ Hover = -1; Pressed = -1; Busy = $false; Painted = $false; Ticks = 0; Failures = 0; LastTopMost = $true }
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'CodexFloatingButton'
@@ -425,7 +494,9 @@ try {
                     else {
                         $bounds = [System.Drawing.RectangleF]::new($left, $top, $size, $size)
                         $bodyBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($bounds, $button.From, $button.To, [single]45)
-                        $font = New-Object System.Drawing.Font('Segoe UI', $button.FontSize, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+                        # The icon font has no bold face; letters are drawn bold.
+                        $fontStyle = if ($button.FontName -eq 'Segoe UI') { [System.Drawing.FontStyle]::Bold } else { [System.Drawing.FontStyle]::Regular }
+                        $font = New-Object System.Drawing.Font($button.FontName, $button.FontSize, $fontStyle, [System.Drawing.GraphicsUnit]::Pixel)
                         $textShadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(70, 0, 0, 0))
                         $textBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
                         $textFormat = New-Object System.Drawing.StringFormat
@@ -526,12 +597,21 @@ try {
         $SWP_NOACTIVATE -bor
         $SWP_SHOWWINDOW
     )
+    $GW_OWNER = 4
     $keepTopMost = {
         if ($form.IsDisposed -or -not $form.IsHandleCreated) {
             return
         }
 
+        $wasTopMost = ([CodexWindowApi]::GetWindowLong($form.Handle, $GWL_EXSTYLE) -band 0x00000008) -ne 0
         $form.TopMost = $true
+        # A bar kept out of the taskbar has a hidden owner window. Once the bar has dropped out of the
+        # always-on-top group (seen 2026-11-17, behind a maximised Android Studio), Windows accepts but
+        # ignores HWND_TOPMOST for the bar alone; raising the owner first makes it take effect again.
+        $owner = [CodexWindowApi]::GetWindow($form.Handle, $GW_OWNER)
+        if ($owner -ne [IntPtr]::Zero) {
+            [CodexWindowApi]::SetWindowPos($owner, $HWND_TOPMOST, 0, 0, 0, 0, [uint32]($SWP_NOSIZE -bor $SWP_NOMOVE -bor $SWP_NOACTIVATE)) | Out-Null
+        }
         [CodexWindowApi]::SetWindowPos(
             $form.Handle,
             $HWND_TOPMOST,
@@ -541,6 +621,17 @@ try {
             0,
             $topMostFlags
         ) | Out-Null
+        if (-not $wasTopMost -and $form.Visible) {
+            $isTopMost = ([CodexWindowApi]::GetWindowLong($form.Handle, $GWL_EXSTYLE) -band 0x00000008) -ne 0
+            # One line when it happens, and one when it works again; not one every 0.75 seconds while it fails.
+            if ($barState.LastTopMost -or $isTopMost) {
+                Write-ToolbarDiagnostic ('The bar was not on top; restoring it ' + $(if ($isTopMost) { 'worked.' } else { 'failed.' }))
+            }
+            $barState.LastTopMost = $isTopMost
+        }
+        else {
+            $barState.LastTopMost = $true
+        }
     }
 
     $topMostTimer = New-Object System.Windows.Forms.Timer
@@ -741,6 +832,9 @@ try {
     Update-ToolbarSurface
     & $keepTopMost
     [CodexWindowApi]::ShowWindowAsync($form.Handle, 4) | Out-Null
+    # Recovery must also start when Shown is missed during desktop initialization.
+    $topMostTimer.Start()
+    Write-ToolbarDiagnostic ('Toolbar initialized; recovery timer enabled=' + $topMostTimer.Enabled + '.')
     [System.Windows.Forms.Application]::Run($form)
 }
 catch {

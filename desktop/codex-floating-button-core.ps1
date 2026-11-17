@@ -201,3 +201,51 @@ function Get-FloatingBarStartLocation {
 
     return $DefaultLocation
 }
+
+function Restore-FloatingToolbarWindow {
+    param(
+        [Parameter(Mandatory = $true)]
+        [Type]$NativeApi,
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath,
+        [object[]]$Processes = @(),
+        [int]$SessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId,
+        [object[]]$WorkingAreas = @(),
+        [Parameter(Mandatory = $true)]
+        $PrimaryWorkingArea
+    )
+
+    # Reflection preserves a real null class name; PowerShell's string binder can turn $null into "".
+    $handle = $NativeApi.GetMethod('FindWindow').Invoke($null, [object[]]@($null, 'CodexFloatingButton'))
+    if ($handle -eq [IntPtr]::Zero) { return $false }
+    $ownerId = 0
+    [void]$NativeApi::GetWindowThreadProcessId($handle, [ref]$ownerId)
+    $pattern = '(?i)-File\s+"?' + [regex]::Escape($ScriptPath) + '"?\s*$'
+    $owned = @($Processes | Where-Object {
+        $_.ProcessId -eq $ownerId -and $_.SessionId -eq $SessionId -and $_.CommandLine -match $pattern
+    })
+    if ($owned.Count -ne 1) { return $false }
+
+    $show = if ($NativeApi::IsIconic($handle)) { 9 } else { 4 }
+    [void]$NativeApi::ShowWindowAsync($handle, $show)
+    for ($attempt = 0; $attempt -lt 25 -and $NativeApi::IsIconic($handle); $attempt++) {
+        Start-Sleep -Milliseconds 20
+    }
+    $rectangle = New-Object int[] 4
+    if (-not $NativeApi::GetWindowRect($handle, $rectangle)) { return $false }
+    $size = [pscustomobject]@{Width=$rectangle[2]-$rectangle[0];Height=$rectangle[3]-$rectangle[1]}
+    if ($size.Width -le 0 -or $size.Height -le 0) { return $false }
+    $fallback = [System.Drawing.Point]::new(
+        [Math]::Max($PrimaryWorkingArea.Left, $PrimaryWorkingArea.Right-$size.Width-12),
+        [Math]::Max($PrimaryWorkingArea.Top, $PrimaryWorkingArea.Bottom-$size.Height-12)
+    )
+    $location = Get-FloatingBarStartLocation -SavedLocation ([pscustomobject]@{X=$rectangle[0];Y=$rectangle[1]}) -BarSize $size -WorkingAreas $WorkingAreas -DefaultLocation $fallback
+    # Show and raise only this installation's existing window, without closing any process. The bar's hidden
+    # owner window is raised first: without that, Windows can accept HWND_TOPMOST for the bar and ignore it.
+    $owner = $NativeApi::GetWindow($handle, [uint32]4)
+    if ($owner -ne [IntPtr]::Zero) {
+        [void]$NativeApi::SetWindowPos($owner, [IntPtr](-1), 0, 0, 0, 0, [uint32]0x0013)
+    }
+    $raised = $NativeApi::SetWindowPos($handle, [IntPtr](-1), $location.X, $location.Y, 0, 0, [uint32]0x0051)
+    return ($raised -and $NativeApi::IsWindowVisible($handle) -and (($NativeApi::GetWindowLong($handle, -20) -band 8) -ne 0))
+}

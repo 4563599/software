@@ -14,10 +14,10 @@ const secret='QA-'+crypto.randomBytes(9).toString('hex');
 const children=[];
 const assert=(condition,message)=>{if(!condition)throw Error(message);};
 const freePort=()=>new Promise((resolve,reject)=>{const probe=net.createServer();probe.once('error',reject);probe.listen(0,'127.0.0.1',()=>{const {port}=probe.address();probe.close(()=>resolve(port));});});
-async function startBackend(port,dataDir){
+async function startBackend(port,dataDir,extraEnv={}){
  fs.mkdirSync(dataDir,{recursive:true});
  // A config path that does not exist keeps the test away from any real sync server.
- const child=spawn(process.execPath,[path.join(root,'client','desktop.cjs')],{env:{...process.env,TNOTES_PORT:String(port),TNOTES_DATA:dataDir,TNOTES_CONFIG:path.join(dataDir,'no-server.json')},stdio:'ignore',windowsHide:true});
+ const child=spawn(process.execPath,[path.join(root,'client','desktop.cjs')],{env:{...process.env,TNOTES_PORT:String(port),TNOTES_DATA:dataDir,TNOTES_CONFIG:path.join(dataDir,'no-server.json'),...extraEnv},stdio:'ignore',windowsHide:true});
  children.push(child);
  for(let attempt=0;attempt<60;attempt++){
   try{if((await (await fetch('http://127.0.0.1:'+port+'/health')).json()).app==='TNotes')return child;}catch{}
@@ -209,8 +209,46 @@ function browserPreferences(){
   const deadline=Date.now()+15000;while(!fs.existsSync(chosen)){if(Date.now()>deadline)throw Error('Automatic daily backup was not written');await new Promise(resolve=>setTimeout(resolve,250));}
   assert(JSON.parse(fs.readFileSync(chosen,'utf8')).data.items.length===19,'Automatic backup is incomplete');
 
+  // Web addresses in notes are links that open in the default browser. This backend writes what it
+  // would open to a file instead of starting a browser.
+  const portC=await freePort(),dataC=path.join(work,'c'),openLog=path.join(work,'opened.txt');
+  await startBackend(portC,dataC,{TNOTES_OPEN_LOG:openLog});
+  const c=await open(portC);
+  await c.locator('#auth-mode').click();
+  await c.locator('#username').fill('qa-links');await c.locator('#master').fill(master);await c.locator('#master-confirm').fill(master);await c.locator('#remember').uncheck();
+  await c.locator('#auth-submit').click();await c.locator('#workspace').waitFor({state:'visible',timeout:20000});
+  const linkBody='官网：https://example.com/a?b=1&c=2。\n文档 www.example.org/docs/(v2) 和 (https://wiki.example.net/x)\n不是链接：app.js';
+  await addRecord(c,'Links',async()=>{await c.locator('#body').fill(linkBody);});
+  await addRecord(c,'Bank',async()=>{await c.locator('#kind').selectOption('password');await c.locator('#account').fill('qa');await c.locator('#site').fill('bank.example.com');});
+  await addRecord(c,'Plain',async()=>{await c.locator('#body').fill('没有网址 app.js');});
+  await c.locator('[data-quick-filter="all"]').click();
+  assert(await row(c,'Plain').getByRole('button',{name:'用默认浏览器打开链接',exact:true}).count()===0,'A record without an address offers to open a link');
+  await row(c,'Links').locator('.record-open').click();await c.locator('#read-content').waitFor({state:'visible'});
+  const shown=await c.locator('#read-body a.web-link').evaluateAll(links=>links.map(a=>a.textContent+' -> '+a.href));
+  assert(JSON.stringify(shown)===JSON.stringify(['https://example.com/a?b=1&c=2 -> https://example.com/a?b=1&c=2','www.example.org/docs/(v2) -> https://www.example.org/docs/(v2)','https://wiki.example.net/x -> https://wiki.example.net/x']),'Links in a note regressed: '+JSON.stringify(shown));
+  assert(await c.locator('#read-body').textContent()===linkBody,'Linking changed the note text');
+  const before=c.url();
+  await c.locator('#read-body a.web-link').first().click();await toast(c,'已用默认浏览器打开');
+  assert(c.url()===before,'Clicking a link navigated the notes window');
+  await c.keyboard.press('Escape');
+  await row(c,'Bank').getByRole('button',{name:'用默认浏览器打开链接',exact:true}).click();await toast(c,'已用默认浏览器打开');
+  await row(c,'Bank').locator('.record-open').click();
+  assert(await c.locator('#read-site a.web-link').getAttribute('href')==='https://bank.example.com/','A bare website was not linked');
+  assert(fs.readFileSync(openLog,'utf8')==='https://example.com/a?b=1&c=2\nhttps://bank.example.com/\n','Opened addresses regressed: '+fs.readFileSync(openLog,'utf8'));
+  // The backend opens web addresses only, and only for the notes page itself.
+  const refused=await c.evaluate(async()=>{
+   const csrf=document.querySelector('meta[name="tnotes-csrf"]').content,send=(url,headers)=>fetch('/api/open-url',{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify({url})}).then(r=>r.status);
+   const statuses=[];
+   for(const url of ['javascript:alert(1)','file:///C:/Windows/win.ini','https://user:pw@example.com/','https://exa mple.com','ms-settings:'])statuses.push(await send(url,{'X-TNotes-CSRF':csrf}));
+   statuses.push(await send('https://example.com/',{}));
+   return statuses;
+  });
+  assert(JSON.stringify(refused)==='[400,400,400,400,400,403]','Unsafe or foreign open requests were not refused: '+JSON.stringify(refused));
+  assert(fs.readFileSync(openLog,'utf8').split('\n').filter(Boolean).length===2,'A refused address was opened');
+  await c.context().close();
+
   assert(errors.length===0,errors.join('\n'));
-  console.log(JSON.stringify({browser_password_saving_off:'passed',fixed_layout:'passed',messages:'passed',shortcuts:'passed',search_tag_site:'passed',trash_restore:'passed',prompt_variables:'passed',backup_folder_retention:'passed',automatic_backup:'passed',layout_toggle_placement:'passed',import_merge:'passed',restore_empty_computer:'passed'}));
+  console.log(JSON.stringify({web_links:'passed',browser_password_saving_off:'passed',fixed_layout:'passed',messages:'passed',shortcuts:'passed',search_tag_site:'passed',trash_restore:'passed',prompt_variables:'passed',backup_folder_retention:'passed',automatic_backup:'passed',layout_toggle_placement:'passed',import_merge:'passed',restore_empty_computer:'passed'}));
  }finally{
   await browser.close();
  }

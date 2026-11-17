@@ -26,6 +26,12 @@ try {
         Add-Content -LiteralPath $log -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' Restored floating toolbar.') -Encoding UTF8
     }
     }
+    elseif ($running.Count -gt 0 -and -not $paused) {
+        # A live process can still have a hidden or non-topmost window. The single-instance
+        # launch path reveals that same owned window; it does not restart or terminate it.
+        & $toolbar
+        if ($LASTEXITCODE -ne 0) { throw 'The running toolbar could not be made visible.' }
+    }
     $notesLauncher = Join-Path $PSScriptRoot 't-notes\Launch.ps1'
     if (Test-Path -LiteralPath $notesLauncher) { & $notesLauncher -BackendOnly | Out-Null }
 } catch {

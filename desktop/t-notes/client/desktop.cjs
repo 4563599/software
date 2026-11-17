@@ -36,6 +36,27 @@ function protectSession(action,input) {
     child.stdin.end(input);
   });
 }
+// Links in notes open in the user's default browser, not in the notes window's own browser profile.
+// Only web addresses are accepted, so a note can never start a program or open a local file.
+function openableUrl(value) {
+  if(typeof value!=='string'||value.length>2048||/[\s\u0000-\u001f\u007f]/.test(value))return null;
+  let target;
+  try { target=new URL(value); } catch { return null; }
+  if(!['http:','https:'].includes(target.protocol)||!target.hostname||target.username||target.password)return null;
+  return target.href;
+}
+function openInBrowser(target) {
+  // Tests set TNOTES_OPEN_LOG to record the request instead of opening a real browser window.
+  if(process.env.TNOTES_OPEN_LOG){fs.appendFileSync(process.env.TNOTES_OPEN_LOG,target+'\n');return;}
+  // On Windows a small helper opens it, so the browser may come to the front (see open-url.ps1).
+  const [command,args]=process.platform==='win32'
+    ? [path.join(process.env.WINDIR||'C:\\Windows','System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-WindowStyle','Hidden','-File',path.join(__dirname,'open-url.ps1'),'-Url',target]]
+    : [process.platform==='darwin'?'open':'xdg-open',[target]];
+  // Not detached: started detached without a console, Windows PowerShell exits without running the script.
+  const child=spawn(command,args,{stdio:'ignore',windowsHide:true});
+  child.on('error',()=>{});
+  child.unref();
+}
 const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath,'utf8')) : {};
 const remote = config.url ? new URL(config.url) : null;
 if (remote && (remote.protocol !== 'https:' || remote.username || remote.password || remote.pathname !== '/')) throw Error('Only HTTPS origin is supported');
@@ -195,6 +216,13 @@ const server=http.createServer(async(req,res)=>{
         if(fs.existsSync(cachePath))fs.copyFileSync(cachePath,cachePath+'.bak');
         fs.renameSync(temp,cachePath);cached=updated;return reply(res,200,{version:cached.version});
       }
+    }
+    if(url.pathname==='/api/open-url') {
+      if(req.method!=='POST')return reply(res,405,{error:'Method not allowed'});
+      const target=openableUrl((await body(req))?.url);
+      if(!target)return reply(res,400,{error:'只能用浏览器打开 http 或 https 开头的网页地址'});
+      openInBrowser(target);
+      return reply(res,200,{opened:target});
     }
     if(url.pathname==='/api/backup') {
       if(req.method==='PUT') {

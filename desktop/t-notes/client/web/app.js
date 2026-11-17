@@ -150,10 +150,10 @@ function showViewer(){
  $('empty-record').hidden=!!r;$('read-content').hidden=!r;
  if(!r){$('kind-label').textContent='备忘录';$('edited').textContent='';$('prompt-tools').hidden=true;return;}
  $('kind-label').textContent=names[r.kind]||'记录';
- $('read-title').textContent=r.title;$('read-body').textContent=r.body||'';
+ renderLinked($('read-title'),r.title);renderLinked($('read-body'),r.body||'');
  $('read-tag').textContent=r.tag||'';$('read-secret').hidden=r.kind!=='password';
  $('read-account').textContent=r.account||'';$('view-password').value=r.password||'';
- $('view-password').type='password';$('read-site').textContent=r.site||'';
+ $('view-password').type='password';renderSite($('read-site'),r.site||'');
  $('read-site-row').hidden=!r.site;$('prompt-tools').hidden=r.kind!=='prompt';
 }
 function resetEditor(){
@@ -254,6 +254,8 @@ function renderList(){
     }));actions.append(button);
    };
    const copyAction=(icon,label,text,secret=false)=>action(icon,label,!!text,()=>copy(text,secret));
+   const link=r.deleted?null:firstLink(r);
+   if(link)action('external-link','用默认浏览器打开链接',true,()=>openLink(link));
    if(!r.deleted){
     if(r.kind==='password'){copyAction('user-round','复制账号',r.account);copyAction('key-round','复制密码',r.password,true);}
     // Copying a template with unfilled {{variables}} is never what is wanted; ask for the values first.
@@ -283,6 +285,52 @@ async function copy(text,secret=false){
  if(secret){clearTimeout(clipboardTimer);clipboardTimer=setTimeout(async()=>{try{if(await navigator.clipboard.readText()===text)await navigator.clipboard.writeText('');}catch{notice('浏览器未允许自动清除剪贴板，请手动覆盖已复制的密码','keep');}},30000);}
 }
 function guarded(fn){return async event=>{try{await fn(event);}catch(e){notice(e.message,'error');}};}
+// Web addresses in notes become links. They open in the default browser through the local backend, since this
+// window runs on its own browser profile, not the one the user browses with.
+const linkPattern=/(?:https?:\/\/|www\.)[^\s<>"'`，。；、！？（）【】《》「」]+/gi;
+const trailing=/[.,;:!?'"。，；：！？…]+$/u;
+function trimLink(text){
+ let value=text.replace(trailing,'');
+ const count=(s,pattern)=>(s.match(pattern)||[]).length;
+ // A closing bracket belongs to the address only when the address also opens one, as in Wikipedia links.
+ while(/[)\]}]$/.test(value)&&count(value,/[)\]}]/g)>count(value,/[([{]/g))value=value.slice(0,-1).replace(trailing,'');
+ return value;
+}
+function linkTarget(text){
+ const value=(text||'').trim();
+ if(!value||/\s/.test(value))return null;
+ try{
+  const url=new URL(/^https?:\/\//i.test(value)?value:'https://'+value);
+  return ['http:','https:'].includes(url.protocol)&&url.hostname.includes('.')&&!url.username&&!url.password?url.href:null;
+ }catch{return null;}
+}
+function firstLink(r){
+ // The website field may be a bare domain; in other text only addresses starting with http(s):// or www. count.
+ const site=linkTarget(r.site);if(site)return site;
+ for(const text of [r.body,r.title])for(const match of (text||'').matchAll(linkPattern)){const href=linkTarget(trimLink(match[0]));if(href)return href;}
+ return null;
+}
+async function openLink(href){await api('/api/open-url',{method:'POST',body:{url:href}});notice('已用默认浏览器打开');}
+function linkElement(label,href){
+ const a=document.createElement('a');a.className='web-link';a.href=href;a.textContent=label;a.title='用默认浏览器打开：'+href;a.rel='noreferrer';
+ const go=event=>{event.preventDefault();guarded(()=>openLink(href))();};
+ a.addEventListener('click',go);a.addEventListener('auxclick',event=>{if(event.button===1)go(event);});
+ return a;
+}
+function renderLinked(element,text){
+ const source=text||'';let last=0;element.replaceChildren();
+ for(const match of source.matchAll(linkPattern)){
+  const label=trimLink(match[0]),href=linkTarget(label);
+  if(!href)continue;
+  if(match.index>last)element.append(source.slice(last,match.index));
+  element.append(linkElement(label,href));last=match.index+label.length;
+ }
+ if(last<source.length)element.append(source.slice(last));
+}
+function renderSite(element,site){
+ const href=linkTarget(site);
+ if(href)element.replaceChildren(linkElement(site.trim(),href));else element.textContent=site||'';
+}
 function backupData(raw){
  const data=raw?.format==='tnotes-encrypted-backup-v1'?raw.data:null,p=data?.profile;
  const envelope=e=>!!e&&typeof e.iv==='string'&&typeof e.data==='string';

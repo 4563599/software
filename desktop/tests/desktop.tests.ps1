@@ -37,5 +37,13 @@ if((@(ConvertFrom-TNotesAnchor -Anchor 'p-1500,900,52,52') -join ',') -ne '-1500
 & (Join-Path $PSScriptRoot 'ai-process-cleanup.tests.ps1')
 & (Join-Path $PSScriptRoot 'configure-notes.tests.ps1')
 & (Join-Path $PSScriptRoot 'notes-window-state.tests.ps1')
+& (Join-Path $PSScriptRoot 'toolbar-startup.tests.ps1')
+& (Join-Path $PSScriptRoot 'toolbar-reveal.tests.ps1')
+& (Join-Path $PSScriptRoot 'dev-tools.tests.ps1')
+# The link helper of the notes backend refuses anything that is not a web address, before opening anything.
+foreach($address in 'file:///C:/Windows/win.ini','javascript:alert(1)','https://user:pw@example.com/','ms-settings:'){
+ $helper=Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+(Join-Path $root 't-notes\client\open-url.ps1')+'" -Url "'+$address+'"') -WindowStyle Hidden -Wait -PassThru
+ if($helper.ExitCode -ne 2){throw "The link helper did not refuse: $address"}
+}
 & (Join-Path $root 'Install.ps1') -DryRun | Out-Null
-Write-Output 'PASS: Source parsing, C / AS selection, protected notes, and installation dry-run.'
+Write-Output 'PASS: Source parsing, C / AS selection, dev tools, protected notes, and installation dry-run.'

@@ -1,0 +1,562 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text.RegularExpressions;
+
+namespace Codex.Ble
+{
+    public sealed class Record
+    {
+        public long Id;
+        public DateTimeOffset? SendTime, ReceiveTime, Time;
+        public Frame Send, Receive;
+        public string State, Error, Caller, Raw, Device, Event;
+        public double? ElapsedMs, SdkElapsedMs;
+        public int? Sequence, Command;
+        internal string Scope, SendTransport, StartKey;
+        internal int? EnvelopeSequence, EnvelopeFlags;
+        internal bool ExpectsReply = true;
+    }
+
+    public sealed class BleLogParser
+    {
+        private const int RecentLimit = 2048;
+        private const int RawLimit = 12000;
+        private static readonly DateTimeOffset UnixEpoch = new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        private static readonly Regex EpochPrefix = Pattern(@"^\s*(?<time>\d{9,12}\.\d+)\s+(?:\S+\s+)?(?<pid>\d+)\s+(?<tid>\d+)\s+[VDIWEAFS]\s+[^:]+:\s?(?<body>.*)$");
+        private static readonly Regex ThreadPrefix = Pattern(@"^\s*(?<time>(?:\d{4}-)?\d\d-\d\d\s+\d\d:\d\d:\d\d\.\d+)\s+(?:\S+\s+)?(?<pid>\d+)\s+(?<tid>\d+)\s+[VDIWEAFS]\s+[^:]+:\s?(?<body>.*)$");
+        private static readonly Regex StudioPrefix = Pattern(@"^\s*(?<time>\d{4}-\d\d-\d\d\s+\d\d:\d\d:\d\d\.\d+)\s+(?<pid>\d+)-(?<tid>\d+)\s+\S+\s+\S+\s+[VDIWEAFS]\s+(?<body>.*)$");
+        // The SDK's own log files (and the dev tools log viewer, which pads the tag): "[2026-11-20 13:24:30.544] [SEND] │...".
+        private static readonly Regex FilePrefix = Pattern(@"^\s*\[(?<time>\d{4}-\d\d-\d\d\s+\d\d:\d\d:\d\d(?:\.\d+)?)\]\s+\[(?<label>[A-Za-z_]+)\]\s*(?<body>.*)$");
+        private static readonly Regex Label = Pattern(@"^\[(?:SEND|RECV|WARN|ERROR|CONNECT|DISCONNECT|DEBUG|INFO)\]\s*(?:\[(?<device>[^\]]+)\]\s*)?");
+        private static readonly Regex Marker = Pattern(@"(?:^|\b(?:event|operation)=)(?<event>command_start|send_frame|receive_frame|command_success|command_failed|command_failure|command_retry|command_timeout|response_timeout|connect_failed|connect_timeout|connect_gatt_failed|connect_setup_failed|gatt_disconnected_unexpectedly|frame_parse_error|frame_parse_failed|parse_error|parse_failed|(?:[a-z0-9_]+_)?report_parse_failed|fault_codes_parse_failed)(?=[.\s]|$)");
+        private static readonly Regex DeviceValue = Pattern(@"\b(?:device|identifier|mac)=(?:""(?<value>[^""]+)""|'(?<value>[^']+)'|(?<value>[^\s]+))");
+        private static readonly Regex BytesValue = Pattern(@"(?:^|\s)(?:payload=|data=)?(?<hex>0x[\da-f]+(?:[ \t]+[\da-f]{2,}(?=[ \t]|$))*)", RegexOptions.IgnoreCase);
+        private static readonly Regex BareBytes = Pattern(@"^(?:0x)?(?<hex>FB[ \t]*(?:03|06)(?:[ \t]*[\da-f]{2}){3,})[ \t]*$");
+        private static readonly Regex BarePayload = Pattern(@"\b(?:payload|data)=(?<hex>(?:FB|ACDC)[\da-f]+)(?=\s|$)");
+        private static readonly Regex ErrorCode = Pattern(@"\bError code:\s*(?<code>[A-Z][A-Z0-9_]*)(?:\s*\((?<number>-?\d+)\))?", RegexOptions.IgnoreCase);
+        private readonly Dictionary<string, Block> blocks = new Dictionary<string, Block>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Start> starts = new Dictionary<string, Start>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<Record> recent = new List<Record>();
+        private readonly Dictionary<string, long> sessions = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        private string lastStream = "";
+        private long nextId, nextStart;
+
+        public IEnumerable<Record> Feed(string line)
+        {
+            var changed = new List<Record>();
+            if (String.IsNullOrEmpty(line)) return changed;
+
+            string body, stream, pid;
+            DateTimeOffset? time;
+            SplitLine(line.TrimEnd('\r', '\n'), out body, out stream, out pid, out time);
+            body = body.TrimStart();
+            Block block;
+            blocks.TryGetValue(stream, out block);
+
+            if (body.StartsWith("┌", StringComparison.Ordinal))
+            {
+                End(stream, block, changed);
+                blocks[stream] = new Block(true, pid, time);
+                blocks[stream].Add(line, "");
+                return changed;
+            }
+            if (body.StartsWith("└", StringComparison.Ordinal))
+            {
+                if (block != null) block.Add(line, "");
+                End(stream, block, changed);
+                return changed;
+            }
+
+            body = body.TrimStart('│', '┃', ' ');
+            string device;
+            string message = ClearLabel(body, out device);
+            string kind = EventKind(message, body);
+            bool standalone = false;
+            if (kind == null)
+            {
+                string bytes = BareBytes.Match(message).Groups["hex"].Value;
+                if (bytes.Length > 0)
+                {
+                    bytes = Regex.Replace(bytes, @"[ \t]", "");
+                    // A bare frame pasted on its own line: requests (0xA0-0xBF) go out from the app, the rest come back.
+                    int command = Convert.ToInt32(bytes.Substring(8, 2), 16);
+                    kind = command >= 0xA0 && command <= 0xBF ? "send_frame" : "receive_frame";
+                    message = kind + " 0x" + bytes;
+                    standalone = true;
+                }
+            }
+            if (kind != null)
+            {
+                if (block == null || block.Kind != null)
+                {
+                    bool box = block != null && block.Box;
+                    End(stream, block, changed);
+                    block = new Block(box, pid, time);
+                    blocks[stream] = block;
+                }
+                block.Time = block.Time ?? time;
+                block.Kind = kind;
+                block.Device = device;
+                block.Header = message;
+                block.Add(line, message);
+            }
+            else if (block != null)
+            {
+                if (block.Box || IsDetail(message))
+                    block.Add(line, message);
+                else
+                {
+                    End(stream, block, changed);
+                    return changed;
+                }
+            }
+
+            if (block != null && !block.Box && (standalone || IsComplete(block))) End(stream, block, changed);
+            return changed;
+        }
+
+        public IEnumerable<Record> Flush()
+        {
+            var changed = new List<Record>();
+            foreach (var entry in blocks.ToArray()) End(entry.Key, entry.Value, changed);
+            return changed;
+        }
+
+        public void Clear()
+        {
+            blocks.Clear();
+            recent.Clear();
+            starts.Clear();
+            sessions.Clear();
+            lastStream = "";
+            nextId = nextStart = 0;
+        }
+
+        private static Regex Pattern(string value, RegexOptions options = RegexOptions.IgnoreCase)
+        {
+            return new Regex(value, options | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+        }
+
+        private void SplitLine(string line, out string body, out string stream, out string pid, out DateTimeOffset? time)
+        {
+            Match file = FilePrefix.Match(line);
+            if (file.Success)
+            {
+                // A log file writes each block whole, so one stream is enough. The tag sits outside the box here;
+                // it is moved inside ("│[SEND] ...") to read the same as logcat.
+                body = file.Groups["body"].Value;
+                if (body.StartsWith("│", StringComparison.Ordinal))
+                    body = "│[" + file.Groups["label"].Value.ToUpperInvariant() + "] " + body.Substring(1);
+                stream = pid = "file";
+                lastStream = stream;
+                DateTimeOffset written;
+                time = DateTimeOffset.TryParse(file.Groups["time"].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out written) ? written : (DateTimeOffset?)null;
+                return;
+            }
+            Match match = EpochPrefix.Match(line);
+            bool epoch = match.Success;
+            if (!match.Success) match = StudioPrefix.Match(line);
+            if (!match.Success) match = ThreadPrefix.Match(line);
+            time = null;
+            if (!match.Success)
+            {
+                body = line;
+                stream = lastStream;
+                pid = stream.Split('/')[0];
+                return;
+            }
+
+            body = match.Groups["body"].Value;
+            pid = match.Groups["pid"].Value;
+            stream = pid + "/" + match.Groups["tid"].Value;
+            lastStream = stream;
+            string stamp = match.Groups["time"].Value;
+            decimal seconds;
+            DateTimeOffset date;
+            if (epoch && Decimal.TryParse(stamp, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out seconds))
+            {
+                try { time = UnixEpoch.AddTicks((long)(seconds * TimeSpan.TicksPerSecond)); }
+                catch (ArgumentOutOfRangeException) { }
+            }
+            else if (DateTimeOffset.TryParse(stamp, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out date))
+                time = date;
+        }
+
+        private static string ClearLabel(string body, out string device)
+        {
+            Match label = Label.Match(body);
+            string message = label.Success ? body.Substring(label.Length) : body;
+            device = label.Groups["device"].Value;
+            if (String.IsNullOrEmpty(device)) device = DeviceValue.Match(message).Groups["value"].Value;
+            return message;
+        }
+
+        private static string EventKind(string text, string body)
+        {
+            string evt = Marker.Match(text).Groups["event"].Value.ToLowerInvariant();
+            if (evt == "connect_timeout" || Contains(text, "The BLE connection timed out.")) return "connection_timeout";
+            if (evt == "connect_failed" || evt == "connect_gatt_failed" || evt == "connect_setup_failed" ||
+                evt == "gatt_disconnected_unexpectedly" || Contains(text, "Disconnecting GATT after connection failure.") ||
+                Contains(text, "The BLE connection failed.") || Contains(text, "The BLE connection setup failed.") ||
+                Contains(text, "Android could not start the GATT connection.") || Contains(text, "The device disconnected unexpectedly."))
+                return "connection_failed";
+            if (evt.Length != 0) return evt;
+            if (Contains(text, "The Bluetooth command failed.") || Contains(text, "The Bluetooth command was rejected")) return "command_failed";
+            if (Contains(text, "The Bluetooth command failed and will be retried") || Contains(text, "The command will be retried. retry=")) return "command_retry";
+            if (Contains(text, "The received BLE frame could not be parsed") || Contains(text, "The received BLE frame has an invalid length") ||
+                Contains(text, "The received BLE packet has an invalid multipart index")) return "frame_parse_error";
+            if (Contains(text, "The multipart BLE response timed out")) return "multipart_timeout";
+            if (Contains(text, "An unsolicited device event could not be decrypted")) return "device_event_decrypt_failed";
+            if ((body.StartsWith("[CONNECT]", StringComparison.OrdinalIgnoreCase) || body.StartsWith("[DISCONNECT]", StringComparison.OrdinalIgnoreCase)) &&
+                (Contains(text, "The GATT link is ready") || Contains(text, "gatt_connection_ready") || Contains(text, "Connection state changed: Connected -> Authenticated") ||
+                 Contains(text, "gatt_disconnected") ||
+                 Contains(text, "Connection state changed: Connected -> Disconnected") || Contains(text, "Connection state changed: Authenticated -> Disconnected")))
+                return "session_boundary";
+            return null;
+        }
+
+        private static bool Contains(string text, string part)
+        {
+            return text.IndexOf(part, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsDetail(string text)
+        {
+            return Regex.IsMatch(text, @"^(?:Cmd=|version=|commandSequence=|responseCmd=|length=|payload=|data=|caller=|Error code:|Description:|Explanation:|Location:|0x[\da-f]+$)", RegexOptions.IgnoreCase);
+        }
+
+        private static bool IsComplete(Block block)
+        {
+            string text = block.Text;
+            switch (block.Kind)
+            {
+                case "command_start": return Contains(text, "caller=");
+                case "send_frame":
+                case "receive_frame": return LocalInteger(text, "length").HasValue &&
+                    (BytesValue.IsMatch(text) || BarePayload.IsMatch(text) || Contains(text, "<redacted>"));
+                case "command_success": return LocalInteger(text, "commandSequence").HasValue;
+                case "command_failed":
+                case "command_failure":
+                case "connection_failed":
+                case "connection_timeout": return Contains(text, "Location:") || Contains(text, "errorCode=");
+                case "command_timeout":
+                case "response_timeout": return LocalInteger(text, "commandSequence").HasValue || ErrorCode.IsMatch(text);
+                case "frame_parse_error":
+                case "frame_parse_failed":
+                case "parse_error":
+                case "parse_failed": return Contains(text, "The received BLE") || LocalInteger(text, "length").HasValue || LocalInteger(text, "commandSequence").HasValue;
+                default: return true;
+            }
+        }
+
+        private void End(string stream, Block block, List<Record> changed)
+        {
+            blocks.Remove(stream);
+            if (block == null || block.Kind == null) return;
+            string text = block.Text;
+            string device = block.Device ?? "";
+            if (device.Length == 0) device = DeviceValue.Match(text).Groups["value"].Value;
+            string baseScope = block.Pid + "/" + Regex.Replace(device, @"^mac:", "", RegexOptions.IgnoreCase);
+            long session;
+            sessions.TryGetValue(baseScope, out session);
+            if (block.Kind == "session_boundary")
+            {
+                if (device.Length != 0) sessions[baseScope] = session + 1;
+                return;
+            }
+
+            string scope = baseScope + "/" + session.ToString(CultureInfo.InvariantCulture);
+            int? seq = LocalInteger(text, "commandSequence") ?? LocalInteger(text, "seq");
+            int? cmd = LocalInteger(text, "Cmd");
+            string startKey = Key(scope, seq, cmd);
+            string caller = LocalString(text, "caller");
+            if (block.Kind == "command_start")
+            {
+                if (!seq.HasValue || !cmd.HasValue) return;
+                if (starts.Count >= RecentLimit && !starts.ContainsKey(startKey)) starts.Remove(starts.First().Key);
+                starts[startKey] = new Start { Id = (++nextStart).ToString(CultureInfo.InvariantCulture), Caller = caller, Raw = String.Join("\n", block.Lines),
+                    ExpectsReply = !Contains(text, "responseExpected=false"), Time = block.Time, Scope = scope, Sequence = seq, Command = cmd };
+                return;
+            }
+
+            if (block.Kind == "send_frame" || block.Kind == "receive_frame")
+            {
+                Transfer(block, scope, device, seq, cmd, caller, changed);
+                return;
+            }
+            if (block.Kind == "command_success")
+            {
+                List<Record> candidates = recent.Where(r => r.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) && r.Send != null &&
+                    r.Sequence == seq && r.Command == cmd && r.ExpectsReply && r.State != "Success" &&
+                    (r.State == "Waiting" || r.State == "Received" || r.State == "Redacted" || r.State == "Truncated" || r.State == "SecureEnvelope") &&
+                    (r.Receive == null || ((!LocalInteger(text, "responseCmd").HasValue || r.Receive.Command == LocalInteger(text, "responseCmd")) &&
+                     (!LocalInteger(text, "responseBusinessSeq").HasValue || r.Receive.Sequence == LocalInteger(text, "responseBusinessSeq"))))).ToList();
+                if (seq.HasValue && cmd.HasValue && candidates.Count == 1)
+                {
+                    Record row = candidates[0];
+                    if (row.State != "Redacted" && row.State != "Truncated" && row.State != "SecureEnvelope") row.State = "Success";
+                    row.SdkElapsedMs = row.SdkElapsedMs ?? LocalInteger(text, "durationMs");
+                    Apply(row, block, changed);
+                }
+                return;
+            }
+
+            Report(block, scope, device, seq, cmd, changed);
+            if (device.Length != 0 && block.Kind == "connection_failed") sessions[baseScope] = session + 1;
+        }
+
+        private void Transfer(Block block, string scope, string device, int? seq, int? cmd, string caller, List<Record> changed)
+        {
+            string text = block.Text;
+            string rawBytes = BytesValue.Match(text).Groups["hex"].Value;
+            if (rawBytes.Length == 0)
+            {
+                rawBytes = BarePayload.Match(text).Groups["hex"].Value;
+                if (rawBytes.Length > 0) rawBytes = "0x" + rawBytes;
+            }
+            bool redacted = Contains(text, "<redacted>");
+            bool truncated = Contains(text, "truncated=true");
+            bool secure = Contains(text, "protocol=secure-envelope") || rawBytes.StartsWith("0xACDC", StringComparison.OrdinalIgnoreCase);
+            string transport = secure ? "secure" : "plain";
+            int? envelopeSequence = LocalInteger(text, "No");
+            int? envelopeFlags = LocalInteger(text, "flags");
+            int? visibleLength = LocalInteger(text, "length");
+            if (rawBytes.Length == 0 && !redacted && !truncated && !cmd.HasValue && !secure) return;
+            Frame frame = Protocol.Decode(redacted ? "<redacted>" : rawBytes);
+            if (secure)
+            {
+                // Non-business envelope fields must not masquerade as decrypted command fields.
+                frame.Command = cmd;
+                frame.Sequence = seq;
+                frame.Address = null;
+            }
+            else
+            {
+                frame.Command = frame.Command ?? cmd;
+                frame.Sequence = frame.Sequence ?? seq;
+            }
+            if (redacted || truncated)
+            {
+                frame.IsRedacted = redacted;
+                frame.ChecksumOk = null;
+                frame.Error = redacted ? "SDK 已遮盖原始报文" : "SDK 日志已截断，无法核对完整报文";
+            }
+
+            bool mismatch = frame.Bytes != null && frame.Bytes.Length > 0 && visibleLength.HasValue && !truncated && !redacted && frame.Bytes.Length != visibleLength.Value;
+            bool malformed = !redacted && !truncated && !secure && (frame.ChecksumOk == false || mismatch || !String.IsNullOrEmpty(frame.Error));
+            if (mismatch) frame.Error = "日志记录的报文长度与可见字节数不一致";
+            if (malformed && String.IsNullOrEmpty(frame.Error)) frame.Error = "报文 CRC 校验失败";
+            // The secure envelope may be valid even where its business bytes aren't available.
+            string quality = redacted ? "Redacted" : truncated ? "Truncated" : malformed ? "ParseError" : secure ? "SecureEnvelope" : null;
+            if (block.Kind == "send_frame")
+            {
+                Start start;
+                starts.TryGetValue(Key(scope, frame.Sequence, frame.Command), out start);
+                var matches = MatchingStarts(scope, frame.Sequence, frame.Command, start).ToList();
+                Record row = matches.Count == 1 ? matches[0] : NewRecord(scope, device, block.Time, changed);
+                if (row.Raw == null && start != null) row.Raw = start.Raw;
+                row.Send = frame;
+                row.SendTime = block.Time;
+                row.Caller = caller ?? (start == null ? null : start.Caller);
+                row.StartKey = start == null ? null : start.Id;
+                row.ExpectsReply = start == null || start.ExpectsReply;
+                row.SendTransport = transport;
+                row.EnvelopeSequence = envelopeSequence;
+                row.EnvelopeFlags = envelopeFlags;
+                row.Sequence = frame.Sequence;
+                row.Command = frame.Command;
+                row.State = quality ?? (row.ExpectsReply ? "Waiting" : "Sent");
+                row.Error = quality == null ? null : frame.Error;
+                Apply(row, block, changed);
+                return;
+            }
+
+            string route = LocalString(text, "route") ?? "";
+            bool response = route.Length == 0 || route.Equals("response", StringComparison.OrdinalIgnoreCase);
+            List<Record> pending = response
+                ? recent.Where(r => r.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) && r.Send != null && r.Receive == null &&
+                    r.ExpectsReply && r.SendTransport == transport && (r.State == "Waiting" || r.State == "Truncated" || r.State == "Redacted" || r.State == "SecureEnvelope") &&
+                    IsExpectedReply(r, frame, envelopeSequence, envelopeFlags)).ToList()
+                : new List<Record>();
+            Record target = pending.Count == 1 ? pending[0] : NewRecord(scope, device, block.Time, changed);
+            target.Receive = frame;
+            target.ReceiveTime = block.Time;
+            target.Sequence = target.Sequence ?? frame.Sequence;
+            target.Command = target.Command ?? frame.Command;
+            target.Caller = target.Caller ?? caller;
+            target.SdkElapsedMs = LocalInteger(text, "responseTimeMs");
+            if (target.SendTime.HasValue && target.ReceiveTime.HasValue && target.ReceiveTime >= target.SendTime)
+                target.ElapsedMs = (target.ReceiveTime.Value - target.SendTime.Value).TotalMilliseconds;
+            target.State = quality ?? (target.Send != null ? "Received" :
+                route.Equals("device_event", StringComparison.OrdinalIgnoreCase) ? "DeviceEvent" :
+                route.Equals("handshake_event", StringComparison.OrdinalIgnoreCase) ? "Handshake" :
+                route.Equals("invalid_event", StringComparison.OrdinalIgnoreCase) ? "ParseError" : "Unpaired");
+            target.Error = quality != null || target.State == "ParseError" ? frame.Error : null;
+            if (route.Equals("invalid_event", StringComparison.OrdinalIgnoreCase))
+            {
+                target.State = "ParseError";
+                target.Error = "SDK 无法解析或解密该设备事件";
+            }
+            // A V6 application reply can independently carry a device-reported failure bit.
+            if (quality == null && frame.ChecksumOk == true && frame.Command == 0x0A && frame.Bytes != null && frame.Bytes.Length >= 13 && (frame.Bytes[7] & 0x08) != 0)
+            {
+                target.State = "Failure";
+                target.Error = "充电桩应答标记执行失败";
+            }
+            Apply(target, block, changed);
+        }
+
+        private IEnumerable<Record> MatchingStarts(string scope, int? seq, int? cmd, Start start)
+        {
+            if (start == null) return Enumerable.Empty<Record>();
+            return recent.Where(r => r.StartKey == start.Id && r.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) &&
+                r.Sequence == seq && r.Command == cmd && r.Receive == null && r.ExpectsReply && r.State != "Timeout" && r.State != "Failure");
+        }
+
+        private static bool IsExpectedReply(Record row, Frame frame, int? number, int? flags)
+        {
+            if (row.SendTransport == "secure" && row.EnvelopeSequence.HasValue && number.HasValue)
+                return row.EnvelopeSequence == number && row.EnvelopeFlags.HasValue && row.EnvelopeFlags == flags;
+            if (!row.Send.Sequence.HasValue || row.Send.Sequence != frame.Sequence || !row.Send.Command.HasValue || !frame.Command.HasValue) return false;
+            int request = row.Send.Command.Value;
+            int expected = request >= 0xA0 && request <= 0xBF ? request - 0xA0 : request;
+            return expected == frame.Command.Value && (!row.Send.Address.HasValue || !frame.Address.HasValue || row.Send.Address == frame.Address);
+        }
+
+        private void Report(Block block, string scope, string device, int? seq, int? cmd, List<Record> changed)
+        {
+            string text = block.Text;
+            Match error = ErrorCode.Match(text);
+            string code = error.Groups["code"].Value;
+            if (code.Length == 0) code = LocalString(text, "errorCode") ?? "";
+            bool connection = block.Kind == "connection_failed" || block.Kind == "connection_timeout";
+            bool timeout = block.Kind == "command_timeout" || block.Kind == "response_timeout" || block.Kind == "multipart_timeout" ||
+                block.Kind == "connection_timeout" || code.Equals("CONNECT_TIMEOUT", StringComparison.OrdinalIgnoreCase) || code == "-3001" ||
+                code.Equals("RESPONSE_TIMEOUT", StringComparison.OrdinalIgnoreCase) || code == "-1003";
+            bool parse = Contains(block.Kind, "parse") || block.Kind == "device_event_decrypt_failed";
+            bool retry = block.Kind == "command_retry";
+            bool hasKey = seq.HasValue && cmd.HasValue;
+            string location = PrefixValue(block.Messages, "Location:");
+            List<Record> matches = new List<Record>();
+            if (!connection && !parse && !retry && (hasKey || (device.Length != 0 && location != null)))
+                matches = recent.Where(r => r.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) && r.Send != null &&
+                    r.State != "Failure" && r.State != "Timeout" && (!timeout || r.Receive == null) &&
+                    (hasKey ? r.Sequence == seq && (r.Command == cmd || (block.Kind == "multipart_timeout" && r.Command.HasValue && r.Command >= 0xA0 && r.Command <= 0xBF && r.Command - 0xA0 == cmd)) :
+                     SameCaller(r.Caller, location) && IsRecent(r, block.Time))).ToList();
+
+            Record row = matches.Count == 1 ? matches[0] : NewRecord(scope, device, block.Time, changed);
+            if (row.Send == null && !connection && !parse && !retry && (hasKey || (device.Length != 0 && location != null)))
+            {
+                var requests = starts.Values.Where(s => s.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) &&
+                    (hasKey ? s.Sequence == seq && s.Command == cmd : SameCaller(s.Caller, location) && IsRecent(s.Time, block.Time))).ToList();
+                if (requests.Count == 1)
+                {
+                    row.Sequence = requests[0].Sequence;
+                    row.Command = requests[0].Command;
+                    row.Caller = requests[0].Caller;
+                }
+            }
+            row.Sequence = row.Sequence ?? seq;
+            row.Command = row.Command ?? cmd;
+            row.Caller = row.Caller ?? location;
+            row.State = parse ? "ParseError" : retry ? "Retry" : timeout ? "Timeout" : "Failure";
+            if (connection) row.SdkElapsedMs = LocalInteger(text, "connectionDurationMs");
+            string explanation = PrefixValue(block.Messages, "Explanation:");
+            if (connection && explanation == null && code.Equals("SMP_LINK_NOT_SECURED", StringComparison.OrdinalIgnoreCase))
+                explanation = "Android SMP 安全链路未建立";
+            row.Error = code.Length > 0 ? code + (explanation == null ? "" : " · " + explanation) : block.Header;
+            Apply(row, block, changed);
+        }
+
+        private static bool IsRecent(Record row, DateTimeOffset? time) { return IsRecent(row.ReceiveTime ?? row.SendTime, time); }
+
+        private static bool IsRecent(DateTimeOffset? earlier, DateTimeOffset? later)
+        {
+            if (!earlier.HasValue || !later.HasValue) return false;
+            double age = (later.Value - earlier.Value).TotalSeconds;
+            return age >= 0 && age < 120;
+        }
+
+        private static bool SameCaller(string left, string right)
+        {
+            if (String.IsNullOrEmpty(left) || String.IsNullOrEmpty(right)) return false;
+            return left.Split('(')[0].Equals(right.Split('(')[0], StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string PrefixValue(IEnumerable<string> lines, string prefix)
+        {
+            string line = lines.FirstOrDefault(s => s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            return line == null ? null : line.Substring(prefix.Length).Trim();
+        }
+
+        private Record NewRecord(string scope, string device, DateTimeOffset? time, List<Record> changed)
+        {
+            var row = new Record { Id = ++nextId, Scope = scope, Device = device, Time = time };
+            if (recent.Count == RecentLimit) recent.RemoveAt(0);
+            recent.Add(row);
+            changed.Add(row);
+            return row;
+        }
+
+        private static void Apply(Record row, Block block, List<Record> changed)
+        {
+            row.Event = block.Kind;
+            string addition = String.Join("\n", block.Lines);
+            string raw = String.IsNullOrEmpty(row.Raw) ? addition : row.Raw + "\n" + addition;
+            row.Raw = raw.Length <= RawLimit ? raw : raw.Substring(raw.Length - RawLimit);
+            row.Time = row.Time ?? block.Time;
+            if (!changed.Contains(row)) changed.Add(row);
+        }
+
+        private static string Key(string scope, int? seq, int? cmd) { return scope + "/" + seq + "/" + cmd; }
+
+        private static string LocalString(string text, string key)
+        {
+            Match match = Regex.Match(text, @"(?<![\w])" + Regex.Escape(key) + @"=(?<value>[^\s│]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            return match.Success ? match.Groups["value"].Value : null;
+        }
+
+        private static int? LocalInteger(string text, string key)
+        {
+            string value = LocalString(text, key);
+            int parsed;
+            if (value == null) return null;
+            if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                return Int32.TryParse(value.Substring(2).TrimEnd('.', ','), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out parsed) ? (int?)parsed : null;
+            return Int32.TryParse(value.TrimEnd('.', ','), NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed) ? (int?)parsed : null;
+        }
+
+        private sealed class Block
+        {
+            public readonly bool Box;
+            public readonly string Pid;
+            public readonly List<string> Lines = new List<string>();
+            public readonly List<string> Messages = new List<string>();
+            public string Kind, Device, Header;
+            public DateTimeOffset? Time;
+            private int length;
+            public string Text { get { return String.Join("\n", Messages); } }
+
+            public Block(bool box, string pid, DateTimeOffset? time) { Box = box; Pid = pid; Time = time; }
+
+            public void Add(string raw, string message)
+            {
+                if (length >= RawLimit) return;
+                raw = raw.Length <= RawLimit - length ? raw : raw.Substring(0, RawLimit - length);
+                length += raw.Length + 1;
+                Lines.Add(raw);
+                if (message.Length > 0) Messages.Add(message.Length <= RawLimit ? message : message.Substring(0, RawLimit));
+            }
+        }
+
+        private sealed class Start
+        {
+            public string Id, Caller, Scope, Raw;
+            public int? Sequence, Command;
+            public DateTimeOffset? Time;
+            public bool ExpectsReply;
+        }
+    }
+}

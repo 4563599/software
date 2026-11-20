@@ -1,0 +1,738 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace Codex.Ble
+{
+    public sealed class Frame
+    {
+        public byte[] Bytes = new byte[0];
+        public int? Sequence, Command, Address;
+        public string Error = "", Function = "", Result = "";
+        public bool IsRedacted;
+        public bool? ChecksumOk;
+        public List<Field> Fields = new List<Field>();
+        public int[] Pages = new int[0];
+        public string Api = "", Decoder = "", Arguments = "", Steps = "";
+    }
+
+    public sealed class Field
+    {
+        public int Start, End, Page;
+        public string Name, Hex, Value, Explanation;
+        public bool IsHeader;
+        // How the bytes become the value, step by step, for readers who do not read hex fluently.
+        public List<string> Detail = new List<string>();
+    }
+
+    public static class Protocol
+    {
+        private static readonly CultureInfo Culture = CultureInfo.InvariantCulture;
+        private static readonly string[] Work = { "协议未定义，SDK 回退 Available", "Available（可用）", "Preparing（插枪）", "Charging（充电）", "SuspendedEVSE（桩端暂停）", "SuspendedEV（车端暂停）", "Finishing（充电结束）", "Reserved（预约）", "Unavailable（不可用）", "Faulted（故障）" };
+        private static readonly string[] Modes = { "联网运营", "离网计费", "即插即用", "一卡一桩", "定时充电", "蓝牙模式" };
+        // Appendix 5.4 AC charger fault groups Faults[0]-[3] (bit 0 first; null = reserved); Faults[4]-[7] are reserved.
+        private static readonly string[][] AcFaults =
+        {
+            new[] { "继电器过温", "过载", "市电过压", "市电欠压", "市电过流", "市电过频", "市电欠频", "直流漏电流异常 A" },
+            new[] { "紧急停机", "温度过低", "交流漏电流", "输入端子过温", null, "直流漏电流异常 B", "继电器（relay）异常", "接地错误" },
+            new[] { "反相", "漏电流电路异常", null, "三相电压不平衡", "三相电流不平衡", "CT 异常", "电表故障", "CP 异常（低于 2 V）" },
+            new[] { "Bus 电压超标", "直流输出过流", "BMS 检测到错误", "直流接触器异常", "IGBT 异常", "枪锁异常", "枪电流异常", "直流漏电流异常 C" }
+        };
+        // Appendix 5.5 AC charger warnings[0]; warnings[1] is reserved.
+        private static readonly string[][] AcWarnings =
+        {
+            new[] { "输入端子过温降载", "电压降载", "接地警告", "继电器过温降载", null, "拆机告警", null, null }
+        };
+
+        public static Frame Decode(string hex)
+        {
+            var frame = new Frame();
+            string text = (hex ?? "").Trim();
+            frame.IsRedacted = Regex.IsMatch(text, "redact|脱敏|已隐藏|\\*\\*|••", RegexOptions.IgnoreCase);
+            if (frame.IsRedacted)
+            {
+                frame.Function = "报文内容已脱敏";
+                frame.Error = "日志未提供完整报文字节，无法校验或逐字段解析。";
+                return frame;
+            }
+            text = Regex.Replace(Regex.Replace(text, "0x", "", RegexOptions.IgnoreCase), "[\\s:,_-]", "");
+            string prefix = Regex.Match(text, "^[0-9A-Fa-f]*").Value;
+            if (prefix.Length > 2048)
+            {
+                frame.Error = "报文超过协议上限 1024 字节。";
+                return frame;
+            }
+            var b = new byte[prefix.Length / 2];
+            for (int i = 0; i < b.Length; i++) b[i] = Convert.ToByte(prefix.Substring(i * 2, 2), 16);
+            frame.Bytes = b;
+            if (b.Length < 2 || b[0] != 0xFB)
+            {
+                frame.Error = b.Length == 0 ? "没有可读取的十六进制字节。" : "未找到完整的 0xFB 明文业务帧头。";
+                return frame;
+            }
+            if (b[1] != 0x03 && b[1] != 0x06)
+            {
+                frame.Function = "未覆盖的帧版本";
+                frame.Error = "当前解码覆盖 FB/03 和 FB/06 明文帧。";
+                return frame;
+            }
+            bool v6 = b[1] == 0x06;
+            int page = v6 ? 2 : 0;
+            frame.Pages = v6 ? new[] { 2, 3 } : new int[0];
+            Explain(Add(frame, 0, 1, "帧头", "0xFB", "明文业务帧标识。", page, true),
+                "位置 0 的字节 0xFB 是每一帧固定的第一个字节，看到它就知道一帧从这里开始。");
+            Explain(Add(frame, 1, 1, "帧版本", Hex(b[1]), "SDK 支持的明文业务帧版本。", page, true),
+                "位置 1 的字节 " + Hex(b[1]) + " = 十进制 " + b[1] + " → 第 " + b[1] + " 版协议（V0" + b[1] + "）。");
+            if (b.Length > 2)
+            {
+                frame.Sequence = b[2];
+                Explain(Add(frame, 2, 1, "序列号", Hex(b[2]) + "（" + b[2] + "）", "用于同一连接内匹配请求和应答。", page, true),
+                    "位置 2 的字节 " + Hex(b[2]) + " = 十进制 " + b[2] + "。", "APP 每发一条加 1；设备应答时带回同一个序列号，所以请求和应答靠它配对。");
+            }
+            if (b.Length > 3) Explain(Add(frame, 3, 1, "Mode", Hex(b[3]), "V06 文档固定为 0。", page, true), "位置 3 的字节在 V06 协议里固定是 0x00。");
+            if (b.Length > 4)
+            {
+                frame.Command = b[4];
+                bool request = b[4] >= 0xA0 && b[4] <= 0xBF;
+                Explain(Add(frame, 4, 1, "指令", Hex(b[4]), "外层业务指令码。", page, true),
+                    "位置 4 的字节 " + Hex(b[4]) + " = 十进制 " + b[4] + "，决定后面数据域怎么解析。",
+                    request ? "0xA0–0xBF 是 APP 发给设备的请求；设备的应答指令 = " + Hex(b[4]) + " − 0xA0 = " + Hex(b[4] - 0xA0) + "。"
+                        : "小于 0xA0 是设备发给 APP 的；对应的请求指令 = " + Hex(b[4]) + " + 0xA0 = " + Hex(b[4] + 0xA0) + "。");
+            }
+            if (b.Length < 7)
+            {
+                frame.Error = "帧头不完整，无法读取业务数据长度。";
+                return frame;
+            }
+            int length = (int)ReadNumber(b, 5, 2);
+            Explain(Add(frame, 5, 2, "数据域长度", length + " 字节", "两字节小端。总帧长度为数据域长度加 9。", page, true),
+                NumberSteps(b, 5, 2, length).Concat(new[] { "数据域 " + length + " 字节；整帧 = 帧头 7 字节 + 数据域 " + length + " + CRC 2 字节 = " + (length + 9) + " 字节。" }).ToArray());
+            if (prefix.Length != text.Length || text.Length % 2 != 0 || b.Length != length + 9)
+            {
+                frame.Error = "帧不完整或长度不匹配。预期 " + (length + 9) + " 字节，读取到 " + b.Length + " 个完整字节。";
+                return frame;
+            }
+            int crcOffset = b.Length - 2;
+            int crc = 0;
+            for (int i = 0; i < crcOffset; i++)
+            {
+                crc ^= b[i];
+                for (int bit = 0; bit < 8; bit++) crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xA001 : crc >> 1;
+            }
+            frame.ChecksumOk = ReadNumber(b, crcOffset, 2) == (ulong)crc;
+            if (!frame.ChecksumOk.Value) frame.Error = "CRC16 校验不通过，业务字段仅供定位原始字节。";
+            if (v6) DecodePayload(frame, b[4], length);
+            else
+            {
+                frame.Function = "V03 业务字段未覆盖";
+                Raw(frame, 7, length, 0);
+            }
+            int stored = (int)ReadNumber(b, crcOffset, 2);
+            Explain(Add(frame, crcOffset, 2, "CRC16", frame.ChecksumOk.Value ? "通过" : "不通过", "覆盖帧头至数据域末尾，初始值 0，反射多项式 0xA001。计算值（小端） " + (crc & 255).ToString("X2") + " " + (crc >> 8).ToString("X2") + "。", v6 ? 3 : 0, true),
+                "帧里最后两个字节（位置 " + crcOffset + " 的 " + b[crcOffset].ToString("X2") + "、位置 " + (crcOffset + 1) + " 的 " + b[crcOffset + 1].ToString("X2") + "）是校验码，按小端存储：从位置 " + (crcOffset + 1) + " 往回读到位置 " + crcOffset + "，拼成 0x" + stored.ToString("X4") + "。",
+                "把位置 0–" + (crcOffset - 1) + " 的字节按 CRC16（初始值 0，多项式 0xA001）重新算一遍，得到 0x" + crc.ToString("X4") + "。",
+                stored == crc ? "两个值相同 → 传输过程中没有出错，校验通过。" : "两个值不同 → 这一帧在传输或记录时出了错，后面的解析只能参考。");
+            frame.Steps = "1. 位置 0 是帧头 0xFB，位置 1 是版本 " + Hex(b[1]) + "，位置 2 是序列号 " + Hex(b[2]) + "，位置 4 是指令 " + Hex(b[4]) + "。\n"
+                + "2. 位置 5–6 的 " + b[5].ToString("X2") + " " + b[6].ToString("X2") + " 是数据域长度（小端，从位置 6 往回读）= " + length + " 字节；整帧 = 7 + " + length + " + 2 = " + b.Length + " 字节。\n"
+                + "3. 用位置 0–" + (crcOffset - 1) + " 算出 CRC16，和最后两个字节（位置 " + crcOffset + "–" + (crcOffset + 1) + "）比较，结果" + (frame.ChecksumOk.Value ? "通过。" : "不通过。") + "\n4. "
+                + (frame.Steps.Length > 0 ? frame.Steps : "根据位置 4 的指令 " + Hex(b[4]) + " 解析位置 7 开始的数据域。");
+            return frame;
+        }
+
+        private static void DecodePayload(Frame f, int cmd, int n)
+        {
+            switch (cmd)
+            {
+                case 0xAA: case 0x0A: DecodeParameter(f, cmd == 0x0A, n); break;
+                case 0xB6: case 0x16: DecodeFaults(f, cmd == 0x16, n); break;
+                case 0xB7: case 0x17: DecodeRcd(f, cmd == 0x17, n); break;
+                case 0xA8: case 0x08: DecodeRealtime(f, cmd == 0x08, n); break;
+                default: f.Function = "未覆盖的指令 " + Hex(cmd); Raw(f, 7, n, 0); break;
+            }
+        }
+
+        private static void DecodeParameter(Frame f, bool reply, int n)
+        {
+            int page = reply ? 14 : 9;
+            f.Pages = new[] { 9, 13, 14, 2, 3 };
+            f.Function = reply ? "桩信息设置/查询应答" : "桩信息设置/查询";
+            if (n < 4) { Invalid(f, n, page, "参数数据域至少需要 4 字节。"); return; }
+            byte[] b = f.Bytes;
+            int control = b[7], address = b[8], gun = control & (reply ? 3 : 7), count = control >> 4;
+            bool set = (control & (reply ? 4 : 8)) != 0;
+            bool success = !reply || (control & 8) == 0;
+            int m = (int)ReadNumber(b, 9, 2);
+            string action = set ? "设置" : "查询";
+            f.Address = address;
+            f.Arguments = "枪号 " + gun + " · " + action + " · " + count + " 项 · 地址 " + Hex(address) + "（" + address + "）";
+            // One byte holds several small values; each is read from its own bits.
+            var controlSteps = new List<string> { ByteAt(7, control) + "。这 8 个 0/1 从右往左依次叫 bit0 到 bit7，不同的几位表示不同的内容：" };
+            if (reply)
+            {
+                controlSteps.Add(BitPart(control, 0, 2) + "，就是 " + gun + " → 枪号 " + gun + "。");
+                controlSteps.Add(BitPart(control, 2, 1) + " → 0 是查询、1 是设置 → " + action + "。");
+                controlSteps.Add(BitPart(control, 3, 1) + " → 0 是成功、1 是失败 → " + (success ? "成功" : "失败") + "。");
+            }
+            else
+            {
+                controlSteps.Add(BitPart(control, 0, 3) + "，就是 " + gun + " → 枪号 " + gun + "。");
+                controlSteps.Add(BitPart(control, 3, 1) + " → 0 是查询、1 是设置 → " + action + "。");
+            }
+            controlSteps.Add(BitPart(control, 4, 4) + "，就是 " + count + " → 这条消息带 " + count + " 个参数。");
+            Explain(Add(f, 7, 1, "枪号 / 类型 / " + (reply ? "结果 / " : "") + "参数个数", "枪号 " + gun + " · " + action + (reply ? (success ? " · 成功" : " · 失败") : "") + " · " + count + " 项",
+                reply ? "掩码 0x03 枪号，0x04 类型，0x08 结果，0xF0 参数个数。" : "掩码 0x07 枪号，0x08 类型，0xF0 参数个数。", page), controlSteps.ToArray());
+            Describe(f, address, set);
+            string parameter = f.Function.Length > 2 ? f.Function.Substring(2) : f.Function;
+            Explain(Add(f, 8, 1, "参数地址", Hex(address) + "（" + address + "）", "在 §2.9 参数地址列表中匹配。", page),
+                Hex(address) + " = 十进制 " + address + "。", "在 §2.9 参数地址表里查 " + address + " → 「" + parameter + "」。");
+            Explain(Add(f, 9, 2, "参数内容长度", m + " 字节", address == 0xBF ? "两字节小端。键值查询可携带查询键。" : "两字节小端。普通查询请求长度为 0。", page),
+                NumberSteps(b, 9, 2, m).Concat(new[] { m == 0 ? "长度为 0 → 这是查询请求，后面没有参数内容。" : "后面紧跟 " + m + " 字节参数内容（从位置 11 开始）。" }).ToArray());
+            f.Steps = (reply ? "按 §2.10 拆解位置 7 的应答控制字节" : "按 §2.9 拆解位置 7 的请求控制字节") + "，位置 8 的参数地址是 " + Hex(address) + "。";
+            if (count != 1 || m != n - 4)
+            {
+                Error(f, count == 1 ? "参数内容长度与实际字节数不一致。" : "当前字段表支持单参数消息。");
+                Raw(f, 11, n - 4, page);
+                return;
+            }
+            string value = m > 0 ? ParameterValue(f, address, m, page, set) : "";
+            if (reply) f.Result = success ? action + "成功" + (value.Length > 0 ? " · " + value : "") : action + "失败";
+            else if (value.Length > 0) f.Result = "参数值 · " + value;
+        }
+
+        private static void Describe(Frame f, int address, bool set)
+        {
+            string name, method = "", decoder = "";
+            int[] doc;
+            switch (address)
+            {
+                case 0x01: name = "SN 号"; method = set ? "" : "getDeviceId"; decoder = "ENBLEChargeInfoUnPack.parseDeviceId"; doc = new[] { 9 }; break;
+                case 0x02: name = "当前时间"; method = set ? "setV6Time" : "getV6Time"; decoder = "ENBLEChargeInfoUnPack." + (set ? "parseCommonSetResponse" : "parseGetV6DeviceTimeResponse"); doc = new[] { 10 }; break;
+                case 0x0B: name = "最大限制电流"; method = (set ? "set" : "get") + "MaxCurrent"; decoder = "ENBLEChargeInfoUnPack.parseGetDeviceMaxCurrentResponse"; doc = new[] { 10 }; break;
+                case 0x0D: name = "桩模式"; method = (set ? "set" : "get") + "Mode"; decoder = "ENBLEChargeInfoUnPack.parseGetDeviceModeResponse"; doc = new[] { 10 }; break;
+                case 0x1F: name = "ATE 模式操作"; f.Api = "ENBLESystemService.setATEMode"; decoder = "ENBLESystemUnPack.parseCommonSetResponse"; doc = new[] { 11 }; break;
+                case 0x42: name = "负载平衡 / 光伏参数"; method = set ? "" : "getLoadBalance"; decoder = "ENBLEChargeInfoUnPack.parseGetLoadBalanceResponse"; doc = new[] { 11 }; break;
+                case 0x4B: name = "电网类型"; method = (set ? "set" : "get") + "GridType"; decoder = "ENBLEChargeInfoUnPack.parseGetGridTypeResponse"; doc = new[] { 11 }; break;
+                case 0x53: name = "过压阈值"; method = (set ? "set" : "get") + "OverVoltageThreshold"; decoder = "ENBLEChargeInfoUnPack.parseGetOverVoltageThresholdResponse"; doc = new[] { 11 }; break;
+                case 0xBF: name = "键值参数"; doc = new[] { 12, 22, 23 }; break;
+                case 0xC3: name = "状态"; f.Api = "SdkInstallationDetailsBleClient.getConnectedStatus"; decoder = "ENBLEChargeNetworkUnPack.parseGetConnectedStatusResponse"; doc = new[] { 12, 13, 19, 20 }; break;
+                case 0xC5: name = "设备基础信息"; method = set ? "" : "getDeviceBasicInfo"; decoder = "ENBLEChargeInfoUnPack.parseGetDeviceBasicInfoResponse"; doc = new[] { 13 }; break;
+                default: name = "参数 " + Hex(address) + "（字段未覆盖）"; doc = new int[0]; break;
+            }
+            if (method.Length > 0) f.Api = "ENBLEChargeInfoService." + method;
+            if (!set || address == 0x02 || address == 0x1F) f.Decoder = decoder;
+            f.Function = (set ? "设置" : "查询") + name;
+            var pages = new List<int>(doc);
+            foreach (int page in f.Pages) if (!pages.Contains(page)) pages.Add(page);
+            f.Pages = pages.ToArray();
+        }
+
+        private static string ParameterValue(Frame f, int addr, int n, int page, bool set)
+        {
+            byte[] b = f.Bytes;
+            const int p = 11;
+            string value;
+            switch (addr)
+            {
+                case 0x01:
+                    Explain(Add(f, p, n, "SN 号", "已隐藏", "ASCII 固定长度字符串。", 9, false, true),
+                        "SN 是 ASCII 文本：每个字节是一个字符的编码，例如 0x41 是字母 A、0x31 是数字 1。", "这里属于设备身份信息，工具不显示内容。");
+                    return "SN 号已隐藏";
+                case 0x02:
+                    if (n < 6) break;
+                    value = Date(b, p);
+                    Explain(Add(f, p, 6, "当前时间", value, "年、月、日、时、分、秒各一个字节，年份以 2000 为基准。", 10), DateSteps(b, p));
+                    if (n >= 7)
+                    {
+                        int zone = unchecked((sbyte)b[p + 6]);
+                        Explain(Add(f, p + 6, 1, "时区参数", "UTC" + (zone / 2.0).ToString("+0.0;-0.0;+0.0", Culture), "SDK 用有符号数存储半小时偏移。", 10),
+                            new[] { ByteAt(p + 6, b[p + 6]) + "。" }.Concat(SignSteps("位置 " + (p + 6) + " 的字节 " + Hex(b[p + 6]), (ulong)b[p + 6], 1, zone)).Concat(new[]
+                            { "单位是半小时：" + zone + " ÷ 2 = " + (zone / 2.0).ToString("0.0", Culture) + " 小时 → UTC" + (zone / 2.0).ToString("+0.0;-0.0;+0.0", Culture) + "。" }).ToArray());
+                    }
+                    if (n >= 8)
+                        Explain(Add(f, p + 7, 1, "对时方式", EnumValue(b[p + 7], "未定义", "蓝牙对时", "平台对时"), "参数表长度列写 7，备注定义第 8 字节。01 带时区时间，02 为 UTC 时间。", 10),
+                            EnumSteps(p + 7, b[p + 7], "未定义", "蓝牙对时", "平台对时"));
+                    Raw(f, p + 8, n - 8, 10);
+                    return value;
+                case 0x0B:
+                    if (n != 4) break;
+                    return Scaled(f, p, 4, "最大限制电流", 0.1, "A", 10, true);
+                case 0x0D:
+                    if (n != 1) break;
+                    return AddEnum(f, p, "桩模式", 10, Modes);
+                case 0x1F:
+                    if (n != 1) break;
+                    switch (b[p])
+                    {
+                        case 0x11: value = "进入蓝牙工作模式"; break;
+                        case 0x22: value = "Octopus 模式"; break;
+                        case 0x55: value = "进入 ATE 模式"; break;
+                        case 0xAA: value = "退出"; break;
+                        default: value = Unknown(b[p]); break;
+                    }
+                    Explain(Add(f, p, 1, "ATE 操作码", value, "0x22 为安装商 App 使用的 Octopus 蓝牙模式。", 11),
+                        ByteAt(p, b[p]) + "。", "查操作码表：0x11 进入蓝牙工作模式，0x22 Octopus 模式，0x55 进入 ATE 模式，0xAA 退出 → " + value + "。");
+                    return value;
+                case 0x42:
+                    if (n < 4) break;
+                    return LoadBalance(f, p, n);
+                case 0x4B:
+                    if (n != 1) break;
+                    return AddEnum(f, p, "电网类型", 11, "IT", "TT", "TN");
+                case 0x53:
+                    if (n != 1) break;
+                    return AddEnum(f, p, "过压阈值", 11, "253 V", "262.2 V");
+                case 0xBF:
+                    if (n < 32) break;
+                    string key = Ascii(b, p, 32);
+                    Explain(Add(f, p, 32, "参数键", key, "参数地址 191 的前 32 字节。", 12), AsciiSteps(b, p, 32));
+                    if (key == "LightIntensity")
+                    {
+                        f.Function = (set ? "设置" : "查询") + "指示灯亮度";
+                        f.Api = "ENBLEChargeInfoService." + (set ? "set" : "get") + "LightIntensity";
+                        if (!set) f.Decoder = "ENBLEChargeInfoUnPack.parseGetLightIntensityResponse";
+                        if (n == 32 || (!set && f.Command == 0xAA)) { Raw(f, p + 32, n - 32, 23); return ""; }
+                        value = b[p + 32] == 0 ? "关闭" : b[p + 32] == 15 ? "低" : b[p + 32] == 50 ? "中" : b[p + 32] == 100 ? "高" : "原始亮度 " + b[p + 32];
+                        Explain(Add(f, p + 32, 1, "指示灯亮度", value + "（" + b[p + 32] + "）", "安装商 App 枚举 0、15、50、100。通用 SDK 将非内置档位保留为 Custom。", 23),
+                            ByteAt(p + 32, b[p + 32]) + "。", "安装商 App 的档位：0 关闭，15 低，50 中，100 高 → " + b[p + 32] + " 是「" + value + "」。");
+                        Raw(f, p + 33, n - 33, 23);
+                        return value;
+                    }
+                    bool secret = key == "AuthorizationKey" || key == "chargePointID";
+                    Add(f, p + 32, n - 32, "参数值", secret ? "已隐藏" : "字段未覆盖", "参见附录 5.7。", 23, false, secret);
+                    return secret ? "参数值已隐藏" : "";
+                case 0xC3:
+                    if (n < 6) break;
+                    return Connected(f, p, n);
+                case 0xC5:
+                    if (n != 96) break;
+                    Explain(Add(f, p, 32, "MCU 版本号", Ascii(b, p, 32), "ASCII 字符串，末尾零填充。", 13), AsciiSteps(b, p, 32));
+                    Explain(Add(f, p + 32, 32, "网关版本号", Ascii(b, p + 32, 32), "ASCII 字符串，末尾零填充。", 13), AsciiSteps(b, p + 32, 32));
+                    value = Ascii(b, p + 64, 32);
+                    Explain(Add(f, p + 64, 32, "设备型号", value, "ASCII 字符串，-AB 枪线版，-BB 枪座版。", 13), AsciiSteps(b, p + 64, 32));
+                    return value;
+            }
+            Raw(f, p, n, page);
+            return "";
+        }
+
+        private static string Connected(Frame f, int p, int n)
+        {
+            byte[] b = f.Bytes;
+            AddEnum(f, p, "网络硬件类型", 12, "Wi-Fi", "以太网", "4G");
+            AddEnum(f, p + 1, "连接状态", 12, "未连接网络", "已连接网络，未连接平台", "已连接平台");
+            int rssi = unchecked((sbyte)b[p + 2]);
+            Explain(Add(f, p + 2, 1, "RSSI 信号质量", rssi == 0 ? "0（SDK 读取为 null）" : rssi + " dBm", "有符号字节。文档注明 LAN 为 0，SDK 对所有 0 返回 null。", 12),
+                new[] { ByteAt(p + 2, b[p + 2]) + "。" }.Concat(SignSteps("位置 " + (p + 2) + " 的字节 " + Hex(b[p + 2]), (ulong)b[p + 2], 1, rssi)).Concat(new[]
+                { rssi == 0 ? "0 表示没有信号值（有线网络时就是 0）。" : "信号强度 " + rssi + " dBm，越接近 0 信号越好。" }).ToArray());
+            string state = EnumValue(b[p + 3], Work);
+            Explain(Add(f, p + 3, 1, "当前工作状态", state, "见附录 5.3 OCPP 桩状态。SDK 遇未知值回退 Available。", 13), EnumSteps(p + 3, b[p + 3], Work));
+            Explain(Add(f, p + 4, 1, "上一工作状态", EnumValue(b[p + 4], Work), "见附录 5.3。协议未列出 00，SDK 遇未知值回退 Available。", 13), EnumSteps(p + 4, b[p + 4], Work));
+            string cp = Scaled(f, p + 5, 1, "CP 电压", 0.1, "V", 13, false);
+            if (n >= 9)
+            {
+                AddEnum(f, p + 6, "4G 自动测试状态", 13, "未测试", "测试中", "测试成功", "测试失败");
+                Explain(Add(f, p + 7, 1, "4G 测试进度", b[p + 7] + "%", "范围 0–100。", 13), ByteAt(p + 7, b[p + 7]) + " → 进度 " + b[p + 7] + "%。");
+                AddEnum(f, p + 8, "激活状态", 13, "未激活", "已激活");
+            }
+            int parsed = n >= 9 ? 9 : 6;
+            Raw(f, p + parsed, n - parsed, 13);
+            return state + " · CP " + cp;
+        }
+
+        private static string LoadBalance(Frame f, int p, int n)
+        {
+            byte[] b = f.Bytes;
+            string device = b[p] == 10 ? "无（关闭负载平衡）" : EnumValue(b[p], "CT", "电表", "电表和 CT");
+            Explain(Add(f, p, 1, "外接设备类型", device, "0 CT，1 电表，2 电表和 CT，0x0A 无。", 11),
+                ByteAt(p, b[p]) + "。", "查表：0 CT，1 电表，2 电表和 CT，10（0x0A）无 → " + b[p] + " 是「" + device + "」。");
+            Explain(Add(f, p + 1, 1, "电表变比", b[p + 1].ToString(Culture), "协议定义范围 1–200。", 11), ByteAt(p + 1, b[p + 1]) + " → 变比 " + b[p + 1] + "。");
+            string max = Scaled(f, p + 2, 2, "家庭总线最大电流", 0.1, "A", 11, true);
+            if (n >= 15)
+            {
+                AddEnum(f, p + 4, "光伏模式", 11, "独立模式", "绿色模式", "混合模式", "安全模式", "绿色 + 安全", "混合 + 安全");
+                Scaled(f, p + 5, 2, "光伏电流", 0.1, "A", 11, true);
+                Scaled(f, p + 7, 2, "光伏盈余电流", 0.1, "A", 11, true);
+                Scaled(f, p + 9, 2, "Boost 充电电量", 1, "kWh", 11, true);
+                AddEnum(f, p + 11, "Boost 使能", 11, "关闭", "开启");
+                string ratio = b[p + 12] == 1 ? "1000:1" : b[p + 12] == 2 ? "2000:1" : Unknown(b[p + 12]);
+                Explain(Add(f, p + 12, 1, "CT 变比", ratio, "协议定义 1000:1 与 2000:1。", 11),
+                    ByteAt(p + 12, b[p + 12]) + "。", "查表：1 是 1000:1，2 是 2000:1" + (b[p + 12] == 0xFF ? "；位置 " + (p + 12) + " 的 0xFF（8 位全是 1）通常表示没有设置。" : " → " + ratio + "。"));
+                Scaled(f, p + 13, 2, "合同功率", 1, "kW", 11, true);
+            }
+            int parsed = n >= 15 ? 15 : 4;
+            Raw(f, p + parsed, n - parsed, 11);
+            return "家庭总线 " + max;
+        }
+
+        private static void DecodeFaults(Frame f, bool reply, int n)
+        {
+            f.Function = reply ? "故障列表返回" : "故障列表请求";
+            f.Api = "ENBLEChargeInfoService.getFaultData";
+            f.Decoder = "ENBLEChargeInfoUnPack.parseGetFaultDataResponse";
+            f.Pages = new[] { 16, 17, 20, 21, 2, 3 };
+            if (n < (reply ? 2 : 1)) { Invalid(f, n, 16, "故障列表数据域长度不足。"); return; }
+            byte[] b = f.Bytes;
+            f.Arguments = "枪号 " + b[7];
+            Explain(Add(f, 7, 1, "枪号", b[7].ToString(Culture), "0 为 1 号枪，1 为 2 号枪，单枪为 0。", 16),
+                ByteAt(7, b[7]) + "。", "0 是 1 号枪，1 是 2 号枪；单枪的桩固定是 0。");
+            if (!reply) { Raw(f, 8, n - 1, 16); return; }
+            AddEnum(f, 8, "响应类型", 16, "回复", "通知");
+            int slots = (n - 2) / 21;
+            int populated = 0;
+            for (int i = 0; i < slots; i++)
+            {
+                int p = 9 + i * 21;
+                string label = "故障槽 " + (i + 1) + " · ";
+                bool empty = ReadNumber(b, p, 8) == 0;
+                if (!empty) populated++;
+                Explain(Add(f, p, 8, label + "故障码", Bits(b, p, 8, "Faults", AcFaults), "8 字节 Faults[0]–[7]，每位一个故障，含义见附录 5.4 交流桩错误组（P20–21）。", 16), BitSteps(b, p, 8, "Faults", AcFaults));
+                AddEnum(f, p + 8, label + "是否正在发生", 16, "否", "是");
+                Explain(Add(f, p + 9, 6, label + "起始时间", Date(b, p + 9), "YYMMDD-HHMMSS。", 16), DateSteps(b, p + 9));
+                Explain(Add(f, p + 15, 6, label + "结束时间", Date(b, p + 15), "当前故障的结束时间可全零。", 17), DateSteps(b, p + 15));
+            }
+            Raw(f, 9 + slots * 21, (n - 2) % 21, 17);
+            f.Result = slots + " 个故障槽，" + populated + " 个槽设置了故障位";
+            f.Steps = "读取位置 7 的枪号和位置 8 的响应类型，再从位置 9 开始每 21 个字节拆一个故障槽。";
+        }
+
+        private static void DecodeRcd(Frame f, bool reply, int n)
+        {
+            f.Function = "RCD 测试开关";
+            f.Pages = new[] { 17, 19, 20, 2, 3 };
+            if (n < (reply ? 4 : 2)) { Invalid(f, n, 17, "RCD 数据域长度不足。"); return; }
+            byte[] b = f.Bytes;
+            int action = b[7];
+            string name = reply ? EnumValue(action, "获取", "设置", "超时关闭主动上报") : EnumValue(action, "获取", "设置");
+            f.Function = name + " RCD 测试开关";
+            if (action < 2)
+            {
+                f.Api = "ENBLEChargeInfoService." + (action == 0 ? "getRcdTestStatus" : "setRcdTestEnabled");
+                f.Decoder = "ENBLERcdTestUnPack." + (action == 0 ? "parseGetRcdTestStatusResponse" : "parseSetRcdTestEnabledResponse");
+            }
+            Explain(Add(f, 7, 1, reply ? "响应类型" : "操作类型", name, "控制 RCD 消息用途。", 17),
+                reply ? EnumSteps(7, action, "获取", "设置", "超时关闭主动上报") : EnumSteps(7, action, "获取", "设置"));
+            string state = EnumValue(b[8], "关闭", "打开");
+            Explain(Add(f, 8, 1, "RCD 开关", !reply && action == 0 ? "查询占位" : state, "0 关闭，1 打开。获取请求的该字节为占位。", 17),
+                !reply && action == 0 ? new[] { ByteAt(8, b[8]) + "。", "获取（查询）请求不需要这个值，只是占一个位置。" } : EnumSteps(8, b[8], "关闭", "打开"));
+            if (reply)
+            {
+                Explain(Add(f, 9, 1, "设置结果", action == 1 ? EnumValue(b[9], "失败", "成功") : "此响应类型不适用", "获取和超时上报的结果字节为 0，不表示获取失败。", 17),
+                    action == 1 ? EnumSteps(9, b[9], "失败", "成功") : new[] { ByteAt(9, b[9]) + "。", "只有「设置」的应答才看位置 9 的这个字节；获取和超时上报时它是 0，不代表失败。" });
+                string work = EnumValue(b[10], Work);
+                Explain(Add(f, 10, 1, "当前工作状态", work, "见附录 5.3 OCPP 桩状态。", 17), EnumSteps(10, b[10], Work));
+                f.Result = state + " · " + work;
+            }
+            int parsed = reply ? 4 : 2;
+            Explain(Add(f, 7 + parsed, n - parsed, "预留", (n - parsed) + " 字节", "协议字段表的预留数据。", 17), "预留字节：协议给以后扩展留的位置，现在没有含义。");
+        }
+
+        private static void DecodeRealtime(Frame f, bool reply, int n)
+        {
+            f.Function = reply ? "实时充电数据上报" : "实时充电数据请求";
+            f.Api = "ENBLEChargingService.getRealtimeChargingData";
+            f.Decoder = "ENBLEChargingUnPack.parseRealtimeChargingData";
+            f.Pages = reply ? new[] { 5, 6, 7, 19, 20, 21, 2, 3 } : new[] { 7, 8, 2, 3 };
+            if (n < (reply ? 119 : 23)) { Invalid(f, n, reply ? 5 : 7, "实时充电数据域长度不足。"); return; }
+            byte[] b = f.Bytes;
+            if (!reply)
+            {
+                string gun = "枪号 " + (b[7] & 15);
+                f.Arguments = gun + " · 当前时间 " + Date(b, 8);
+                Explain(Add(f, 7, 1, "枪号 / 应答状态 / 桩连网状态", gun + " · " + ((b[7] & 0x30) == 0 ? "应答成功" : "应答失败") + " · " + EnumValue(b[7] >> 6, "未连接网络", "已连接网络"), "按 0x0F、0x30、0xC0 拆分。", 7),
+                    ByteAt(7, b[7]) + "。这 8 个 0/1 从右往左依次叫 bit0 到 bit7，不同的几位表示不同的内容：",
+                    BitPart(b[7], 0, 4) + "，就是 " + (b[7] & 15) + " → " + gun + "。",
+                    BitPart(b[7], 4, 2) + " → 00 是应答成功，其他是失败。",
+                    BitPart(b[7], 6, 2) + "，就是 " + (b[7] >> 6) + " → 0 未连接网络，1 已连接网络。");
+                Explain(Add(f, 8, 6, "当前时间", Date(b, 8), "年、月、日、时、分、秒各一字节。", 8), DateSteps(b, 8));
+                Explain(Add(f, 14, 16, "预留", "16 字节", "协议字段表的预留数据。", 8), "预留字节：协议给以后扩展留的位置，现在没有含义。");
+                Raw(f, 30, n - 23, 8);
+                return;
+            }
+            const int p = 7;
+            Scaled(f, p, 4, "订单号", 1, "", 5, true);
+            bool identity = ReadNumber(b, p + 4, 8) != 0 || ReadNumber(b, p + 12, 8) != 0 || ReadNumber(b, p + 20, 8) != 0 || ReadNumber(b, p + 28, 8) != 0;
+            Explain(Add(f, p + 4, 32, "卡号 / VIN", identity ? "已隐藏" : "空", "ASCII 固定字段。", 5, false, identity),
+                identity ? new[] { "卡号或 VIN 是 ASCII 文本（每个字节一个字符），属于身份信息，工具不显示内容。" }
+                    : new[] { "32 个字节全是 0x00 → 没有卡号也没有 VIN（用 App 启动充电时就是空的）。" });
+            int start = b[p + 36];
+            string startMode = EnumValue(start >> 4, "App 启动", "刷卡启动", "VIN 码", "即插即用");
+            Explain(Add(f, p + 36, 1, "枪号 / 启动模式", "枪号 " + (start & 3) + " · " + startMode, "低两位枪号，高四位启动模式。", 5),
+                ByteAt(p + 36, start) + "。这 8 个 0/1 从右往左依次叫 bit0 到 bit7：",
+                BitPart(start, 0, 2) + "，就是 " + (start & 3) + " → 枪号 " + (start & 3) + "。",
+                BitPart(start, 4, 4) + "，就是 " + (start >> 4) + " → 查表：0 App 启动，1 刷卡启动，2 VIN 码，3 即插即用 → " + startMode + "。");
+            ulong mode = ReadNumber(b, p + 37, 4);
+            string modeName = EnumValue((int)(mode & 15), "充满为止", "定时充", "定电量充", "定金额充", "停车", "费用不足停充");
+            Explain(Add(f, p + 37, 4, "充电模式 / 参数", modeName + " · 参数 " + (mode >> 4), "低四位为模式，其余位为模式参数。", 5),
+                NumberSteps(b, p + 37, 4, (long)mode).Concat(new[]
+                {
+                    "拼成的 0x" + mode.ToString("X8") + " 写成二进制是 " + Binary(mode, 32) + "：",
+                    "    它最右边 4 位（bit0–3）= " + BitText((int)(mode & 15), 0, 4) + "，就是 " + (mode & 15) + " → 查表：0 充满为止，1 定时充，2 定电量充，3 定金额充，4 停车，5 费用不足停充 → " + modeName + "。",
+                    "    去掉最右边 4 位，剩下的部分（bit4–31）= " + (mode >> 4) + " → 模式参数 " + (mode >> 4) + "。"
+                }).ToArray());
+            string status = EnumValue(b[p + 41], Work);
+            Explain(Add(f, p + 41, 1, "工作状态", status, "OCPP 桩状态见附录 5.3。", 6), EnumSteps(p + 41, b[p + 41], Work));
+            string faults = Bits(b, p + 42, 8, "Faults", AcFaults);
+            string warnings = Bits(b, p + 50, 2, "warnings", AcWarnings);
+            Explain(Add(f, p + 42, 8, "故障位图", faults, "8 字节 Faults[0]–[7]，每位一个故障，置 1 表示正在发生。含义见附录 5.4 交流桩错误组（P20–21）。", 6), BitSteps(b, p + 42, 8, "Faults", AcFaults));
+            Explain(Add(f, p + 50, 2, "告警位图", warnings, "2 字节 warnings[0]–[1]，每位一个告警。含义见附录 5.5 交流桩告警码（P21）。", 6), BitSteps(b, p + 50, 2, "warnings", AcWarnings));
+            Explain(Add(f, p + 52, 6, "开始充电时间", Date(b, p + 52), "全零时表示未记录。", 6), DateSteps(b, p + 52));
+            Scaled(f, p + 58, 4, "启动电表读数", 1, "Wh", 6, true);
+            Scaled(f, p + 62, 4, "当前电表读数", 1, "Wh", 6, true);
+            Scaled(f, p + 66, 4, "充电功率", 1, "W", 6, true);
+            for (int phase = 0; phase < 3; phase++) Scaled(f, p + 70 + phase * 2, 2, ((char)('A' + phase)) + " 相电压", 0.1, "V", 6, false);
+            for (int phase = 0; phase < 3; phase++) Scaled(f, p + 76 + phase * 2, 2, ((char)('A' + phase)) + " 相电流", 0.1, "A", 6, false);
+            Scaled(f, p + 82, 1, "SOC", 1, "%", 6, false);
+            Scaled(f, p + 83, 2, "充电时长", 1, "min", 6, false);
+            Scaled(f, p + 85, 2, "CP 电压原始值", 1, "", 6, false);
+            Scaled(f, p + 87, 2, "占空比原始值", 1, "", 6, false);
+            Scaled(f, p + 89, 4, "本地待传记录数", 1, "", 6, true);
+            Explain(Add(f, p + 93, 1, "功能标志", Hex(b[p + 93]), "协议字段 24，逐位定义见第 6–7 页。", 6),
+                ByteAt(p + 93, b[p + 93]) + "。", "这个字节的 8 位，每一位是一个功能开关（1 开、0 关），各位的含义见协议第 6–7 页。");
+            Scaled(f, p + 94, 1, "枪数量", 1, "", 7, false);
+            Scaled(f, p + 95, 4, "额定电流", 0.1, "A", 7, true);
+            Scaled(f, p + 99, 4, "额定功率", 1, "W", 7, true);
+            Scaled(f, p + 103, 4, "最大电流", 0.1, "A", 7, true);
+            AddEnum(f, p + 107, "桩模式", 7, Modes);
+            int shown = b[p + 108];
+            Explain(Add(f, p + 108, 1, "状态展示标志", Hex(shown), "位 0 即插即用，位 1 枪锁，位 2 停充后解锁。", 7),
+                ByteAt(p + 108, shown) + "。这 8 个 0/1 从右往左依次叫 bit0 到 bit7：",
+                BitPart(shown, 0, 1) + " → 即插即用" + ((shown & 1) != 0 ? "开" : "关") + "。",
+                BitPart(shown, 1, 1) + " → 枪锁" + ((shown & 2) != 0 ? "开" : "关") + "。",
+                BitPart(shown, 2, 1) + " → 停充后解锁" + ((shown & 4) != 0 ? "开" : "关") + "。");
+            Scaled(f, p + 109, 4, "CT 电流", 0.01, "A", 7, true);
+            Explain(Add(f, p + 113, 6, "预留", "6 字节", "协议字段表的预留数据。", 7), "预留字节：协议给以后扩展留的位置，现在没有含义。");
+            Raw(f, p + 119, n - 119, 7);
+            f.Result = status + (faults == "无置位" ? "" : " · 故障：" + faults) + (warnings == "无置位" ? "" : " · 告警：" + warnings);
+        }
+
+        private static string Bits(byte[] b, int start, int count, string group, string[][] names)
+        {
+            // Every set bit by name and position, e.g. "拆机告警（warnings[0] bit5）".
+            var found = new List<string>();
+            for (int i = 0; i < count; i++)
+                for (int bit = 0; bit < 8; bit++)
+                {
+                    if ((b[start + i] & (1 << bit)) == 0) continue;
+                    string name = i < names.Length ? names[i][bit] : null;
+                    found.Add((name ?? "预留位") + "（" + group + "[" + i + "] bit" + bit + "）");
+                }
+            return found.Count == 0 ? "无置位" : String.Join("、", found);
+        }
+
+        private static string Scaled(Frame f, int p, int n, string name, double scale, string unit, int page, bool signed)
+        {
+            ulong raw = ReadNumber(f.Bytes, p, n);
+            long number = (long)raw;
+            if (signed && n == 2) number = unchecked((short)raw);
+            if (signed && n == 4) number = unchecked((int)raw);
+            string format = scale == 1 ? "0" : scale == 0.1 ? "0.0" : "0.00";
+            string value = (number * scale).ToString(format, Culture) + (unit.Length > 0 ? " " + unit : "");
+            var steps = new List<string>(NumberSteps(f.Bytes, p, n, (long)raw));
+            if (signed && n > 1) steps.AddRange(SignSteps("上一步拼成的 0x" + raw.ToString("X" + (n * 2)), raw, n, number));
+            if (scale != 1) steps.Add("乘以单位 " + scale.ToString(Culture) + "：" + number + " × " + scale.ToString(Culture) + " = " + value + "。");
+            else if (unit.Length > 0) steps.Add("单位是 " + unit + " → " + value + "。");
+            Explain(Add(f, p, n, name, value, "小端数值 " + number + " × " + scale.ToString(Culture) + "。", page), steps.ToArray());
+            return value;
+        }
+
+        private static string BitsOf(int value) { return Convert.ToString(value & 0xFF, 2).PadLeft(8, '0').Insert(4, " "); }
+
+        // A number in binary, in groups of four, e.g. "1111 1111 1110 0110".
+        private static string Binary(ulong value, int bits)
+        {
+            ulong mask = bits >= 64 ? ulong.MaxValue : (1UL << bits) - 1;
+            string text = Convert.ToString((long)(value & mask), 2).PadLeft(bits, '0');
+            var grouped = new StringBuilder();
+            for (int i = 0; i < text.Length; i++) { if (i > 0 && i % 4 == 0) grouped.Append(' '); grouped.Append(text[i]); }
+            return grouped.ToString();
+        }
+
+        // "0x10 = 十进制 16 = 二进制 0001 0000"
+        private static string ByteText(int value) { return Hex(value & 0xFF) + " = 十进制 " + (value & 0xFF) + " = 二进制 " + BitsOf(value); }
+
+        // "位置 7 的字节 0x10 = 十进制 16 = 二进制 0001 0000": every step names the byte it reads.
+        private static string ByteAt(int position, int value) { return "位置 " + position + " 的字节 " + ByteText(value); }
+
+        // The bits from..from+count-1 of a byte, written high bit first, e.g. "0001".
+        private static string BitText(int value, int from, int count)
+        {
+            return Convert.ToString((value >> from) & ((1 << count) - 1), 2).PadLeft(count, '0');
+        }
+
+        // "0001 0000 的最右边 2 位（bit0–1）= 00": which bits of which byte, counted in plain words.
+        private static string BitPart(int value, int from, int count)
+        {
+            string where = from == 0 ? (count == 1 ? "最右边一位" : "最右边 " + count + " 位")
+                : from + count == 8 ? (count == 1 ? "最左边一位" : "最左边 " + count + " 位")
+                : count == 1 ? "右数第 " + (from + 1) + " 位" : "右数第 " + (from + 1) + "–" + (from + count) + " 位";
+            string label = count == 1 ? "bit" + from : "bit" + from + "–" + (from + count - 1);
+            return BitsOf(value) + " 的" + where + "（" + label + "）= " + BitText(value, from, count);
+        }
+
+        private static string[] SignSteps(string what, ulong raw, int bytes, long value)
+        {
+            // Signed numbers in plain words: the leftmost bit of the number is its sign; a negative number is
+            // "flip every bit, add 1". "what" names the number, e.g. "上一步拼成的 0xFFFFFFE6".
+            int bits = bytes * 8;
+            ulong top = 1UL << (bits - 1);
+            if ((raw & top) == 0)
+                return new string[0];   // a positive number reads the same either way, so nothing to explain
+            ulong mask = bits == 64 ? ulong.MaxValue : (1UL << bits) - 1;
+            ulong flipped = ~raw & mask;
+            string digits = "X" + (bytes * 2);
+            string total = ((decimal)mask + 1).ToString(Culture);
+            return new[]
+            {
+                "这个字段可能是负数（比如电流的方向），所以按「有符号数」读：把" + what + " 写成 " + bits + " 位二进制是 " + Binary(raw, bits)
+                    + "，它最左边那一位（bit" + (bits - 1) + "）是正负号，0 是正数，1 是负数；这里是 1 → 负数。",
+                "    负数怎么算——「取反加一」：",
+                "    ① 把 " + Binary(raw, bits) + " 的每一位 0 变 1、1 变 0 → " + Binary(flipped, bits) + "，也就是 0x" + flipped.ToString(digits, Culture) + " = " + flipped.ToString(Culture) + "；",
+                "    ② 再加 1：" + flipped.ToString(Culture) + " + 1 = " + (flipped + 1).ToString(Culture) + "；",
+                "    ③ 前面加负号 → " + value.ToString(Culture) + "。",
+                "    验算：" + bits + " 位一共能表示 2^" + bits + " = " + total + " 个数，负数是从这个总数倒着数回来的（" + bits + " 位全是 1 的 0x"
+                    + mask.ToString(digits, Culture) + " 就是 -1）：0x" + raw.ToString(digits, Culture) + " = " + raw.ToString(Culture) + "，" + raw.ToString(Culture) + " − " + total + " = " + value.ToString(Culture) + "。"
+            };
+        }
+
+        private static string[] NumberSteps(byte[] b, int p, int n, long value)
+        {
+            // Little endian: the byte at the lowest position is the lowest part, so the number is read backwards.
+            if (n == 1) return new[] { ByteAt(p, b[p]) + "。" };
+            var reversed = new StringBuilder();
+            for (int i = n - 1; i >= 0; i--) reversed.Append(b[p + i].ToString("X2"));
+            return new[]
+            {
+                "位置 " + p + "–" + (p + n - 1) + " 这 " + n + " 个字节是 " + BitConverter.ToString(b, p, n).Replace('-', ' ') + "，按小端存储：位置 " + p + " 的 "
+                    + b[p].ToString("X2") + " 是最低位字节，位置 " + (p + n - 1) + " 的 " + b[p + n - 1].ToString("X2") + " 是最高位字节。从位置 "
+                    + (p + n - 1) + " 往回读到位置 " + p + "，拼成 0x" + reversed + "。",
+                "0x" + reversed + " = 十进制 " + value.ToString(Culture) + "。"
+            };
+        }
+
+        private static string[] EnumSteps(int position, int value, params string[] options)
+        {
+            var mapping = new string[options.Length];
+            for (int i = 0; i < options.Length; i++) mapping[i] = i + " " + options[i];
+            return new[] { ByteAt(position, value) + "。", "查表：" + String.Join("，", mapping) + " → " + value + " 是「" + EnumValue(value, options) + "」。" };
+        }
+
+        private static string[] BitSteps(byte[] b, int start, int count, string group, string[][] names)
+        {
+            // Each byte in binary, then every bit that is 1 and what it means.
+            int end = start + count - 1;
+            var steps = new List<string> { "位置 " + start + "–" + end + " 这 " + count + " 个字节就是 " + group + "[0]–[" + (count - 1) + "]，每个字节 8 位，每一位代表一项，是 1 就表示那一项正在发生。" };
+            bool any = false;
+            for (int i = 0; i < count; i++)
+            {
+                int value = b[start + i];
+                if (value == 0) continue;
+                any = true;
+                steps.Add(group + "[" + i + "] 是" + ByteAt(start + i, value) + "：");
+                for (int bit = 0; bit < 8; bit++)
+                {
+                    if ((value & (1 << bit)) == 0) continue;
+                    string name = i < names.Length ? names[i][bit] : null;
+                    steps.Add("    " + BitPart(value, bit, 1) + " → " + (name ?? "预留位（协议没有定义）") + "。");
+                }
+            }
+            if (!any) steps.Add("位置 " + start + "–" + end + " 的 " + count + " 个字节全是 0x00 → 没有任何一位是 1 → 无置位。");
+            else if (count > 1) steps.Add("其余字节都是 0x00，没有置位。");
+            return steps.ToArray();
+        }
+
+        private static string[] DateSteps(byte[] b, int p)
+        {
+            if (ReadNumber(b, p, 6) == 0) return new[] { "位置 " + p + "–" + (p + 5) + " 的 6 个字节全是 0x00 → 没有记录这个时间。" };
+            string[] parts = { "年", "月", "日", "时", "分", "秒" };
+            var steps = new List<string> { "位置 " + p + "–" + (p + 5) + " 的 6 个字节依次是年、月、日、时、分、秒，每个字节直接换成十进制：" };
+            for (int i = 0; i < 6; i++)
+                steps.Add("    " + parts[i] + "（位置 " + (p + i) + "）：" + Hex(b[p + i]) + " = " + b[p + i] + (i == 0 ? " → 2000 + " + b[p] + " = " + (2000 + b[p]) + " 年" : ""));
+            steps.Add("合起来 → " + Date(b, p) + "。");
+            return steps.ToArray();
+        }
+
+        private static string[] AsciiSteps(byte[] b, int p, int n)
+        {
+            // ASCII text: one byte per character, 0x00 ends the text.
+            var steps = new List<string> { "位置 " + p + "–" + (p + n - 1) + " 这 " + n + " 个字节是 ASCII 文本：每个字节是一个字符的编码，读到 0x00 就结束，后面的 0x00 是补位。" };
+            var chars = new List<string>();
+            int i = 0;
+            for (; i < n && b[p + i] != 0 && chars.Count < 16; i++)
+                chars.Add(b[p + i].ToString("X2") + "=" + (b[p + i] >= 0x20 && b[p + i] < 0x7F ? "'" + (char)b[p + i] + "'" : "?"));
+            if (chars.Count == 0) steps.Add("位置 " + p + " 的第一个字节就是 0x00 → 空字符串。");
+            else
+            {
+                steps.Add("从位置 " + p + " 开始逐个对照：" + String.Join("  ", chars) + (i < n && b[p + i] != 0 ? " …" : "") + "。");
+                steps.Add("连起来 → \"" + Ascii(b, p, n) + "\"。");
+            }
+            return steps.ToArray();
+        }
+        private static string AddEnum(Frame f, int p, string name, int page, params string[] options)
+        {
+            string value = EnumValue(f.Bytes[p], options);
+            var mapping = new string[options.Length];
+            for (int i = 0; i < options.Length; i++) mapping[i] = i + " " + options[i];
+            Explain(Add(f, p, 1, name, value, "枚举 " + string.Join("，", mapping) + "。", page), EnumSteps(p, f.Bytes[p], options));
+            return value;
+        }
+
+        private static void Invalid(Frame f, int length, int page, string message)
+        {
+            Error(f, message);
+            Raw(f, 7, length, page);
+        }
+
+        private static void Error(Frame f, string message)
+        {
+            f.Error = f.Error.Length == 0 ? message : f.Error + " " + message;
+        }
+
+        private static void Raw(Frame f, int start, int length, int page)
+        {
+            bool zeros = length > 0 && start >= 0 && start + length <= f.Bytes.Length && f.Bytes.Skip(start).Take(length).All(item => item == 0);
+            Explain(Add(f, start, length, "原始数据", length + " 字节", "当前字段表未映射此字节范围，原样保留。", page),
+                "协议字段表没有给这 " + length + " 个字节定义含义，工具只原样显示。" + (zeros ? "它们全是 0x00，多半是补位。" : ""));
+        }
+
+        private static Field Add(Frame f, int start, int length, string name, string value, string explanation, int page, bool header = false, bool hide = false)
+        {
+            if (length <= 0 || start < 0 || start + length > f.Bytes.Length) return null;
+            string hex = hide ? new string('*', length * 3 - 1).Replace("***", "** ") : BitConverter.ToString(f.Bytes, start, length).Replace('-', ' ');
+            var field = new Field { Start = start, End = start + length - 1, Name = name, Hex = hex, Value = value, Explanation = explanation, Page = page, IsHeader = header };
+            f.Fields.Add(field);
+            return field;
+        }
+
+        private static void Explain(Field field, params string[] steps)
+        {
+            if (field != null && steps != null) field.Detail.AddRange(steps);
+        }
+
+        private static ulong ReadNumber(byte[] bytes, int start, int length)
+        {
+            ulong value = 0;
+            for (int i = 0; i < length; i++) value |= (ulong)bytes[start + i] << (8 * i);
+            return value;
+        }
+
+        private static string Date(byte[] b, int start)
+        {
+            if (ReadNumber(b, start, 6) == 0) return "未记录（全零）";
+            return string.Format(Culture, "{0:D4}-{1:D2}-{2:D2} {3:D2}:{4:D2}:{5:D2}", 2000 + b[start], b[start + 1], b[start + 2], b[start + 3], b[start + 4], b[start + 5]);
+        }
+
+        private static string Ascii(byte[] bytes, int start, int length)
+        {
+            int end = start;
+            while (end < start + length && bytes[end] != 0) end++;
+            return Encoding.ASCII.GetString(bytes, start, end - start);
+        }
+
+        private static string Hex(int value) { return "0x" + value.ToString("X2"); }
+        private static string Unknown(int value) { return "未定义（" + Hex(value) + "）"; }
+        private static string EnumValue(int value, params string[] options) { return value >= 0 && value < options.Length ? options[value] : Unknown(value); }
+    }
+}

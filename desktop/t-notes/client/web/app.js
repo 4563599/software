@@ -25,8 +25,9 @@ async function api(url,options={}) {
   const headers={'X-TNotes-CSRF':csrf,...options.headers};
   if(token)headers.Authorization='Bearer '+token;
   if(body)headers['Content-Type']='application/json';
-  let res;try{res=await fetch(url,{...options,body,headers});}catch{throw Error('本机后台暂时无法连接，当前未保存的修改仍保留在窗口中。');}
-  let data;try{data=await res.json();}catch{throw Error('服务返回了无法识别的响应');}
+  // "transient" marks failures worth retrying: the backend not answering yet, or failing for a moment.
+  let res;try{res=await fetch(url,{...options,body,headers});}catch{throw Object.assign(Error('本机后台暂时无法连接，当前未保存的修改仍保留在窗口中。'),{transient:true});}
+  let data;try{data=await res.json();}catch{throw Object.assign(Error('服务返回了无法识别的响应'),{transient:true});}
   // Rejected before dispatch: refreshing this token cannot duplicate a write.
   if(res.status===403&&data.code==='LOCAL_SESSION_STALE'&&attempt===0){
    const bootstrap=await fetch('/api/bootstrap',{cache:'no-store'});
@@ -35,7 +36,7 @@ async function api(url,options={}) {
    if(typeof fresh.csrf!=='string'||!/^[a-f0-9]{64}$/.test(fresh.csrf))throw Error('本地服务校验失败，请重新打开');
    csrf=fresh.csrf;continue;
   }
-  if(!res.ok){const e=Error(data.error||'操作失败');e.status=res.status;throw e;}return data;
+  if(!res.ok){const e=Error(data.error||'操作失败');e.status=res.status;e.transient=res.status>=500;throw e;}return data;
  }
 }
 async function persist(){
@@ -99,9 +100,11 @@ async function syncInner(manual=false,retried=false){
  }
 }
 const sync=(manual=false)=>exclusive(()=>syncInner(manual));
-function setIcon(button,name){
+function setIcon(button,name,label){
  if(button.dataset.icon===name)return;
- const symbol=document.createElement('i');symbol.dataset.lucide=name;button.dataset.icon=name;button.replaceChildren(symbol);
+ const symbol=document.createElement('i');symbol.dataset.lucide=name;button.dataset.icon=name;
+ const parts=[symbol];if(label){const text=document.createElement('span');text.textContent=label;parts.push(text);}
+ button.replaceChildren(...parts);
 }
 function markDirty(){dirty=true;$('edited').textContent='未保存的修改';}
 function updateKind(){
@@ -133,7 +136,7 @@ function chooseCategory(value){
   if($('kind').value!==value){$('kind').value=value;markDirty();}
   updateKind();
  }else if(library&&!draft){openDefaultRecord();}
- renderList();
+ renderList();rememberPlace();
 }
 function setEditing(value){
  editing=value;$('edit-fields').hidden=!value;$('record-view').hidden=value;
@@ -143,7 +146,7 @@ function setEditing(value){
  $('delete').disabled=!selected;$('save').disabled=!!plain.get(selected)?.deleted;
  // In the trash this button brings the record back, so it must not look like a second delete.
  const gone=!!plain.get(selected)?.deleted,label=gone?'恢复记录':'移到回收站';
- $('delete').title=label;$('delete').setAttribute('aria-label',label);setIcon($('delete'),gone?'undo-2':'trash-2');
+ $('delete').title=label;$('delete').setAttribute('aria-label',label);setIcon($('delete'),gone?'undo-2':'trash-2',gone?'恢复':'删除');
 }
 function showViewer(){
  const r=plain.get(selected);
@@ -172,6 +175,35 @@ function loadEditor(id,edit=false,open=true){
  $('edited').textContent=(r.deleted?'已移到回收站 · ':'更新于 ')+new Date(r.updated).toLocaleString();
  dirty=false;updateKind();setEditing(edit&&!r.deleted);showViewer();renderList();
  try{localStorage.setItem('tnotes-last-viewed',id);}catch{}
+ rememberPlace();
+}
+// Where the user left off: quick list or library, the categories, the selected record, whether it was open, and
+// how far each list was scrolled. Only record ids and category names are kept, in this window's own browser
+// storage; never any record content. It is put back after every login, including the automatic one.
+const placeKey='tnotes-place',listScroll={quick:0,library:0};let placeTimer;
+function rememberPlace(){
+ if(!keys)return;
+ const place={library,filter,quickFilter,selected,open:!document.body.classList.contains('quick-list'),scroll:listScroll};
+ try{localStorage.setItem(placeKey,JSON.stringify(place));}catch{}
+}
+function rememberPlaceSoon(){clearTimeout(placeTimer);placeTimer=setTimeout(rememberPlace,300);}
+function restoreScroll(){
+ const list=library?$('record-list'):$('recent-list'),top=library?listScroll.library:listScroll.quick;
+ if(top)requestAnimationFrame(()=>{list.scrollTop=top;});
+}
+function restorePlace(){
+ let place=null;try{place=JSON.parse(localStorage.getItem(placeKey)||'null');}catch{}
+ if(!place||typeof place!=='object'){openDefaultRecord();return;}
+ const known=value=>typeof value==='string'&&(isRecordKind(value)||['all','pinned','trash'].includes(value));
+ if(known(place.filter))filter=place.filter;
+ if(known(place.quickFilter)&&place.quickFilter!=='trash')quickFilter=place.quickFilter;
+ for(const view of ['quick','library'])if(Number.isFinite(place.scroll?.[view]))listScroll[view]=place.scroll[view];
+ if(typeof place.selected==='string'&&plain.has(place.selected))selected=place.selected;
+ if(place.library===true&&!library)setView(true);
+ openDefaultRecord();
+ // In the quick view a record that was open is opened again; otherwise the list shows with it selected.
+ if(!library&&place.open&&selected&&plain.has(selected)&&!plain.get(selected).deleted)loadEditor(selected,false,true);
+ else restoreScroll();
 }
 function openDefaultRecord(){
  let previous;try{previous=localStorage.getItem('tnotes-last-viewed');}catch{}
@@ -186,7 +218,7 @@ function mayLeave(){return !dirty||confirm('当前修改尚未保存。确定放
 function showQuickList(){
  if(!mayLeave())return;
  if(selected)loadEditor(selected,false,false);else openDefaultRecord();
- $('quick-search').focus({preventScroll:true});
+ $('quick-search').focus({preventScroll:true});restoreScroll();
 }
 function focusSearch(){
  if(!library&&!document.body.classList.contains('quick-list')){showQuickList();return;}
@@ -212,7 +244,7 @@ function resizeWindow(width,height,grow){
   window.resizeTo(width,height);window.moveTo(x,y);
  }catch{}
 }
-function setView(value){if(!value&&!mayLeave())return;library=value;document.body.classList.toggle('library',library);$('app-title').textContent=library?'我的资料库':'随手记';resizeWindow(library?1060:470,library?820:810,library);if(!library){if(selected)loadEditor(selected,false,false);else openDefaultRecord();$('quick-search').focus({preventScroll:true});}else renderList();}
+function setView(value){if(!value&&!mayLeave())return;library=value;document.body.classList.toggle('library',library);$('app-title').textContent=library?'我的资料库':'随手记';resizeWindow(library?1060:470,library?820:810,library);if(!library){if(selected)loadEditor(selected,false,false);else openDefaultRecord();$('quick-search').focus({preventScroll:true});}else renderList();rememberPlace();}
 function openPromptDialog(template){
  const variables=promptVariables(template);$('variables').replaceChildren();
  const update=()=>{let text=template;for(const input of $('variables').querySelectorAll('input'))text=text.split('{{'+input.dataset.variable+'}}').join(input.value);$('prompt-output').value=text;};
@@ -416,7 +448,7 @@ async function finishLogin(){
  $('master').value='';$('master-confirm').value='';$('auth-screen').hidden=true;$('workspace').hidden=false;$('lock-state').textContent=profile().name;
  $('restore-backup').hidden=true;
  for(const id of ['view','lock','sync-now','export','import','backup-now'])$(id).disabled=false;
- openDefaultRecord();status('本机已登录');
+ restorePlace();status('本机已登录');
  if(!library)$('quick-search').focus({preventScroll:true});
 }
 $('auth-form').addEventListener('submit',async event=>{
@@ -565,26 +597,41 @@ document.addEventListener('keydown',event=>{
 setInterval(()=>{if(keys&&config.remote)void sync();},30000);
 window.addEventListener('online',()=>{if(keys)void sync();});
 window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
+window.addEventListener('pagehide',rememberPlace);
+$('recent-list').addEventListener('scroll',()=>{listScroll.quick=$('recent-list').scrollTop;rememberPlaceSoon();});
+$('record-list').addEventListener('scroll',()=>{listScroll.library=$('record-list').scrollTop;rememberPlaceSoon();});
 channel.onmessage=event=>{
  if(event.data.type==='logout'){
   void exclusive(async()=>{remembered=false;if(dirty)notice('另一窗口已退出登录。请先保存当前修改，再退出此窗口，避免丢失内容。','error');else clearUnlocked();});return;
  }
  if(event.data.version>cache.version&&keys)notice('另一窗口更新了记录。为避免覆盖，请退出后重新登录，再继续编辑。','error');
 };
-try{
- config=await api('/api/config');cache=await api('/api/cache');
- if(cache.data)$('username').value=cache.data.profile.name;
- // Restoring is only offered where it cannot overwrite anything: a computer without a vault.
- $('restore-backup').hidden=!!cache.data;
- $('remember-row').hidden=!config.rememberSupported;$('remember').checked=!!config.rememberSupported;
- $('connection-hint').textContent=config.remote?'已配置加密同步服务':'本机离线模式 · 可在部署后启用同步';
- const saved=await api('/api/session');
- if(saved.session&&cache.data){
-  keys=await restore(saved.session);
-  const check=await decrypt(keys.key,profile().id,'check',profile().check);
-  if(check.ok!=='tnotes-v1')throw Error('本机登录记忆校验失败，请重新登录');
-  remembered=true;await finishLogin();void sync();
+// A remembered login opens the vault without the master password. Right after Windows sign-in or a backend restart
+// the local backend, or the Windows protection it unlocks the login with, may not answer yet; that is retried for
+// about 20 seconds instead of falling back to the login screen. Only a definite answer (no remembered login, or one
+// that does not match the vault) asks for the password.
+for(let attempt=1;;attempt++){
+ try{
+  config=await api('/api/config');cache=await api('/api/cache');
+  if(cache.data)$('username').value=cache.data.profile.name;
+  // Restoring is only offered where it cannot overwrite anything: a computer without a vault.
+  $('restore-backup').hidden=!!cache.data;
+  $('remember-row').hidden=!config.rememberSupported;$('remember').checked=!!config.rememberSupported;
+  $('connection-hint').textContent=config.remote?'已配置加密同步服务':'本机离线模式 · 可在部署后启用同步';
+  const saved=await api('/api/session');
+  if(saved.session&&cache.data){
+   keys=await restore(saved.session);
+   const check=await decrypt(keys.key,profile().id,'check',profile().check);
+   if(check.ok!=='tnotes-v1')throw Error('本机登录记忆校验失败，请重新登录');
+   remembered=true;$('auth-error').textContent='';await finishLogin();void sync();
+  }
+  break;
+ }catch(e){
+  keys=null;token=null;
+  if(!e.transient||attempt>=14){$('auth-error').textContent=e.message;break;}
+  $('auth-error').textContent='正在连接本机后台，自动登录中…';
+  await new Promise(resolve=>setTimeout(resolve,1500));
  }
-}catch(e){keys=null;token=null;$('auth-error').textContent=e.message;}
-finally{busy=false;$('auth-submit').disabled=false;}
+}
+busy=false;$('auth-submit').disabled=false;
 refreshIcons();

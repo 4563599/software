@@ -3,8 +3,9 @@
  * lyycode：把一笔提交（或一段提交范围）生成“逐文件验证方案”网页。
  *
  * 用法：
- *   node lyycode.js hunks --repo <仓库> [--commit <提交> | --range <A..B>] [--work <工作目录>] [--force]
+ *   node lyycode.js hunks --repo <仓库> [--commit <提交> | --range <A..B>] [--paths <文件,目录>] [--work <工作目录>] [--force]
  *       读取 git diff，输出 hunks.md（每处变更的代码）和 notes.json 骨架（待填写的说明）。
+ *       --paths 只看这些文件或目录（逗号分隔），build 时要传同样的值。
  *   node lyycode.js build --repo <仓库> [--commit <提交> | --range <A..B>] [--work <工作目录>]
  *                         [--notes <notes.json>] [--out <输出.html> | --out-dir <输出目录>]
  *       校验 notes.json，并生成静态网页。
@@ -32,7 +33,7 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 const cmd = args._[0];
 if (!["hunks", "build"].includes(cmd)) {
-  console.error("用法：node lyycode.js <hunks|build> --repo <仓库> [--commit <提交> | --range <A..B>] [--work 目录] [--notes 文件] [--out 文件 | --out-dir 目录] [--force]");
+  console.error("用法：node lyycode.js <hunks|build> --repo <仓库> [--commit <提交> | --range <A..B>] [--paths 文件,目录] [--work 目录] [--notes 文件] [--out 文件 | --out-dir 目录] [--force]");
   process.exit(2);
 }
 const REPO = path.resolve(args.repo || process.cwd());
@@ -72,10 +73,13 @@ const OUT = path.resolve(args.out || path.join(OUT_DIR, `${stamp()}_${safeName(s
 
 // ---------- 读取差异 ----------
 const NO_EXPLAIN_EXT = /\.(xml|json|ya?ml|properties|gradle|kts|pro|md|txt|svg|html?|css|toml|ini|cfg|lock|plist|storyboard|xib|strings)$/i;
+// 只看指定的文件或目录（逗号分隔）：把某个功能在一段范围里的累计改动单独做成网页
+const PATHS = (args.paths || "").split(",").map(s => s.trim()).filter(Boolean);
+const onlyPaths = PATHS.length ? ["--", ...PATHS] : [];
 function collect() {
-  const names = git([...diffArgs, "--no-renames", "--name-only"]).split(/\r?\n/).filter(Boolean);
+  const names = git([...diffArgs, "--no-renames", "--name-only", ...onlyPaths]).split(/\r?\n/).filter(Boolean);
   const stat = {};
-  git([...diffArgs, "--no-renames", "--numstat"]).split(/\r?\n/).filter(Boolean).forEach(l => {
+  git([...diffArgs, "--no-renames", "--numstat", ...onlyPaths]).split(/\r?\n/).filter(Boolean).forEach(l => {
     const [a, d, ...rest] = l.split("\t");
     stat[rest.join("\t")] = [a, d];
   });
@@ -145,6 +149,9 @@ const circled = n => "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲�
 const VL = `<label class="vl" title="点击打勾"><input type="checkbox" class="vchk"><span class="bx"></span><span class="tx"></span></label>`;
 const LANG = p => /\.kts?$/i.test(p) ? "Kotlin 语法" : /\.java$/i.test(p) ? "Java 语法" : /\.dart$/i.test(p) ? "Dart 语法" : /\.swift$/i.test(p) ? "Swift 语法" : /\.(ts|tsx)$/i.test(p) ? "TypeScript 语法" : /\.(js|jsx|mjs)$/i.test(p) ? "JavaScript 语法" : /\.py$/i.test(p) ? "Python 语法" : "语法";
 const KIND_TEXT = { import: "导包，不用逐句解释", resource: "布局 / 资源 / 配置文件，不用逐句解释", code: "代码，需要逐句解释" };
+// 新增的和设计相关的注释：设计出入应在实现前让用户确认，不该写成注释留在代码里
+const DESIGN_NOTE = /^(\/\/|\/\*|\*|#|<!--).*(设计|figma|\bios\b)/i;
+const designNotes = h => h.lines.filter(l => l[0] === "+" && DESIGN_NOTE.test(l.slice(1).trim())).map(l => l.slice(1).trim());
 
 // ---------- hunks：导出每处变更 + notes 骨架 ----------
 if (cmd === "hunks") {
@@ -152,12 +159,18 @@ if (cmd === "hunks") {
   fs.mkdirSync(WORK, { recursive: true });
   let md = `# ${id} ${subject}\n\n共 ${files.length} 个文件，${files.reduce((s, f) => s + f.hunks.length, 0)} 处变更。文件顺序与 git 显示一致。\n\n`;
   const skeleton = { title: `${id}「${subject}」逐文件验证方案`, alerts: [], files: {} };
+  const designHits = [];
   files.forEach(f => {
     md += `## [${f.i}/${files.length}] ${f.path}（+${f.add} −${f.del}，${f.hunks.length} 处变更${f.isNew ? "，新文件" : ""}${f.isDeleted ? "，已删除" : ""}）\n\n`;
     skeleton.files[f.path] = f.hunks.map((h, hi) => {
       md += `### 变更 ${hi + 1}（第 ${h.start} 行起，${KIND_TEXT[h.kind]}）\n\n`;
       md += h.placeholder ? `（${h.placeholder}）\n\n` : "```diff\n" + h.lines.join("\n") + "\n```\n\n";
-      const n = { hunk: hi + 1, start: h.start, kind: h.kind, why: "", verify: "" };
+      const dn = designNotes(h);
+      if (dn.length) {
+        md += `> ⚠ 新增了和设计相关的注释，按问题标出（warn + alerts），这处设计出入要和用户确认：\n${dn.map(t => `> - \`${t}\``).join("\n")}\n\n`;
+        dn.forEach(t => designHits.push(`${f.path} 变更 ${hi + 1}：${t}`));
+      }
+      const n ={ hunk: hi + 1, start: h.start, kind: h.kind, why: "", verify: "" };
       if (h.kind === "import") { n.why = "导包：下面新增的代码要用到这些类 / 方法。"; n.verify = "编译通过即可。"; }
       if (h.kind === "code") { n.lines = {}; n.syntax = []; }
       return n;
@@ -174,6 +187,10 @@ if (cmd === "hunks") {
   console.log(`文件 ${files.length} 个，变更 ${files.reduce((s, f) => s + f.hunks.length, 0)} 处：`);
   files.forEach(f => console.log(`  ${String(f.i).padStart(3)}  ${f.path}  ${f.hunks.map(h => h.kind[0]).join("")}`));
   console.log("（每个字母是一处变更：i=导包 r=布局/资源 c=代码）");
+  if (designHits.length) {
+    console.log(`新增的和设计相关的注释（共 ${designHits.length} 条，按问题标出）：`);
+    designHits.forEach(t => console.log("  - " + t));
+  }
   process.exit(0);
 }
 
@@ -197,6 +214,7 @@ files.forEach(f => {
     const isCode = f.hunks[hi].kind === "code";
     if (isCode && !(x.lines && Object.keys(x.lines).length) && !(x.explain && x.explain.length)) warns.push(`${f.path} 变更 ${hi + 1}：是代码变更，但没有逐行说明（lines）`);
     if (isCode && !(x.syntax && x.syntax.length) && !(x.explain && x.explain.some(e => e[2] && String(e[2]).trim()))) warns.push(`${f.path} 变更 ${hi + 1}：没有 Kotlin 语法说明（syntax）`);
+    if (!x.warn) designNotes(f.hunks[hi]).forEach(t => warns.push(`${f.path} 变更 ${hi + 1}：新增了和设计相关的注释「${t}」，要设 warn 并写进 alerts`));
     (x.syntax || []).forEach((e, ei) => { if (!Array.isArray(e) || e.length < 3) errors.push(`${f.path} 变更 ${hi + 1}：syntax 第 ${ei + 1} 项要写成 ["语法名", "文档位置", "解释"]`); });
     (x.explain || []).forEach((e, ei) => { if (!Array.isArray(e) || e.length < 2) errors.push(`${f.path} 变更 ${hi + 1}：explain 第 ${ei + 1} 项要写成 ["代码", "含义", [["语法名", "文档位置", "解释"], ...]]`); });
   });

@@ -1,0 +1,545 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Windows.Forms;
+
+namespace Codex.Ble
+{
+    // One row of a section's field table: its 序号, the payload byte it starts at, and its length (-1 when variable).
+    public sealed class ProtocolRow
+    {
+        public string Number = "", Name = "";
+        public int Start, Length;
+        // Where the row is drawn: its page and its box (table lines) in page em; Index is its place in the table.
+        public int Index, Page = -1;
+        public double Top, Bottom, Left, Right;
+        // A tall row that runs onto the next page: its part there (page, top, bottom); ContinuePage -1 when none.
+        public int ContinuePage = -1;
+        public double ContinueTop, ContinueBottom;
+    }
+
+    public sealed class ProtocolSection
+    {
+        public int Index, Page, Level;
+        public double Top;
+        public string Number = "", Title = "";
+        public int? Command;
+    }
+
+    // The protocol document saved as HTML from its PDF: every page is a background picture (table lines) with the
+    // text placed on top in em units. A section is everything from its heading to the next heading, cut out of the
+    // pages it spans and stacked, so only that heading's content is shown.
+    public sealed class ProtocolDocument
+    {
+        private const double PageWidth = 49.58333, PageHeight = 70.08334;
+        private static readonly Regex PageStart = new Regex("<div id=\"page_(\\d+)\"", RegexOptions.Compiled);
+        private static readonly Regex Line = new Regex("<div class=\"stl_01\" style=\"left:([\\d.]+)em;top:([\\d.]+)em;\">(.*?)</div>", RegexOptions.Compiled | RegexOptions.Singleline);
+        private static readonly Regex Span = new Regex("<span class=\"([^\"]*)\"[^>]*?style=\"([^\"]*)\"[^>]*>(.*?)</span>", RegexOptions.Compiled | RegexOptions.Singleline);
+        private static readonly Regex Size = new Regex("\\.(stl_\\d+)\\s*\\{[^}]*?font-size:\\s*([\\d.]+)em", RegexOptions.Compiled);
+        private static readonly Regex Picture = new Regex("<img src=\"data:image/\\w+;base64,([A-Za-z0-9+/=]+)\"", RegexOptions.Compiled);
+        private static readonly Regex Numbered = new Regex("^(?:附录\\s*)?(\\d+(?:\\.\\d+)*)", RegexOptions.Compiled);
+        private static readonly Regex CommandCode = new Regex("cmd[_-]?([0-9A-Fa-f]{2})(?![0-9A-Fa-f])", RegexOptions.Compiled);
+
+        private string head = "";
+        private readonly List<string> pages = new List<string>();
+        private readonly List<double> contentTop = new List<double>(), contentBottom = new List<double>();
+        // Every text line by page (left, top, text), for reading the field tables; field rows cached by section.
+        private readonly List<List<Tuple<double, double, string>>> lines = new List<List<Tuple<double, double, string>>>();
+        private readonly Dictionary<ProtocolSection, List<ProtocolRow>> rowCache = new Dictionary<ProtocolSection, List<ProtocolRow>>();
+        public readonly List<ProtocolSection> Sections = new List<ProtocolSection>();
+        public string Path { get; private set; }
+
+        public static ProtocolDocument Load(string path)
+        {
+            string text = File.ReadAllText(path, Encoding.UTF8);
+            int body = text.IndexOf("<body>", StringComparison.OrdinalIgnoreCase);
+            if (body < 0 || !PageStart.IsMatch(text)) throw new InvalidDataException("这个 HTML 不是从协议 PDF 转出来的分页格式。");
+            var document = new ProtocolDocument { Path = path, head = text.Substring(0, body) };
+            var sizes = new Dictionary<string, double>();
+            foreach (Match match in Size.Matches(document.head)) sizes[match.Groups[1].Value] = Double.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+
+            var starts = PageStart.Matches(text).Cast<Match>().Select(match => match.Index).ToList();
+            int end = text.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+            if (end < 0) end = text.Length;
+            for (int i = 0; i < starts.Count; i++)
+                document.pages.Add(text.Substring(starts[i], (i + 1 < starts.Count ? starts[i + 1] : end) - starts[i]));
+
+            ProtocolSection last = null;
+            double lastTop = 0;
+            for (int page = 0; page < document.pages.Count; page++)
+            {
+                string html = document.pages[page];
+                double top = PageHeight, bottom = 0;
+                var pageLines = new List<Tuple<double, double, string>>();
+                document.lines.Add(pageLines);
+                foreach (Match line in Line.Matches(html))
+                {
+                    double lineTop = Double.Parse(line.Groups[2].Value, CultureInfo.InvariantCulture);
+                    string inner = line.Groups[3].Value;
+                    // With the span offsets cancelled for the built-in browser (see SectionHtml), the text starts at the
+                    // line's own top, as in the PDF.
+                    double size = 0;
+                    var words = new StringBuilder();
+                    foreach (Match span in Span.Matches(inner))
+                    {
+                        double spanSize = 1;
+                        foreach (string name in span.Groups[1].Value.Split(' '))
+                            if (sizes.ContainsKey(name)) spanSize = sizes[name];
+                        size = Math.Max(size, spanSize);
+                        words.Append(Regex.Replace(span.Groups[3].Value, "<[^>]+>", ""));
+                    }
+                    double visual = lineTop;
+                    top = Math.Min(top, visual);
+                    bottom = Math.Max(bottom, visual + Math.Max(size, 0.75) * 1.2);
+                    // Headings are the large lines that start with a number or 附录; the table of contents (links) is not.
+                    string content = Regex.Replace(WebUtility.HtmlDecode(words.ToString()).Replace(' ', ' '), "\\s+", " ").Trim();
+                    if (content.Length > 0) pageLines.Add(Tuple.Create(Double.Parse(line.Groups[1].Value, CultureInfo.InvariantCulture), lineTop, content));
+                    if (size < 1.3 || inner.Contains("<a href") || content.Length == 0) continue;
+                    Match number = Numbered.Match(content);
+                    if (number.Success)
+                    {
+                        last = new ProtocolSection { Index = document.Sections.Count, Page = page, Top = visual, Number = number.Groups[1].Value, Title = content, Level = number.Groups[1].Value.Count(c => c == '.') + 1 };
+                        Match code = CommandCode.Match(content);
+                        if (code.Success) last.Command = Convert.ToInt32(code.Groups[1].Value, 16);
+                        document.Sections.Add(last);
+                        lastTop = visual;
+                    }
+                    else if (last != null && last.Page == page && visual - lastTop < 4)
+                    {
+                        // A long heading wrapped onto a second line.
+                        last.Title += content;
+                        lastTop = visual;
+                    }
+                }
+                // Table lines are only in the background picture, so its first and last marked rows count too.
+                double[] marks = PictureExtent(html);
+                if (marks != null)
+                {
+                    top = Math.Min(top, marks[0]);
+                    bottom = Math.Max(bottom, marks[1]);
+                }
+                document.contentTop.Add(Math.Max(0, top));
+                document.contentBottom.Add(Math.Min(PageHeight, bottom));
+            }
+            return document;
+        }
+
+        // The dark pixels (table lines) of a page's background picture.
+        private sealed class PageMarks
+        {
+            public int Width, Height;
+            public double PerEm;
+            public bool[] Dark;
+            public bool At(int x, int y) { return x >= 0 && y >= 0 && x < Width && y < Height && Dark[y * Width + x]; }
+        }
+
+        private PageMarks ReadMarks(int page)
+        {
+            Match picture = Picture.Match(pages[page]);
+            if (!picture.Success) return null;
+            try
+            {
+                using (var stream = new MemoryStream(Convert.FromBase64String(picture.Groups[1].Value)))
+                using (var source = new Bitmap(stream))
+                using (var image = source.Clone(new Rectangle(0, 0, source.Width, source.Height), PixelFormat.Format32bppArgb))
+                {
+                    var marks = new PageMarks { Width = image.Width, Height = image.Height, PerEm = image.Height / PageHeight, Dark = new bool[image.Width * image.Height] };
+                    BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                    try
+                    {
+                        var row = new byte[data.Stride];
+                        for (int y = 0; y < image.Height; y++)
+                        {
+                            Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, row.Length);
+                            for (int x = 0; x < image.Width; x++)
+                            {
+                                int at = x * 4;
+                                // Black or grey lines only: the blue header fill and yellow highlights are not lines.
+                                marks.Dark[y * image.Width + x] = row[at + 3] > 40 && row[at] < 140 && row[at + 1] < 140 && row[at + 2] < 140;
+                            }
+                        }
+                    }
+                    finally { image.UnlockBits(data); }
+                    return marks;
+                }
+            }
+            catch (Exception) { return null; }
+        }
+
+        private void PlaceRow(ProtocolRow row, double numberLeft, double numberTop, Dictionary<int, PageMarks> cache)
+        {
+            // From the middle of the row's 序号, the nearest lines above and below are the row's borders, and the first
+            // line from each side of the page along the row is the table's edge.
+            PageMarks marks;
+            if (!cache.TryGetValue(row.Page, out marks)) cache[row.Page] = marks = ReadMarks(row.Page);
+            row.Top = numberTop - 0.5; row.Bottom = numberTop + 1.3; row.Left = numberLeft - 1.5; row.Right = PageWidth - 3;
+            if (marks == null) return;
+            int x = (int)((numberLeft + 0.35) * marks.PerEm), y = (int)((numberTop + 0.4) * marks.PerEm);
+            int up = y, down = y;
+            while (up > 0 && !marks.At(x, up)) up--;
+            while (down < marks.Height - 1 && !marks.At(x, down)) down++;
+            int left = 0, right = marks.Width - 1;
+            while (left < x && !marks.At(left, y)) left++;
+            while (right > x && !marks.At(right, y)) right--;
+            if (up <= 0 || down >= marks.Height - 1 || left >= x || right <= x) return;
+            row.Top = up / marks.PerEm; row.Bottom = (down + 1) / marks.PerEm; row.Left = left / marks.PerEm; row.Right = (right + 1) / marks.PerEm;
+        }
+
+        private static double[] PictureExtent(string html)
+        {
+            Match picture = Picture.Match(html);
+            if (!picture.Success) return null;
+            try
+            {
+                using (var stream = new MemoryStream(Convert.FromBase64String(picture.Groups[1].Value)))
+                using (var source = new Bitmap(stream))
+                using (var image = source.Clone(new Rectangle(0, 0, source.Width, source.Height), PixelFormat.Format32bppArgb))
+                {
+                    BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                    try
+                    {
+                        var row = new byte[data.Stride];
+                        int first = -1, last = -1;
+                        for (int y = 0; y < image.Height; y++)
+                        {
+                            Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, row.Length);
+                            for (int x = 0; x < image.Width; x++)
+                            {
+                                int at = x * 4;
+                                if (row[at + 3] > 40 && (row[at] < 235 || row[at + 1] < 235 || row[at + 2] < 235))
+                                {
+                                    if (first < 0) first = y;
+                                    last = y;
+                                    break;
+                                }
+                            }
+                        }
+                        if (first < 0) return null;
+                        double perEm = image.Height / PageHeight;
+                        return new[] { first / perEm, (last + 1) / perEm };
+                    }
+                    finally { image.UnlockBits(data); }
+                }
+            }
+            catch (Exception) { return null; }
+        }
+
+        public int LastPage(ProtocolSection section)
+        {
+            ProtocolSection next = section.Index + 1 < Sections.Count ? Sections[section.Index + 1] : null;
+            return next == null ? pages.Count - 1 : next.Page;
+        }
+
+        public List<ProtocolRow> FieldRows(ProtocolSection section)
+        {
+            // The section's first field table (序号 | 长度 | 定义 ...): each row's 序号 and length, laid end to end from
+            // payload byte 7, so a decoded field can be matched to the row that describes it.
+            List<ProtocolRow> cached;
+            if (section == null) return new List<ProtocolRow>();
+            if (rowCache.TryGetValue(section, out cached)) return cached;
+            var rows = new List<ProtocolRow>();
+            rowCache[section] = rows;
+            ProtocolSection next = section.Index + 1 < Sections.Count ? Sections[section.Index + 1] : null;
+            var inside = new List<Tuple<int, double, double, string>>();
+            for (int page = section.Page; page <= LastPage(section) && page < lines.Count; page++)
+                foreach (var line in lines[page].OrderBy(item => item.Item2).ThenBy(item => item.Item1))
+                {
+                    if (page == section.Page && line.Item2 < section.Top) continue;
+                    if (next != null && page == next.Page && line.Item2 >= next.Top) continue;
+                    inside.Add(Tuple.Create(page, line.Item2, line.Item1, line.Item3));
+                }
+            var header = inside.FirstOrDefault(item => item.Item4 == "序号");
+            if (header == null) return rows;
+            var lengthHeader = inside.FirstOrDefault(item => item.Item1 == header.Item1 && Math.Abs(item.Item2 - header.Item2) < 0.4 && item.Item4.StartsWith("长度", StringComparison.Ordinal));
+            if (lengthHeader == null) return rows;
+            var nameHeader = inside.FirstOrDefault(item => item.Item1 == header.Item1 && Math.Abs(item.Item2 - header.Item2) < 0.4 && item.Item3 > lengthHeader.Item3 && item.Item4.EndsWith("定义", StringComparison.Ordinal));
+            double numberLeft = header.Item3 - 1.5, lengthLeft = lengthHeader.Item3 - 1.0, nameLeft = nameHeader != null ? nameHeader.Item3 - 0.5 : lengthHeader.Item3 + 6;
+            var marks = new Dictionary<int, PageMarks>();
+
+            int start = 7;
+            foreach (var cell in inside.SkipWhile(item => item != header).Skip(1))
+            {
+                if (cell.Item4 == "序号") break;                     // a second table (e.g. the parameter list) starts
+                if (cell.Item3 < numberLeft || cell.Item3 >= lengthLeft || !Regex.IsMatch(cell.Item4, "^\\d+\\*?$")) continue;
+                var length = inside.FirstOrDefault(item => item.Item1 == cell.Item1 && Math.Abs(item.Item2 - cell.Item2) < 0.35 && item.Item3 >= lengthLeft && item.Item3 < nameLeft);
+                if (length == null) break;
+                // The name is the first cell to the right of the length on the same line.
+                var name = inside.Where(item => item.Item1 == cell.Item1 && Math.Abs(item.Item2 - cell.Item2) < 0.35 && item.Item3 > length.Item3 + 0.5)
+                    .OrderBy(item => item.Item3).FirstOrDefault();
+                Match bytes = Regex.Match(length.Item4, "^\\d+");
+                var row = new ProtocolRow { Number = cell.Item4.TrimEnd('*'), Name = name == null ? "" : name.Item4, Start = start, Length = bytes.Success ? Int32.Parse(bytes.Value, CultureInfo.InvariantCulture) : -1 };
+                row.Index = rows.Count;
+                row.Page = cell.Item1;
+                PlaceRow(row, cell.Item3, cell.Item2, marks);
+                rows.Add(row);
+                if (row.Length < 0) break;
+                start += row.Length;
+            }
+            // A row whose next row starts lower down the next page continues there, above that row.
+            for (int i = 0; i + 1 < rows.Count; i++)
+            {
+                ProtocolRow row = rows[i], following = rows[i + 1];
+                if (following.Page != row.Page + 1) continue;
+                PageMarks below;
+                if (!marks.TryGetValue(following.Page, out below)) marks[following.Page] = below = ReadMarks(following.Page);
+                if (below == null) continue;
+                int x = (int)((row.Left + 0.5) * below.PerEm), y = 0;
+                while (y < below.Height && !below.At(x, y)) y++;
+                double tableTop = y / below.PerEm;
+                if (y >= below.Height || following.Top - tableTop < 0.5) continue;
+                row.ContinuePage = following.Page;
+                row.ContinueTop = tableTop;
+                row.ContinueBottom = following.Top + 1 / below.PerEm;
+            }
+            return rows;
+        }
+
+        public ProtocolSection FindCommand(int command)
+        {
+            return Sections.FirstOrDefault(section => section.Command == command);
+        }
+
+        public ProtocolSection FindNumber(string number)
+        {
+            return Sections.FirstOrDefault(section => section.Number == number);
+        }
+
+        public ProtocolSection FindPage(int page)
+        {
+            // The section showing at the top of a page (pages counted from 1, as in the PDF).
+            ProtocolSection found = null;
+            foreach (var section in Sections)
+                if (section.Page <= page - 1) found = section;
+            return found;
+        }
+
+        public string SectionHtml(ProtocolSection section, int highlight = -1)
+        {
+            // Every row of the section's table gets a red frame, hidden except the highlighted one; the viewer shows
+            // another one without reloading.
+            var tableRows = FieldRows(section);
+            ProtocolSection next = section.Index + 1 < Sections.Count ? Sections[section.Index + 1] : null;
+            int lastPage = LastPage(section);
+            // The pages are joined edge to edge without page labels or margins, so a table that runs onto the next
+            // page reads as one table: a page ends just under its last line and the next starts just above its first.
+            var body = new StringBuilder();
+            for (int page = section.Page; page <= lastPage; page++)
+            {
+                double from = page == section.Page ? Math.Max(0, section.Top - 0.8) : Math.Max(0, contentTop[page] - 0.02);
+                double to = next != null && page == next.Page ? next.Top - 0.8 : Math.Min(PageHeight, contentBottom[page] + 0.02);
+                if (to - from < 0.6) continue;
+                body.Append("<div class=\"slice\" style=\"height:").Append((to - from).ToString("0.###", CultureInfo.InvariantCulture))
+                    .Append("em\"><div style=\"position:absolute;left:0;top:-").Append(from.ToString("0.###", CultureInfo.InvariantCulture)).Append("em\">")
+                    .Append(pages[page]);
+                foreach (var row in tableRows.Where(item => item.Page == page || item.ContinuePage == page))
+                {
+                    bool own = row.Page == page;
+                    double boxTop = own ? row.Top : row.ContinueTop, boxBottom = own ? row.Bottom : row.ContinueBottom;
+                    body.Append("<div class=\"hit\" data-row=\"").Append(row.Index).Append("\"").Append(own ? " id=\"row-" + row.Index + "\"" : "")
+                        .Append(" style=\"left:").Append(Em(row.Left - 0.15)).Append(";top:").Append(Em(boxTop - 0.15))
+                        .Append(";width:").Append(Em(row.Right - row.Left + 0.3)).Append(";height:").Append(Em(boxBottom - boxTop + 0.3))
+                        .Append(row.Index == highlight ? "" : ";display:none").Append("\"></div>");
+                }
+                body.Append("</div></div>");
+            }
+            // IE11 standards mode for the built-in browser; the slices sit on a light page like paper.
+            // The converter lifts every span by a relative "top" that Chromium cancels out but IE (the built-in
+            // browser) does not, which put each line one table row too high there; IE alone drops the lift.
+            string style = "<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\" /><style>"
+                + "@media all and (-ms-high-contrast:none),(-ms-high-contrast:active){.stl_01 span{top:0 !important;}}"
+                + "html,body{background:#f4f6fa;margin:0;padding:14px 0 24px 0;}"
+                + ".sheet{width:" + PageWidth.ToString(CultureInfo.InvariantCulture) + "em;margin:0 auto;padding:0.6em 0 1.2em 0;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12);}"
+                + ".slice{position:relative;width:" + PageWidth.ToString(CultureInfo.InvariantCulture) + "em;overflow:hidden;margin:0;}"
+                + ".hit{position:absolute;border:3px solid #e11d48;box-sizing:border-box;z-index:1000;pointer-events:none;}"
+                + "</style>";
+            int at = head.IndexOf("<head>", StringComparison.OrdinalIgnoreCase);
+            string top = at >= 0 ? head.Insert(at + 6, style) : head + style;
+            return top + "<body><div class=\"sheet\">" + body + "</div></body></html>";
+        }
+
+        private static string Em(double value) { return value.ToString("0.###", CultureInfo.InvariantCulture) + "em"; }
+
+        public string PageRange(ProtocolSection section)
+        {
+            int last = LastPage(section);
+            ProtocolSection next = section.Index + 1 < Sections.Count ? Sections[section.Index + 1] : null;
+            if (next != null && next.Page == last && next.Top - 0.8 - (contentTop[last] - 0.02) < 0.6 && last > section.Page) last--;
+            return last > section.Page ? "第 " + (section.Page + 1) + "–" + (last + 1) + " 页" : "第 " + (section.Page + 1) + " 页";
+        }
+    }
+
+    // One window for reading the protocol section by section: the headings on the left, the chosen section on the right.
+    public sealed class ProtocolViewer : Form
+    {
+        private static ProtocolViewer current;
+        private readonly ProtocolDocument document;
+        private readonly ListBox outline = new ListBox();
+        private readonly WebBrowser browser = new WebBrowser();
+        private readonly Label title = new Label();
+        private readonly Label pages = new Label();
+        private readonly Button previous, next, external;
+        private ProtocolSection shown;
+        private ProtocolRow framed;
+        private bool loaded;
+        private readonly Font body, strong, heading;
+
+        public static void OpenSection(Form owner, ProtocolDocument document, ProtocolSection section, Font body, Font strong, Font heading, ProtocolRow row = null)
+        {
+            if (current == null || current.IsDisposed || current.document != document)
+            {
+                if (current != null && !current.IsDisposed) current.Close();
+                current = new ProtocolViewer(document, body, strong, heading) { Icon = owner.Icon };
+                var area = Screen.FromControl(owner).WorkingArea;
+                current.StartPosition = FormStartPosition.Manual;
+                current.Size = new Size(Math.Min(1180, area.Width - 40), Math.Min(940, area.Height - 30));
+                current.Location = new Point(area.Left + (area.Width - current.Width) / 2, area.Top + (area.Height - current.Height) / 2);
+                current.Show(owner);
+            }
+            if (current.WindowState == FormWindowState.Minimized) current.WindowState = FormWindowState.Normal;
+            current.Activate();
+            current.Open(section ?? document.Sections.FirstOrDefault(), row);
+        }
+
+        /// <summary>While the viewer shows this section, frames the given table row (or none) without taking focus.</summary>
+        public static void Follow(ProtocolSection section, ProtocolRow row)
+        {
+            if (current == null || current.IsDisposed || !current.Visible || section == null || current.shown != section) return;
+            current.Open(section, row);
+        }
+
+        private ProtocolViewer(ProtocolDocument document, Font body, Font strong, Font heading)
+        {
+            this.document = document;
+            this.body = body;
+            this.strong = strong;
+            this.heading = heading;
+            Text = "协议章节 · " + System.IO.Path.GetFileNameWithoutExtension(document.Path);
+            Font = body;
+            BackColor = Color.FromArgb(244, 246, 250);
+
+            var split = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel1, SplitterWidth = 6, BackColor = BackColor };
+            outline.Dock = DockStyle.Fill;
+            outline.BorderStyle = BorderStyle.None;
+            outline.IntegralHeight = false;
+            outline.DrawMode = DrawMode.OwnerDrawFixed;
+            outline.ItemHeight = 34;
+            outline.Items.AddRange(document.Sections.Cast<object>().ToArray());
+            outline.DrawItem += DrawOutline;
+            outline.SelectedIndexChanged += delegate
+            {
+                var section = outline.SelectedItem as ProtocolSection;
+                if (section != null && section != shown) Open(section, null);
+            };
+            var outlinePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8, 8, 0, 8), BackColor = Color.White };
+            outlinePanel.Controls.Add(outline);
+            split.Panel1.Controls.Add(outlinePanel);
+
+            var bar = new TableLayoutPanel { Dock = DockStyle.Top, Height = 66, ColumnCount = 5, Padding = new Padding(12, 8, 10, 6), BackColor = Color.White };
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            for (int i = 0; i < 4; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            var titles = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+            // Section title on top, its pages and the reading tips underneath.
+            title.Dock = DockStyle.Top; title.Height = 28; title.Font = strong; title.AutoEllipsis = true; title.ForeColor = Color.FromArgb(31, 41, 55); title.TextAlign = ContentAlignment.MiddleLeft;
+            pages.Dock = DockStyle.Fill; pages.ForeColor = Color.FromArgb(75, 85, 99); pages.AutoEllipsis = true; pages.TextAlign = ContentAlignment.TopLeft;
+            titles.Controls.Add(pages);
+            titles.Controls.Add(title);
+            bar.Controls.Add(titles, 0, 0);
+            previous = BarButton("上一节");
+            next = BarButton("下一节");
+            external = BarButton("在浏览器中打开");
+            previous.Click += delegate { if (shown != null && shown.Index > 0) Open(document.Sections[shown.Index - 1], null); };
+            next.Click += delegate { if (shown != null && shown.Index + 1 < document.Sections.Count) Open(document.Sections[shown.Index + 1], null); };
+            external.Click += delegate { OpenExternally(); };
+            bar.Controls.Add(previous, 1, 0);
+            bar.Controls.Add(next, 2, 0);
+            bar.Controls.Add(external, 3, 0);
+
+            browser.Dock = DockStyle.Fill;
+            browser.ScriptErrorsSuppressed = true;
+            browser.IsWebBrowserContextMenuEnabled = true;
+            browser.WebBrowserShortcutsEnabled = true;
+            browser.AllowWebBrowserDrop = false;
+            browser.DocumentCompleted += delegate { loaded = true; ShowFrame(); };
+            split.Panel2.Controls.Add(browser);
+            split.Panel2.Controls.Add(bar);
+            Controls.Add(split);
+            Shown += delegate { split.SplitterDistance = 300; };
+        }
+
+        private Button BarButton(string text)
+        {
+            var button = new Button { Text = text, AutoSize = true, FlatStyle = FlatStyle.Flat, Font = body, BackColor = Color.White, ForeColor = Color.FromArgb(37, 99, 235), Margin = new Padding(6, 4, 0, 4), Padding = new Padding(6, 2, 6, 2) };
+            button.FlatAppearance.BorderColor = Color.FromArgb(222, 227, 235);
+            return button;
+        }
+
+        private void DrawOutline(object sender, DrawItemEventArgs args)
+        {
+            if (args.Index < 0) return;
+            var section = (ProtocolSection)outline.Items[args.Index];
+            bool selected = (args.State & DrawItemState.Selected) != 0;
+            using (var fill = new SolidBrush(selected ? Color.FromArgb(219, 234, 254) : Color.White)) args.Graphics.FillRectangle(fill, args.Bounds);
+            int indent = section.Level > 1 ? 18 : 4;
+            var box = new Rectangle(args.Bounds.X + indent, args.Bounds.Y, args.Bounds.Width - indent - 4, args.Bounds.Height);
+            TextRenderer.DrawText(args.Graphics, section.Title, section.Level > 1 ? body : strong, box, selected ? Color.FromArgb(37, 99, 235) : Color.FromArgb(31, 41, 55),
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        }
+
+        private void Open(ProtocolSection section, ProtocolRow row = null)
+        {
+            if (section == null) return;
+            framed = row;
+            pages.Text = document.PageRange(section) + (row != null
+                ? "   ·   红框：表格序号 " + row.Number + (row.Name.Length > 0 ? "（" + row.Name + "）" : "")
+                : "   ·   只显示这个标题下的内容，按 Ctrl+F 查找，Ctrl+滚轮缩放");
+            if (section == shown && loaded)
+            {
+                // Same section: only the frame moves.
+                ShowFrame();
+                return;
+            }
+            shown = section;
+            loaded = false;
+            title.Text = section.Title;
+            if (outline.SelectedItem != section) outline.SelectedItem = section;
+            previous.Enabled = section.Index > 0;
+            next.Enabled = section.Index + 1 < document.Sections.Count;
+            UseWaitCursor = true;
+            browser.DocumentText = document.SectionHtml(section, row == null ? -1 : row.Index);
+            UseWaitCursor = false;
+        }
+
+        private void ShowFrame()
+        {
+            // Hide every frame, show the chosen row's and scroll it to just under the top of the view.
+            if (browser.Document == null) return;
+            string script = "(function(i){var all=document.querySelectorAll('.hit');for(var k=0;k<all.length;k++)all[k].style.display=(all[k].getAttribute('data-row')==String(i))?'block':'none';"
+                + "var e=document.getElementById('row-'+i);if(!e)return 0;var r=e.getBoundingClientRect();"
+                + "var y=r.top+(window.pageYOffset||document.documentElement.scrollTop)-110;window.scrollTo(0,y<0?0:y);return 1;})("
+                + (framed == null ? -1 : framed.Index) + ")";
+            try { browser.Document.InvokeScript("eval", new object[] { script }); } catch (Exception) { }
+        }
+
+        private void OpenExternally()
+        {
+            if (shown == null) return;
+            try
+            {
+                string name = "ble-protocol-" + Regex.Replace(shown.Number, "[^0-9.]", "") + ".html";
+                string file = System.IO.Path.Combine(System.IO.Path.GetTempPath(), name);
+                File.WriteAllText(file, document.SectionHtml(shown, framed == null ? -1 : framed.Index), new UTF8Encoding(false));
+                Process.Start(new ProcessStartInfo(file) { UseShellExecute = true });
+            }
+            catch (Exception error) { MessageBox.Show(this, "无法在浏览器中打开：" + error.Message, Text); }
+        }
+    }
+}

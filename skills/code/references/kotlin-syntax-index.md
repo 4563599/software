@@ -21,6 +21,9 @@ node <技能目录>/scripts/kotlin-docs.js find <关键字...> [--chapter <章�
 | 注释 | `//` / `/* */` / `/** */` | 基本语法 › 注释 · 第 557 页 | 行注释、块注释、文档注释 |
 | 数值字面值 | `3000L` | 基本类型 › 数字（数值常量字面值） · 第 607 页 | L 结尾表示 Long |
 | 显式数字转换 | `.toLong()` / `.toInt()` | 基本类型 › 显式数字转换 · 第 608 页 | 数字类型之间不会隐式转换，要调用 toXxx() |
+| 浮点数字面值 | `0f` / `0.5f` | 基本类型 › 数值常量字面值 · 第 607 页 | f 或 F 后缀表示 Float |
+| 位运算 | `flags or mask` | 基本类型 › 位运算 · 第 611 页 | Int、Long 的 or 按位合并标记，可以中缀形式调用 |
+| 原生类型数组 | `IntArray` / `FloatArray` | 基本类型 › 原生类型数组 · 第 631-632 页 | 分别对应 Java 的 int[]、float[]；intArrayOf、floatArrayOf 用于创建对应数组 |
 | 属性的 getter / setter | `a.text = x` | 属性 › Getter 与 Setter · 第 680-682 页 | 读写属性实际调用 getter / setter，相当于 Java 的 getXxx()/setXxx() |
 | 布尔运算 | `&&` / `\|\|` / `!` | 基本类型 › 布尔 · 第 616 页 | 与、或、非；&& 和 \|\| 是短路求值 |
 | 相等性 | `==` / `!=` / `===` | 相等性 · 第 813-814 页 | == 比较内容（调用 equals），=== 比较是否同一个对象 |
@@ -62,10 +65,12 @@ node <技能目录>/scripts/kotlin-docs.js find <关键字...> [--chapter <章�
 | lambda 表达式 | `{ x -> … }` | lambda 表达式 › Lambda 表达式语法 · 第 774 页 | 最后一个表达式是返回值 |
 | 拖尾 lambda | `f(a) { … }` / `run { … }` | lambda 表达式 › 传递末尾的 lambda 表达式 · 第 774 页 | 最后一个参数是函数时，lambda 可以写在括号外；唯一参数时括号可省 |
 | it 隐式参数 | `{ it > 0 }` | lambda 表达式 › it：单个参数的隐式名称 · 第 774-775 页 | 只有一个参数时可以不声明，用 it |
+| 未使用的 lambda 参数 | `{ _, value -> … }` | lambda 表达式 › 下划线用于未使用的变量 · 第 775 页 | 用下划线占住当前不使用的参数位置 |
 | SAM 转换 | `setOnClickListener { }` | 函数式（SAM）接口 › SAM 转换 · 第 688 页；在 Kotlin 中调用 Java › SAM 转换 · 第 922 页 | lambda 自动转换成只有一个抽象方法的接口 |
 | 作用域函数 | `let` / `run` / `with` / `apply` / `also` | 作用域函数 · 第 1403-1404 页（对比表） | let/also 用 it，run/with/apply 用 this |
 | let | `x?.let { it… }` | 作用域函数 › let · 第 1409 页 | 返回 lambda 的结果，常配合 ?. 处理非空值 |
 | run | `x.run { 直接用成员 }` | 作用域函数 › run · 第 1404-1407 页 | 块里用 this（可省略）访问对象成员 |
+| apply | `Paint().apply { … }` | 作用域函数 › apply · 第 1412 页 | 代码块中配置接收者，表达式返回配置后的对象 |
 | 扩展函数 | `fun View.makeGone()` | 扩展 › 扩展函数 · 第 694-695 页 | 不改原类，给它“添加”方法 |
 
 ## 类与对象
@@ -74,6 +79,7 @@ node <技能目录>/scripts/kotlin-docs.js find <关键字...> [--chapter <章�
 |---|---|---|---|
 | 类与构造函数 | `class A(val x: Int)` | 类 · 第 670-674 页 | 主构造函数写在类名后 |
 | 继承与覆盖 | `open` / `override` | 继承 › 覆盖方法 · 第 675-676 页；调用超类实现 · 第 677 页 | 类和成员默认 final，要 open 才能被继承 / 覆盖，覆盖必须写 override |
+| 实现接口 | `class A : Base(), Interface` | 接口 › 实现接口 · 第 685 页 | 类通过冒号后的类型列表声明实现接口，并用 override 实现成员 |
 | 通用超类 Any | `Any` / `Any?` | 继承 · 第 675 页 | 所有类的共同超类 |
 | 可见性修饰符 | `private` / `protected` / `internal` / `public` | 可见性修饰符 · 第 691-692 页 | 默认 public；private 只在类或文件内可见 |
 | 数据类 | `data class` | 数据类 · 第 700-701 页 | 自动生成 equals / hashCode / toString / copy |
@@ -86,6 +92,7 @@ node <技能目录>/scripts/kotlin-docs.js find <关键字...> [--chapter <章�
 | 限定的 this | `this@MainActivity` | this 表达式 › 限定的 this · 第 816 页 | 在 lambda 或内部类里指明是哪个外层对象 |
 | 注解 | `@POST(...)` | 注解 · 第 824 页 | 给代码附加元数据，框架读取后生成代码 |
 | 类引用 / Java 类 | `A::class.java` / `a.javaClass` | 在 Kotlin 中调用 Java › 获取 Java 类 · 第 920-921 页；反射 › 类引用 · 第 835 页 | 相当于 Java 的 A.class |
+| Java 合成属性 | `view.foreground = drawable` | 在 Kotlin 中调用 Java › Getter 与 Setter · 第 906-907 页 | 遵循约定的 Java getter、setter 可以通过 Kotlin 属性语法访问 |
 
 ## 集合与标准库
 
@@ -106,6 +113,23 @@ node <技能目录>/scripts/kotlin-docs.js find <关键字...> [--chapter <章�
 | Job 与 join | `val job = launch { }` / `job.join()` | 协程基础 · 第 1432 页 | launch 返回 Job，join 挂起等待它结束 |
 | 取消 | `job.cancel()` / `CancellationException` | 取消与超时 · 第 1435-1437 页 | 取消时挂起函数抛 CancellationException，不要吞掉它 |
 | 超时 | `withTimeout` / `withTimeoutOrNull` | 取消与超时 › 超时 · 第 1440-1442 页 | 超时后 withTimeoutOrNull 返回 null 而不是抛异常 |
+
+## 补充（生成验证页时查到的）
+
+| 语法 | 写法 | 文档位置 | 要点 |
+|---|---|---|---|
+| 抽象类 | `abstract class A` | 类 › 抽象类 · 第 674 页 | 不能直接创建对象，只能被继承；抽象类和抽象成员不用再写 open |
+| 泛型上界 | `<T : Base>` | 泛型：in、out、where › 上界 · 第 718 页 | 冒号表示上界，相当于 Java 的 extends；泛型章节从第 712 页开始 |
+| 延迟属性 | `val x by lazy { }` | 属性委托 › 延迟属性 · 第 749 页 | 第一次访问才执行 lambda，之后用同一个结果 |
+| 中缀表示法 | `a to b` / `a or b` | 函数 › 中缀表示法 · 第 766 页 | 标了 infix 的函数可以省略点和括号；to 创建 Pair |
+| 局部函数 | 函数里的 `fun` | 函数 › 局部函数 · 第 767-768 页 | 能访问外层函数的局部变量，只在外层函数内可见 |
+| 覆盖属性 | `override val x` | 继承 › 覆盖属性 · 第 676 页 | 属性也可以被 override，类型要兼容 |
+| 解构声明 | `val (a, b) = pair` / `{ (a, b) -> }` | 解构声明 · 第 831-833 页 | 一次拆成多个变量；lambda 参数也可以解构（第 833 页） |
+| 区间与 in | `x in 500..599` | 区间与数列 · 第 1333 页 | `..` 含两端，`..<` 不含右端 |
+| 带标签 return | `return@observe` | 返回与跳转 › 返回到标签 · 第 648-650 页 | 只从 lambda 返回 |
+| 过滤指定类型 | `filterIsInstance<T>()` | 过滤集合 · 第 1351 页 | 只留下指定类型的元素，结果类型也变成 List<T> |
+| 对象声明 | `object Cache { }` | 对象表达式与对象声明 › 对象声明 · 第 734-735 页 | 单例，用「名字.成员」访问 |
+| 文档没有的标准库函数 | `maxOf` / `coerceIn` / `coerceAtLeast` / `Regex` / `isNullOrEmpty` / `orEmpty` | 文档未收录（标准库函数） | 搜不到，写「文档未收录（标准库函数）」再用自己的话解释 |
 
 ## 文档里没有的（Android / 第三方库）
 

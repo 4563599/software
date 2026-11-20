@@ -15,7 +15,211 @@ function Get-DevToolsDefaultSettings {
         Serial = ''
         # Where "save to computer" in the log viewer last saved; empty until the first save.
         SaveFolder = ''
+        # The app whose downloaded AP logs (cache/charger_logs) the log viewer exports.
+        ApLogPackage = 'energy.octopus.installer'
+        # APK installs: the options chosen last ("r", "t", "d" for adb install, "c" for clearing the app's data by
+        # uninstalling it first, in any mix) and the folder last picked from.
+        InstallFlags = 'r'
+        ApkFolder = ''
+        # Installer account tool: the server ("dev" or "pre") and the account it signs in with. The password is
+        # kept encrypted for the current Windows user (DPAPI), never as plain text.
+        InstallerEnv = 'dev'
+        InstallerEmail = ''
+        InstallerPassword = ''
     }
+}
+
+function Find-AaptPath {
+    param(
+        [AllowEmptyString()]
+        [string]$AdbPath = ''
+    )
+
+    # aapt reads an APK's package name and version. It ships with the SDK build-tools; the newest one wins.
+    $roots = @()
+    if ($AdbPath) { $roots += Split-Path -Parent (Split-Path -Parent $AdbPath) }
+    $roots += @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT, (Join-Path $env:LOCALAPPDATA 'Android\Sdk'))
+    foreach ($root in $roots) {
+        if (-not $root) { continue }
+        $tools = Join-Path $root 'build-tools'
+        if (-not (Test-Path -LiteralPath $tools -PathType Container)) { continue }
+        $found = Get-ChildItem -LiteralPath $tools -Directory -ErrorAction SilentlyContinue |
+            Sort-Object -Property @{ Expression = { $version = $null; if ([version]::TryParse(($_.Name -replace '-.*$', ''), [ref]$version)) { $version } else { [version]'0.0' } }; Descending = $true } |
+            ForEach-Object { Join-Path $_.FullName 'aapt.exe' } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Select-Object -First 1
+        if ($found) { return $found }
+    }
+    return $null
+}
+
+function ConvertFrom-ApkBadging {
+    param(
+        [AllowEmptyString()]
+        [string]$Text = ''
+    )
+
+    # From "aapt dump badging app.apk".
+    $info = [pscustomobject]@{ Package = ''; VersionCode = ''; VersionName = ''; Label = ''; MinSdk = ''; Debuggable = $false; TestOnly = $false }
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($line -match "^package: name='([^']*)'") {
+            $info.Package = $Matches[1]
+            if ($line -match "versionCode='([^']*)'") { $info.VersionCode = $Matches[1] }
+            if ($line -match "versionName='([^']*)'") { $info.VersionName = $Matches[1] }
+        }
+        elseif ($line -match "^application-label:'(.*)'\s*$" -and -not $info.Label) { $info.Label = $Matches[1] }
+        elseif ($line -match "^sdkVersion:'(\d+)'") { $info.MinSdk = $Matches[1] }
+        elseif ($line -match '^application-debuggable') { $info.Debuggable = $true }
+        elseif ($line -match "^testOnly='?-?1'?|testOnly='-1'") { $info.TestOnly = $true }
+    }
+    return $info
+}
+
+function Test-ApkTestOnly {
+    param(
+        [AllowEmptyString()]
+        [string]$Text = ''
+    )
+
+    # From "aapt dump xmltree app.apk AndroidManifest.xml": Android Studio's run builds set android:testOnly to
+    # true, which "dump badging" does not show; such an APK installs only with -t.
+    return ($Text -match 'android:testOnly\(0x[0-9a-fA-F]+\)=\(type 0x12\)0xffffffff')
+}
+
+function Get-InstallWarnings {
+    param(
+        [AllowNull()]
+        $Apk,
+
+        [AllowNull()]
+        $Installed,
+
+        [AllowEmptyString()]
+        [string]$Flags = ''
+    )
+
+    # Options this APK needs on this phone but that are not ticked: "t", "r" or "d".
+    # Clearing the data uninstalls the old version first, so -r and -d are not needed then.
+    $needed = @()
+    if ($null -ne $Apk -and $Apk.TestOnly -and -not $Flags.Contains('t')) { $needed += 't' }
+    if ($Flags.Contains('c')) { return $needed }
+    if ($null -ne $Installed -and -not $Flags.Contains('r')) { $needed += 'r' }
+    $apkCode = 0L
+    $phoneCode = 0L
+    if ($null -ne $Apk -and $null -ne $Installed -and [long]::TryParse([string]$Apk.VersionCode, [ref]$apkCode) -and
+        [long]::TryParse([string]$Installed.VersionCode, [ref]$phoneCode) -and $apkCode -lt $phoneCode -and -not $Flags.Contains('d')) {
+        $needed += 'd'
+    }
+    return $needed
+}
+
+function ConvertFrom-InstalledPackage {
+    param(
+        [AllowEmptyString()]
+        [string]$Text = ''
+    )
+
+    # From "dumpsys package <name> | grep -E 'versionCode=|versionName='"; empty when the app is not installed.
+    $code = ''
+    $name = ''
+    foreach ($line in ($Text -split "`r?`n")) {
+        if (-not $code -and $line -match 'versionCode=(\d+)') { $code = $Matches[1] }
+        if (-not $name -and $line -match 'versionName=(\S+)') { $name = $Matches[1] }
+    }
+    if (-not $code) { return $null }
+    return [pscustomobject]@{ VersionCode = $code; VersionName = $name }
+}
+
+function Get-InstallArguments {
+    param(
+        [AllowEmptyString()]
+        [string]$Flags = '',
+
+        [Parameter(Mandatory = $true)]
+        [string]$ApkPath
+    )
+
+    # "adb install" with the chosen options, always in the order -r -t -d. With "c" the old version is uninstalled first,
+    # so keeping its data (-r) does not apply.
+    $arguments = @('install')
+    foreach ($flag in 'r', 't', 'd') {
+        if ($Flags.Contains($flag) -and -not ($flag -eq 'r' -and $Flags.Contains('c'))) { $arguments += '-' + $flag }
+    }
+    return @($arguments + $ApkPath)
+}
+
+function ConvertFrom-UninstallOutput {
+    param(
+        [AllowEmptyString()]
+        [string]$Text = '',
+
+        [int]$ExitCode = 0
+    )
+
+    # "adb uninstall <package>" prints "Success", or "Failure [DELETE_FAILED_INTERNAL_ERROR]", or
+    # "Failure [not installed for 0]" when the phone does not have the app (nothing to remove, which is fine).
+    $lines = @(($Text -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('*') })
+    if ($ExitCode -eq 0 -and ($lines -contains 'Success')) {
+        return [pscustomobject]@{ Result = 'Removed'; Code = ''; Message = 'Success' }
+    }
+    $message = @($lines | Where-Object { $_ -match '(?i)failure|failed|error|exception' }) | Select-Object -First 1
+    if (-not $message) { $message = if ($lines.Count) { $lines[-1] } else { 'exit code ' + $ExitCode } }
+    if ($message -match '(?i)not installed|unknown package') {
+        return [pscustomobject]@{ Result = 'NotInstalled'; Code = ''; Message = $message }
+    }
+    $code = 'UNKNOWN'
+    if ($message -match '\[(DELETE_[A-Z_]+)') { $code = $Matches[1] }
+    elseif ($message -match "(?i)device '.*' not found|device offline|no devices|unauthorized") { $code = 'DEVICE' }
+    return [pscustomobject]@{ Result = 'Failed'; Code = $code; Message = $message }
+}
+
+function ConvertFrom-InstallOutput {
+    param(
+        [AllowEmptyString()]
+        [string]$Text = '',
+
+        [int]$ExitCode = 0
+    )
+
+    # adb prints "Success", or a line such as
+    # "adb: failed to install app.apk: Failure [INSTALL_FAILED_VERSION_DOWNGRADE: Downgrade detected: ...]".
+    # Code is the Android error name (or DEVICE / NO_FILE / UNKNOWN); Message is the English line to show as is.
+    $lines = @(($Text -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('*') -and $_ -notmatch '^Performing (Streamed|Push) Install' })
+    $failure = @($lines | Where-Object { $_ -match '(?i)failure|failed|error|exception' }) | Select-Object -First 1
+    if ($ExitCode -eq 0 -and -not $failure -and ($lines -contains 'Success')) {
+        return [pscustomobject]@{ Success = $true; Code = ''; Message = 'Success' }
+    }
+    $message = if ($failure) { $failure } elseif ($lines.Count) { $lines[-1] } else { 'exit code ' + $ExitCode }
+    $code = 'UNKNOWN'
+    if ($message -match '\[(INSTALL_[A-Z_]+)') { $code = $Matches[1] }
+    elseif ($message -match '\b(INSTALL_[A-Z_]+)\b') { $code = $Matches[1] }
+    elseif ($message -match "(?i)device '.*' not found|device offline|no devices|device unauthorized|unauthorized") { $code = 'DEVICE' }
+    elseif ($message -match '(?i)no such file|cannot stat|failed to stat|does not exist') { $code = 'NO_FILE' }
+    return [pscustomobject]@{ Success = $false; Code = $code; Message = $message }
+}
+
+function Test-AndroidPackageName {
+    param(
+        [AllowEmptyString()]
+        [string]$Name = ''
+    )
+
+    # It goes into a phone shell command, so only a real package name (letters, digits, _ and dots) passes.
+    return ($Name -match '^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$')
+}
+
+function ConvertTo-LocalRelativePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    # "SN123/log 1.zip" from the phone -> "SN123\log 1.zip", with characters Windows refuses in names replaced.
+    $parts = foreach ($part in ($Name -split '/')) {
+        $clean = ($part -replace '[\\:*?"<>|\x00-\x1f]', '_').Trim().TrimEnd('.')
+        if ($clean -and $clean -ne '..') { $clean }
+    }
+    return (@($parts) -join '\')
 }
 
 function Read-DevToolsSettings {
@@ -27,9 +231,15 @@ function Read-DevToolsSettings {
     $settings = Get-DevToolsDefaultSettings
     try {
         $saved = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json
-        foreach ($name in 'RemoteLogPath', 'ExportPath', 'Serial', 'SaveFolder') {
+        foreach ($name in 'RemoteLogPath', 'ExportPath', 'Serial', 'SaveFolder', 'ApLogPackage', 'InstallFlags', 'ApkFolder', 'InstallerEnv', 'InstallerEmail', 'InstallerPassword') {
             $property = $saved.PSObject.Properties[$name]
-            if ($null -ne $property -and $property.Value -is [string] -and ($name -in @('Serial', 'SaveFolder') -or $property.Value.Trim())) {
+            if ($name -eq 'InstallFlags' -and $null -ne $property -and $property.Value -is [string] -and $property.Value -notmatch '^[rtdc]*$') {
+                continue
+            }
+            if ($name -eq 'InstallerEnv' -and $null -ne $property -and $property.Value -notin @('dev', 'pre')) {
+                continue
+            }
+            if ($null -ne $property -and $property.Value -is [string] -and ($name -in @('Serial', 'SaveFolder', 'InstallFlags', 'ApkFolder', 'InstallerEmail', 'InstallerPassword') -or $property.Value.Trim())) {
                 $settings.$name = $property.Value.Trim()
             }
         }
@@ -56,6 +266,12 @@ function Save-DevToolsSettings {
         ExportPath = [string]$Settings.ExportPath
         Serial = [string]$Settings.Serial
         SaveFolder = $(if ($null -ne $Settings.PSObject.Properties['SaveFolder']) { [string]$Settings.SaveFolder } else { '' })
+        ApLogPackage = $(if ($null -ne $Settings.PSObject.Properties['ApLogPackage']) { [string]$Settings.ApLogPackage } else { 'energy.octopus.installer' })
+        InstallFlags = $(if ($null -ne $Settings.PSObject.Properties['InstallFlags']) { [string]$Settings.InstallFlags } else { 'r' })
+        ApkFolder = $(if ($null -ne $Settings.PSObject.Properties['ApkFolder']) { [string]$Settings.ApkFolder } else { '' })
+        InstallerEnv = $(if ($null -ne $Settings.PSObject.Properties['InstallerEnv'] -and $Settings.InstallerEnv -in @('dev', 'pre')) { [string]$Settings.InstallerEnv } else { 'dev' })
+        InstallerEmail = $(if ($null -ne $Settings.PSObject.Properties['InstallerEmail']) { [string]$Settings.InstallerEmail } else { '' })
+        InstallerPassword = $(if ($null -ne $Settings.PSObject.Properties['InstallerPassword']) { [string]$Settings.InstallerPassword } else { '' })
     } | ConvertTo-Json
     [IO.File]::WriteAllText($Path, $json, (New-Object Text.UTF8Encoding($false)))
 }
@@ -262,6 +478,37 @@ function ConvertFrom-TaskDump {
     return @($tasks | Where-Object { $_.Activities.Count -gt 0 })
 }
 
+function Find-SecureWindows {
+    param(
+        [AllowEmptyString()]
+        [string]$Text = ''
+    )
+
+    # Windows on screen that forbid screen capture (flag SECURE), from
+    # "dumpsys window windows | grep -E '^  Window #|fl=|isOnScreen='". While one is shown, Xiaomi phones
+    # refuse every screenshot; "InputMethod" is the keyboard, e.g. MIUI's security keyboard on a password box.
+    $found = New-Object System.Collections.Generic.List[string]
+    $name = $null
+    $secure = $false
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($line -match '^\s*Window #\d+ Window\{\S+ u\d+ ([^}]+)\}') {
+            $name = $Matches[1].Trim()
+            $secure = $false
+            continue
+        }
+        if ($null -eq $name) {
+            continue
+        }
+        if ($line -match '^\s*fl=') {
+            $secure = $line -match '(?:^|\s)SECURE(?:\s|$)'
+        }
+        elseif ($line -match 'isOnScreen=true' -and $secure -and -not $found.Contains($name)) {
+            $found.Add($name)
+        }
+    }
+    return $found.ToArray()
+}
+
 function Select-GradleProcesses {
     param(
         [AllowEmptyCollection()]
@@ -376,10 +623,11 @@ function ConvertFrom-RemoteFileStat {
     )
 
     # Lines from: find <root> -type f -exec stat -c '%s %Y %n' {} +
+    # The root may be relative, as in an app's own folder read through run-as ("cache/charger_logs").
     $prefix = $Root.TrimEnd('/') + '/'
     $files = @()
     foreach ($line in ($Text -split "`r?`n")) {
-        if ($line -notmatch '^(\d+)\s+(\d+)\s+(/.+?)\s*$') {
+        if ($line -notmatch '^(\d+)\s+(\d+)\s+(\S.*?)\s*$') {
             continue
         }
 
@@ -747,4 +995,341 @@ function Select-LogLines {
         }
     }
     return $matched.ToArray()
+}
+
+# ---------------- Installer account ----------------
+
+function Get-InstallerApiHosts {
+    # The installer app's servers; the account tool signs in and deregisters against one of them.
+    return [ordered]@{
+        dev = 'https://oversea.dev.en-plus.cn/EuChargeApp/'
+        pre = 'https://oversea.pre.en-plus.cn/EuChargeApp/'
+    }
+}
+
+function Get-InstallerApiHeaders {
+    # The headers the installer app sends with every request.
+    return [ordered]@{
+        fromApp = 'Installer'
+        clientType = 'ANDROID'
+        'Accept-Language' = 'en'
+        timeZoneId = 'Asia/Shanghai'
+        appVersion = '1.1.0'
+    }
+}
+
+function Get-InstallerServerPoint {
+    # The server's public key (an uncompressed P-256 point, 65 bytes) from its certificate for sensitive data,
+    # the same certificate the app uses to encrypt the email and password.
+    $certificate = @(
+        'MIIC5TCCAougAwIBAgIUEHHTgZYI5h2GuNX8XEutOWJlR50wCgYIKoZIzj0EAwIw'
+        'gcYxCzAJBgNVBAYTAkNOMRIwEAYDVQQIDAlHYXVuZ2RvbmcxETAPBgNVBAcMCFNo'
+        'ZW56aGVuMSUwIwYDVQQKDBxTaGVuemhlbiBFTiBQbHVzIFRlY2ggQ28gTHRkMQsw'
+        'CQYDVQQLDAJJVDEzMDEGA1UEAwwqRW5wbHVzIGluc3RhbGxlciBzZW5zaXRpdmUg'
+        'ZGF0YSBlbmNyeXB0aW9uMScwJQYJKoZIhvcNAQkBFhhjaGFvLmRlbmdAZW4tcGx1'
+        'cy5jb20uY24wIBcNMjYwNjE1MDYyNTUwWhgPMjA2NjA2MTUwNjI1NTBaMIHGMQsw'
+        'CQYDVQQGEwJDTjESMBAGA1UECAwJR2F1bmdkb25nMREwDwYDVQQHDAhTaGVuemhl'
+        'bjElMCMGA1UECgwcU2hlbnpoZW4gRU4gUGx1cyBUZWNoIENvIEx0ZDELMAkGA1UE'
+        'CwwCSVQxMzAxBgNVBAMMKkVucGx1cyBpbnN0YWxsZXIgc2Vuc2l0aXZlIGRhdGEg'
+        'ZW5jcnlwdGlvbjEnMCUGCSqGSIb3DQEJARYYY2hhby5kZW5nQGVuLXBsdXMuY29t'
+        'LmNuMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEsptSiTz9COauaEwfXm3yBv2w'
+        'M99iax7uqLM9ADEMLEUSGB9KFGn16KAOS9vKBEuWj6QVZu6OHt2M8BuPqVhd0qNT'
+        'MFEwHQYDVR0OBBYEFByMHKshRDRjbaxhf6MYZVc6R1YaMB8GA1UdIwQYMBaAFByM'
+        'HKshRDRjbaxhf6MYZVc6R1YaMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwID'
+        'SAAwRQIhAKnm5x4zNWb2wdSYBLDQEGnpC1n1NQasnZVkX++TPshFAiB54QAQmOtA'
+        'PMZb9vUAIZQJKZHX/cGj4e7m7VNbZwFP6g=='
+    ) -join ''
+    $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(, [Convert]::FromBase64String($certificate))
+    try {
+        return , $cert.PublicKey.EncodedKeyValue.RawData
+    }
+    finally {
+        $cert.Dispose()
+    }
+}
+
+function Initialize-InstallerEcc {
+    if ('InstallerEcc' -as [type]) { return }
+    # The app's encryption: an ephemeral ECDH P-256 key, HKDF-SHA256, then AES-256-GCM.
+    # Output: base64(ephemeral public point 65 + IV 12 + ciphertext + tag 16). .NET Framework has no AesGcm,
+    # so GCM is built from AES-ECB blocks.
+    Add-Type -TypeDefinition @"
+using System;
+using System.Security.Cryptography;
+using System.Text;
+
+public static class InstallerEcc
+{
+    public static string Encrypt(string data, byte[] serverPoint)
+    {
+        byte[] plain = Encoding.UTF8.GetBytes(data);
+        using (ECDiffieHellmanCng eph = new ECDiffieHellmanCng(256))
+        {
+            // CNG's HMAC KDF computes HMAC(zero salt, shared secret), which is exactly HKDF-Extract.
+            eph.KeyDerivationFunction = ECDiffieHellmanKeyDerivationFunction.Hmac;
+            eph.HashAlgorithm = CngAlgorithm.Sha256;
+            eph.HmacKey = new byte[32];
+
+            byte[] blob = eph.PublicKey.ToByteArray();
+            byte[] ephPoint = new byte[65];
+            ephPoint[0] = 4;
+            Buffer.BlockCopy(blob, 8, ephPoint, 1, 64);
+
+            byte[] serverBlob = new byte[72];
+            BitConverter.GetBytes(0x314B4345).CopyTo(serverBlob, 0);
+            BitConverter.GetBytes(32).CopyTo(serverBlob, 4);
+            Buffer.BlockCopy(serverPoint, 1, serverBlob, 8, 64);
+
+            byte[] prk;
+            using (ECDiffieHellmanPublicKey serverKey = ECDiffieHellmanCngPublicKey.FromByteArray(serverBlob, CngKeyBlobFormat.EccPublicBlob))
+            {
+                prk = eph.DeriveKeyMaterial(serverKey);
+            }
+
+            // HKDF-Expand for one block: info is the ephemeral point.
+            byte[] key;
+            using (HMACSHA256 hmac = new HMACSHA256(prk))
+            {
+                byte[] info = new byte[66];
+                Buffer.BlockCopy(ephPoint, 0, info, 0, 65);
+                info[65] = 1;
+                key = hmac.ComputeHash(info);
+            }
+
+            byte[] iv = new byte[12];
+            using (RandomNumberGenerator rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(iv);
+            }
+            byte[] sealedData = GcmEncrypt(key, iv, plain, ephPoint);
+
+            byte[] output = new byte[65 + 12 + sealedData.Length];
+            Buffer.BlockCopy(ephPoint, 0, output, 0, 65);
+            Buffer.BlockCopy(iv, 0, output, 65, 12);
+            Buffer.BlockCopy(sealedData, 0, output, 77, sealedData.Length);
+            return Convert.ToBase64String(output);
+        }
+    }
+
+    // Returns ciphertext followed by the 16-byte tag.
+    public static byte[] GcmEncrypt(byte[] key, byte[] iv, byte[] plain, byte[] aad)
+    {
+        using (AesManaged aes = new AesManaged())
+        {
+            aes.Mode = CipherMode.ECB;
+            aes.Padding = PaddingMode.None;
+            aes.Key = key;
+            using (ICryptoTransform enc = aes.CreateEncryptor())
+            {
+                byte[] h = Block(enc, new byte[16]);
+                byte[] j0 = new byte[16];
+                Buffer.BlockCopy(iv, 0, j0, 0, 12);
+                j0[15] = 1;
+
+                byte[] counter = (byte[])j0.Clone();
+                byte[] cipher = new byte[plain.Length];
+                for (int i = 0; i < plain.Length; i += 16)
+                {
+                    Inc32(counter);
+                    byte[] stream = Block(enc, counter);
+                    for (int j = 0; j < 16 && i + j < plain.Length; j++)
+                    {
+                        cipher[i + j] = (byte)(plain[i + j] ^ stream[j]);
+                    }
+                }
+
+                byte[] s = new byte[16];
+                Absorb(s, h, aad);
+                Absorb(s, h, cipher);
+                byte[] lengths = new byte[16];
+                WriteBits(lengths, 0, aad.Length);
+                WriteBits(lengths, 8, cipher.Length);
+                Absorb(s, h, lengths);
+
+                byte[] tagMask = Block(enc, j0);
+                byte[] result = new byte[cipher.Length + 16];
+                Buffer.BlockCopy(cipher, 0, result, 0, cipher.Length);
+                for (int j = 0; j < 16; j++)
+                {
+                    result[cipher.Length + j] = (byte)(s[j] ^ tagMask[j]);
+                }
+                return result;
+            }
+        }
+    }
+
+    static byte[] Block(ICryptoTransform enc, byte[] input)
+    {
+        byte[] output = new byte[16];
+        enc.TransformBlock(input, 0, 16, output, 0);
+        return output;
+    }
+
+    static void Inc32(byte[] counter)
+    {
+        for (int i = 15; i >= 12; i--)
+        {
+            if (++counter[i] != 0) break;
+        }
+    }
+
+    static void WriteBits(byte[] buffer, int offset, int byteLength)
+    {
+        ulong bits = (ulong)byteLength * 8;
+        for (int i = 7; i >= 0; i--)
+        {
+            buffer[offset + i] = (byte)bits;
+            bits >>= 8;
+        }
+    }
+
+    // GHASH: 16-byte blocks, the last one padded with zeros; each block is XORed in, then multiplied by H.
+    static void Absorb(byte[] s, byte[] h, byte[] data)
+    {
+        for (int i = 0; i < data.Length; i += 16)
+        {
+            for (int j = 0; j < 16 && i + j < data.Length; j++)
+            {
+                s[j] ^= data[i + j];
+            }
+            byte[] product = Multiply(s, h);
+            Buffer.BlockCopy(product, 0, s, 0, 16);
+        }
+    }
+
+    static byte[] Multiply(byte[] x, byte[] y)
+    {
+        byte[] z = new byte[16];
+        byte[] v = (byte[])y.Clone();
+        for (int i = 0; i < 128; i++)
+        {
+            if ((x[i >> 3] & (0x80 >> (i & 7))) != 0)
+            {
+                for (int j = 0; j < 16; j++) z[j] ^= v[j];
+            }
+            bool lsb = (v[15] & 1) != 0;
+            for (int j = 15; j > 0; j--)
+            {
+                v[j] = (byte)((v[j] >> 1) | (v[j - 1] << 7));
+            }
+            v[0] = (byte)(v[0] >> 1);
+            if (lsb) v[0] ^= 0xE1;
+        }
+        return z;
+    }
+}
+"@
+}
+
+function ConvertTo-InstallerCipherText {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Text,
+
+        # The server's public point; the installer server's own key by default.
+        [byte[]]$ServerPoint = $null
+    )
+
+    Initialize-InstallerEcc
+    if ($null -eq $ServerPoint) { $ServerPoint = Get-InstallerServerPoint }
+    return [InstallerEcc]::Encrypt($Text, $ServerPoint)
+}
+
+function ConvertFrom-InstallerResponse {
+    param(
+        [AllowEmptyString()]
+        [string]$Text = '',
+
+        [int]$StatusCode = 200
+    )
+
+    # The server answers {"code":2000,"message":"...","data":{...}}; 2000 means success.
+    $result = [pscustomobject]@{ Ok = $false; Status = $StatusCode; Code = ''; Message = ''; Token = ''; UserId = ''; Raw = $Text.Trim() }
+    $json = $null
+    try { $json = $Text | ConvertFrom-Json } catch { }
+    if ($json -isnot [pscustomobject]) {
+        if ($StatusCode -ne 200) { $result.Code = 'HTTP ' + $StatusCode }
+        return $result
+    }
+    $code = $json.PSObject.Properties['code']
+    if ($null -ne $code -and $null -ne $code.Value) { $result.Code = [string]$code.Value }
+    elseif ($StatusCode -ne 200) { $result.Code = 'HTTP ' + $StatusCode }
+    foreach ($name in 'message', 'msg') {
+        $message = $json.PSObject.Properties[$name]
+        if ($null -ne $message -and $message.Value) { $result.Message = [string]$message.Value; break }
+    }
+    $data = $json.PSObject.Properties['data']
+    if ($null -ne $data -and $data.Value -is [pscustomobject]) {
+        $token = $data.Value.PSObject.Properties['token']
+        if ($null -ne $token -and $null -ne $token.Value) { $result.Token = [string]$token.Value }
+        $userId = $data.Value.PSObject.Properties['userId']
+        if ($null -ne $userId -and $null -ne $userId.Value) { $result.UserId = [string]$userId.Value }
+    }
+    $result.Ok = ($StatusCode -ge 200 -and $StatusCode -lt 300 -and $result.Code -eq '2000')
+    return $result
+}
+
+function ConvertFrom-InstallerLogcat {
+    param(
+        [AllowEmptyString()]
+        [string]$Text = ''
+    )
+
+    # The app logs each HTTP response through HttpLog; every line of one response carries the same
+    # "HttpLog-Response-<id>". The newest response with a token wins; its userId and email come from the same id.
+    $lines = @(($Text -split "`r?`n") -match 'HttpLog-Response-')
+    $hit = @($lines -match '"token":\s*"[^"]+"') | Select-Object -Last 1
+    if (-not $hit -or $hit -notmatch 'HttpLog-Response-([0-9a-fA-F]+).*"token":\s*"([^"]+)"') {
+        return $null
+    }
+    $id = $Matches[1]
+    $found = [pscustomobject]@{ Token = $Matches[2]; UserId = ''; Email = '' }
+    $same = @($lines -match ('HttpLog-Response-' + $id + '(?![0-9a-fA-F])'))
+    $line = @($same -match '"userId":\s*\d+') | Select-Object -Last 1
+    if ($line -and $line -match '"userId":\s*(\d+)') { $found.UserId = $Matches[1] }
+    $line = @($same -match '"email":\s*"[^"]+"') | Select-Object -Last 1
+    if ($line -and $line -match '"email":\s*"([^"]+)"') { $found.Email = $Matches[1] }
+    return $found
+}
+
+function Format-TokenPreview {
+    param(
+        [AllowEmptyString()]
+        [string]$Token = ''
+    )
+
+    # Results show only the ends of a token; the whole token stays in the token box.
+    if ($Token.Length -le 14) { return $Token }
+    return $Token.Substring(0, 6) + [char]0x2026 + $Token.Substring($Token.Length - 4)
+}
+
+function Protect-DevToolsSecret {
+    param(
+        [AllowEmptyString()]
+        [string]$Text = ''
+    )
+
+    # Encrypted for the current Windows user (DPAPI); other users and other computers cannot read it.
+    if (-not $Text) { return '' }
+    Add-Type -AssemblyName System.Security
+    $bytes = [System.Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($Text), $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+    return [Convert]::ToBase64String($bytes)
+}
+
+function Unprotect-DevToolsSecret {
+    param(
+        [AllowEmptyString()]
+        [string]$Text = ''
+    )
+
+    # Empty when there is nothing saved or it was saved by another user or on another computer.
+    if (-not $Text) { return '' }
+    try {
+        Add-Type -AssemblyName System.Security
+        $bytes = [System.Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($Text), $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+        return [Text.Encoding]::UTF8.GetString($bytes)
+    }
+    catch {
+        return ''
+    }
 }

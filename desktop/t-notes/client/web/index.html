@@ -50,13 +50,8 @@
    <button id="back-to-list" title="返回记录列表（Esc）" aria-label="返回记录列表"><i data-lucide="arrow-left"></i></button>
    <span id="kind-label" class="kind-label">备忘录</span>
    <select id="kind" aria-label="记录类型" hidden><option value="note">备忘录</option><option value="prompt">AI 提示词</option><option value="password">账号密码</option></select>
-   <div class="push actions">
-    <button id="edit" title="编辑" aria-label="编辑记录" disabled><i data-lucide="pencil"></i></button>
-    <button id="pin" title="置顶" aria-label="置顶记录" aria-pressed="false" disabled><i data-lucide="pin"></i></button>
-    <button id="copy" title="复制内容" aria-label="复制内容" disabled><i data-lucide="copy"></i></button>
-    <button id="delete" title="移到回收站" aria-label="移到回收站" disabled><i data-lucide="trash-2"></i></button>
-   </div>
   </div>
+  <div class="editor-body">
   <section id="record-view" aria-label="查看记录">
    <div id="empty-record" class="empty-record"><i data-lucide="notebook"></i><p>暂无记录</p><button id="new-from-empty" class="primary"><i data-lucide="plus"></i>新建记录</button></div>
    <article id="read-content" hidden>
@@ -81,6 +76,14 @@
   </div>
   <div id="prompt-tools" hidden><button id="fill-prompt" class="text"><i data-lucide="braces"></i>填充提示词变量</button></div>
   <p id="edited" class="muted"></p>
+  </div>
+  <!-- The record's buttons sit at the bottom of the panel, where they are easy to reach, and stay put while it scrolls. -->
+  <div class="editor-actions actions">
+   <button id="edit" title="编辑" aria-label="编辑记录" disabled><i data-lucide="pencil"></i><span>编辑</span></button>
+   <button id="pin" title="置顶" aria-label="置顶记录" aria-pressed="false" disabled><i data-lucide="pin"></i><span>置顶</span></button>
+   <button id="copy" title="复制内容" aria-label="复制内容" disabled><i data-lucide="copy"></i><span>复制</span></button>
+   <button id="delete" title="移到回收站" aria-label="移到回收站" disabled><i data-lucide="trash-2"></i><span>删除</span></button>
+  </div>
  </main>
  <section class="recent">
   <div class="recent-heading"><span>全部记录</span><span id="quick-count" class="muted"></span><button id="quick-new" title="新建记录（Ctrl+N）" aria-label="新建记录"><i data-lucide="plus"></i></button><button id="open-library" class="text">资料库<i data-lucide="arrow-up-right"></i></button></div>

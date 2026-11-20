@@ -177,6 +177,88 @@ try{
  for($k=1;$k -le $footer+8;$k++){if($joinedRows[$joined.Height-$k] -ne $rowHashes[4][$screenHeight-$k]){throw 'The last screen must close the joined image.'}}
 }finally{$joined.Dispose();$page.Dispose();foreach($frame in $frames){$frame.Dispose()}}
 
+# Windows that forbid screen capture: the security keyboard on screen counts; a hidden secure window does not.
+$windowDump=@"
+  Window #9 Window{c1dbf6f u0 InputMethod}:
+      fl=NOT_FOCUSABLE LAYOUT_IN_SCREEN SECURE SPLIT_TOUCH HARDWARE_ACCELERATED
+      Extra fl=0x0
+    mForceSeamlesslyRotate=false seamlesslyRotate: pending=null    isOnScreen=true
+  Window #10 Window{979f3c0 u0 com.example.shop/com.example.shop.ui.SignUpPwdActivity}:
+      fl=LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SPLIT_TOUCH HARDWARE_ACCELERATED
+    mForceSeamlesslyRotate=false seamlesslyRotate: pending=null    isOnScreen=true
+  Window #11 Window{a1 u0 com.example.bank/com.example.bank.PinActivity}:
+      fl=SECURE LAYOUT_IN_SCREEN
+    mForceSeamlesslyRotate=false seamlesslyRotate: pending=null    isOnScreen=false
+"@
+if((@(Find-SecureWindows -Text $windowDump) -join ',') -ne 'InputMethod'){throw 'Secure window detection regressed.'}
+if(@(Find-SecureWindows -Text '').Count -ne 0){throw 'No dump must give no secure windows.'}
+
+# APK install: APK details from aapt, the version on the phone, the command, and adb's answer in plain terms.
+$badging=@"
+package: name='com.example.shop' versionCode='11' versionName='1.0.0' platformBuildVersionName='16'
+sdkVersion:'24'
+targetSdkVersion:'36'
+application-label:'Example Shop'
+application-debuggable
+testOnly='-1'
+"@
+$apkInfo=ConvertFrom-ApkBadging -Text $badging
+if($apkInfo.Package -ne 'com.example.shop' -or $apkInfo.VersionCode -ne '11' -or $apkInfo.VersionName -ne '1.0.0' -or $apkInfo.Label -ne 'Example Shop' -or $apkInfo.MinSdk -ne '24' -or -not $apkInfo.Debuggable -or -not $apkInfo.TestOnly){throw 'APK details from aapt regressed.'}
+$installedApp=ConvertFrom-InstalledPackage -Text "    versionCode=12 minSdk=24 targetSdk=36`n    versionName=1.0.1`n    versionCode=10 minSdk=24"
+if($installedApp.VersionCode -ne '12' -or $installedApp.VersionName -ne '1.0.1' -or $null -ne (ConvertFrom-InstalledPackage -Text '')){throw 'Installed version parsing regressed.'}
+if(((Get-InstallArguments -Flags 'dr' -ApkPath 'E:\My Apps\a.apk') -join '|') -ne 'install|-r|-d|E:\My Apps\a.apk' -or ((Get-InstallArguments -Flags '' -ApkPath 'a.apk') -join '|') -ne 'install|a.apk'){throw 'Install arguments regressed.'}
+$cases=@(
+ @("Performing Streamed Install`nSuccess",0,$true,''),
+ @("Performing Streamed Install`nadb: failed to install E:\a.apk: Failure [INSTALL_FAILED_VERSION_DOWNGRADE: Downgrade detected: Update version code 11 is older than current 12]",1,$false,'INSTALL_FAILED_VERSION_DOWNGRADE'),
+ @("adb: failed to install a.apk: Failure [INSTALL_FAILED_USER_RESTRICTED: Install canceled by user]",1,$false,'INSTALL_FAILED_USER_RESTRICTED'),
+ @("adb: failed to install a.apk: Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package com.example.shop signatures do not match newer version; ignoring!]",1,$false,'INSTALL_FAILED_UPDATE_INCOMPATIBLE'),
+ @("adb.exe: device 'ce59467' not found",1,$false,'DEVICE'),
+ @("adb: failed to stat E:\gone.apk: No such file or directory",1,$false,'NO_FILE'),
+ @("adb: failed to install a.apk: Failure [-99]",1,$false,'UNKNOWN')
+)
+foreach($case in $cases){
+ $answer=ConvertFrom-InstallOutput -Text $case[0] -ExitCode $case[1]
+ if($answer.Success -ne $case[2] -or $answer.Code -ne $case[3]){throw "Install result parsing regressed for: $($case[0])"}
+}
+if((ConvertFrom-InstallOutput -Text $cases[1][0] -ExitCode 1).Message -notlike 'adb: failed to install*Downgrade detected*'){throw 'The English install message must be kept as adb printed it.'}
+# Clearing the data: the old version is uninstalled first, so -r is dropped and -r / -d are not asked for.
+if(((Get-InstallArguments -Flags 'rct' -ApkPath 'a.apk') -join '|') -ne 'install|-t|a.apk'){throw 'Clear-data install must not keep the data with -r.'}
+if(((Get-InstallWarnings -Apk ([pscustomobject]@{TestOnly=$true;VersionCode='1'}) -Installed ([pscustomobject]@{VersionCode='5'}) -Flags 'c') -join '') -ne 't'){throw 'Clear-data install warnings regressed.'}
+$removals=@(
+ @("Success",0,'Removed',''),
+ @("Failure [not installed for 0]",1,'NotInstalled',''),
+ @("Failure [DELETE_FAILED_INTERNAL_ERROR]",1,'Failed','DELETE_FAILED_INTERNAL_ERROR'),
+ @("Failure [DELETE_FAILED_DEVICE_POLICY_MANAGER]",1,'Failed','DELETE_FAILED_DEVICE_POLICY_MANAGER'),
+ @("adb.exe: device 'x' not found",1,'Failed','DEVICE')
+)
+foreach($case in $removals){
+ $removed=ConvertFrom-UninstallOutput -Text $case[0] -ExitCode $case[1]
+ if($removed.Result -ne $case[2] -or $removed.Code -ne $case[3]){throw "Uninstall result parsing regressed for: $($case[0])"}
+}
+if(-not (Test-ApkTestOnly -Text "E: application (line=17)`n  A: android:testOnly(0x01010272)=(type 0x12)0xffffffff") -or (Test-ApkTestOnly -Text "A: android:testOnly(0x01010272)=(type 0x12)0x0")){throw 'testOnly detection regressed.'}
+$apk=[pscustomobject]@{TestOnly=$true;VersionCode='11'};$phone=[pscustomobject]@{VersionCode='12';VersionName='1.0.1'}
+if(((Get-InstallWarnings -Apk $apk -Installed $phone -Flags '') -join '') -ne 'trd' -or @(Get-InstallWarnings -Apk $apk -Installed $phone -Flags 'rtd').Count -ne 0 -or @(Get-InstallWarnings -Apk ([pscustomobject]@{TestOnly=$false;VersionCode='12'}) -Installed $null -Flags '').Count -ne 0){throw 'Install warnings regressed.'}
+$texts=[IO.File]::ReadAllText((Join-Path $root 'dev-tools\text.json'),[Text.Encoding]::UTF8)|ConvertFrom-Json
+foreach($key in 'ApkWarnT','ApkWarnR','ApkWarnD'){if($null -eq $texts.PSObject.Properties[$key]){throw "Missing text $key"}}
+foreach($code in 'DEVICE','NO_FILE','TIMEOUT','INSTALL_FAILED_VERSION_DOWNGRADE','INSTALL_FAILED_TEST_ONLY','INSTALL_FAILED_ALREADY_EXISTS'){
+ $entry=$texts.ApkErrors.PSObject.Properties[$code]
+ if($null -eq $entry -or @($entry.Value).Count -ne 2){throw "Missing plain explanation for install error $code"}
+}
+foreach($key in 'ApkFlagR','ApkFlagC','ApkFlagT','ApkFlagD'){if($null -eq $texts.PSObject.Properties[$key]){throw "Missing text $key"}}
+foreach($code in 'DELETE_FAILED_INTERNAL_ERROR','DEVICE','TIMEOUT'){if(@($texts.UninstallErrors.PSObject.Properties[$code].Value).Count -ne 2){throw "Missing plain explanation for uninstall error $code"}}
+
+# AP logs from an app's private folder: package names, relative listings, and safe local names.
+foreach($good in 'energy.octopus.installer','com.example.app_debug'){if(-not (Test-AndroidPackageName -Name $good)){throw "Package name refused: $good"}}
+foreach($bad in '','octopus','com.example;rm -rf','com..example','1com.example','com.example app'){if(Test-AndroidPackageName -Name $bad){throw "Bad package name accepted: $bad"}}
+$apStat=@"
+321700 1794880000 cache/charger_logs/SN10000000000001/SN10000000000001_20261117.zip
+1024 1794870000 cache/charger_logs/SN10000000000001/log.txt.download
+2048 1794860000 cache/charger_logs/unknown_EV-AP/a b.log
+"@
+$apFiles=@(ConvertFrom-RemoteFileStat -Text $apStat -Root 'cache/charger_logs' | Where-Object { -not $_.Name.EndsWith('.download') })
+if(($apFiles|ForEach-Object{$_.Name+'|'+$_.Size}) -join ';' -ne 'SN10000000000001/SN10000000000001_20261117.zip|321700;unknown_EV-AP/a b.log|2048' -or $apFiles[0].Path -ne 'cache/charger_logs/SN10000000000001/SN10000000000001_20261117.zip'){throw 'AP log listing regressed.'}
+if((ConvertTo-LocalRelativePath -Name 'SN1/a:b?.zip') -ne 'SN1\a_b_.zip' -or (ConvertTo-LocalRelativePath -Name '../x/./y.log.') -ne 'x\y.log'){throw 'Local names for AP logs regressed.'}
+
 # Filtering log lines ignores case and keeps order.
 $filtered=@(Select-LogLines -Lines @('Connect ok','scan','CONNECT lost') -Filter 'connect')
 if(($filtered -join '|') -ne 'Connect ok|CONNECT lost' -or @(Select-LogLines -Lines @('a','b') -Filter '').Count -ne 2){throw 'Log line filtering regressed.'}
@@ -188,9 +270,22 @@ try{
  $defaults=Read-DevToolsSettings -Path $file
  if($defaults.RemoteLogPath -ne '/sdcard/Android/data/com.enplus.caro_sdk/files/BLEBluetoothLog' -or -not $defaults.ExportPath){throw 'Default dev tool settings regressed.'}
  if($defaults.SaveFolder -ne ''){throw 'The save folder must start empty.'}
- Save-DevToolsSettings -Path $file -Settings ([pscustomobject]@{RemoteLogPath='/sdcard/x';ExportPath='D:\Logs';Serial='a1b2c3d4';SaveFolder='D:\Saved logs'})
+ if($defaults.ApLogPackage -ne 'energy.octopus.installer'){throw 'Default AP log app regressed.'}
+ if($defaults.InstallFlags -ne 'r' -or $defaults.ApkFolder -ne ''){throw 'Default install options regressed.'}
+ if($defaults.InstallerEnv -ne 'dev' -or $defaults.InstallerEmail -ne '' -or $defaults.InstallerPassword -ne ''){throw 'The account tool must start on dev with no saved account.'}
+ Save-DevToolsSettings -Path $file -Settings ([pscustomobject]@{RemoteLogPath='/sdcard/x';ExportPath='D:\Logs';Serial='';InstallerEnv='pre';InstallerEmail='tester@example.com';InstallerPassword='c2VjcmV0'})
+ $account=Read-DevToolsSettings -Path $file
+ if($account.InstallerEnv -ne 'pre' -or $account.InstallerEmail -ne 'tester@example.com' -or $account.InstallerPassword -ne 'c2VjcmV0'){throw 'Account settings did not round-trip.'}
+ [IO.File]::WriteAllText($file,'{"InstallerEnv":"prod"}')
+ if((Read-DevToolsSettings -Path $file).InstallerEnv -ne 'dev'){throw 'An unknown server must fall back to dev.'}
+ Save-DevToolsSettings -Path $file -Settings ([pscustomobject]@{RemoteLogPath='/sdcard/x';ExportPath='D:\Logs';Serial='';InstallFlags='rctd';ApkFolder='E:\apks'})
+ $flagsLoaded=Read-DevToolsSettings -Path $file
+ if($flagsLoaded.InstallFlags -ne 'rctd' -or $flagsLoaded.ApkFolder -ne 'E:\apks'){throw 'Install options did not round-trip.'}
+ [IO.File]::WriteAllText($file,'{"InstallFlags":"rx; rm"}')
+ if((Read-DevToolsSettings -Path $file).InstallFlags -ne 'r'){throw 'Invalid install options must fall back to the default.'}
+ Save-DevToolsSettings -Path $file -Settings ([pscustomobject]@{RemoteLogPath='/sdcard/x';ExportPath='D:\Logs';Serial='a1b2c3d4';SaveFolder='D:\Saved logs';ApLogPackage='com.example.debug'})
  $loaded=Read-DevToolsSettings -Path $file
- if($loaded.RemoteLogPath -ne '/sdcard/x' -or $loaded.ExportPath -ne 'D:\Logs' -or $loaded.Serial -ne 'a1b2c3d4' -or $loaded.SaveFolder -ne 'D:\Saved logs'){throw 'Dev tool settings did not round-trip.'}
+ if($loaded.RemoteLogPath -ne '/sdcard/x' -or $loaded.ExportPath -ne 'D:\Logs' -or $loaded.Serial -ne 'a1b2c3d4' -or $loaded.SaveFolder -ne 'D:\Saved logs' -or $loaded.ApLogPackage -ne 'com.example.debug'){throw 'Dev tool settings did not round-trip.'}
  # Settings written before the save folder existed still load.
  Save-DevToolsSettings -Path $file -Settings ([pscustomobject]@{RemoteLogPath='/sdcard/x';ExportPath='D:\Logs';Serial=''})
  if((Read-DevToolsSettings -Path $file).SaveFolder -ne ''){throw 'Older settings without a save folder regressed.'}
@@ -198,10 +293,140 @@ try{
  if((Read-DevToolsSettings -Path $file).RemoteLogPath -ne $defaults.RemoteLogPath){throw 'Broken settings must fall back to defaults.'}
 }finally{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}
 
+# Installer account: the app's encryption, the server's replies, the token in the phone's log, the saved password.
+$hosts=Get-InstallerApiHosts
+if((@($hosts.Keys) -join ',') -ne 'dev,pre' -or @($hosts.Values | Where-Object { $_ -notmatch '^https://[^/]+/.+/$' }).Count){throw 'Installer servers regressed.'}
+Initialize-InstallerEcc
+$hex={param([byte[]]$Bytes) ($Bytes|ForEach-Object{$_.ToString('x2')}) -join ''}
+$zeroKey=New-Object byte[] 32;$zeroIv=New-Object byte[] 12
+# AES-256-GCM test cases 13 and 14 from the GCM specification.
+if((& $hex ([InstallerEcc]::GcmEncrypt($zeroKey,$zeroIv,(New-Object byte[] 0),(New-Object byte[] 0)))) -ne '530f8afbc74536b9a963b4f1c4cb738b'){throw 'AES-GCM test case 13 regressed.'}
+if((& $hex ([InstallerEcc]::GcmEncrypt($zeroKey,$zeroIv,(New-Object byte[] 16),(New-Object byte[] 0)))) -ne 'cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919'){throw 'AES-GCM test case 14 regressed.'}
+$point=Get-InstallerServerPoint
+if($point.Length -ne 65 -or $point[0] -ne 4){throw 'The server key must be an uncompressed P-256 point.'}
+# A round trip with a test server key: the server side derives the same key and reads the email back.
+$serverKey=New-Object System.Security.Cryptography.ECDiffieHellmanCng(256)
+try{
+ $serverKey.KeyDerivationFunction=[System.Security.Cryptography.ECDiffieHellmanKeyDerivationFunction]::Hmac
+ $serverKey.HashAlgorithm=[System.Security.Cryptography.CngAlgorithm]::Sha256
+ $serverKey.HmacKey=New-Object byte[] 32
+ $blob=$serverKey.PublicKey.ToByteArray()
+ $testPoint=New-Object byte[] 65;$testPoint[0]=4;[Array]::Copy($blob,8,$testPoint,1,64)
+ $sealed=[Convert]::FromBase64String((ConvertTo-InstallerCipherText -Text 'tester@example.com' -ServerPoint $testPoint))
+ if($sealed.Length -ne 65+12+18+16 -or $sealed[0] -ne 4){throw 'An encrypted field has the wrong layout.'}
+ $eph=[byte[]]$sealed[0..64];$iv=[byte[]]$sealed[65..76];$body=[byte[]]$sealed[77..($sealed.Length-1)]
+ $ephBlob=New-Object byte[] 72;[BitConverter]::GetBytes(0x314B4345).CopyTo($ephBlob,0);[BitConverter]::GetBytes(32).CopyTo($ephBlob,4);[Array]::Copy($eph,1,$ephBlob,8,64)
+ $ephKey=[System.Security.Cryptography.ECDiffieHellmanCngPublicKey]::FromByteArray($ephBlob,[System.Security.Cryptography.CngKeyBlobFormat]::EccPublicBlob)
+ $prk=$serverKey.DeriveKeyMaterial($ephKey)
+ $hmac=[System.Security.Cryptography.HMACSHA256]::new($prk)
+ $key=$hmac.ComputeHash([byte[]]($eph+[byte]1));$hmac.Dispose()
+ $cipher=[byte[]]$body[0..($body.Length-17)]
+ $opened=[InstallerEcc]::GcmEncrypt($key,$iv,$cipher,$eph)
+ $plain=[byte[]]$opened[0..($cipher.Length-1)]
+ if([Text.Encoding]::UTF8.GetString($plain) -ne 'tester@example.com'){throw 'The server side could not decrypt the field.'}
+ if((& $hex ([InstallerEcc]::GcmEncrypt($key,$iv,$plain,$eph))) -ne (& $hex $body)){throw 'The authentication tag does not match.'}
+}finally{$serverKey.Dispose()}
+if((ConvertTo-InstallerCipherText -Text 'same') -eq (ConvertTo-InstallerCipherText -Text 'same')){throw 'Each encryption must use a fresh key and IV.'}
+
+$ok=ConvertFrom-InstallerResponse -Text '{"code":2000,"message":"success","data":{"token":"tok-123","userId":42}}'
+if(-not $ok.Ok -or $ok.Token -ne 'tok-123' -or $ok.UserId -ne '42' -or $ok.Message -ne 'success'){throw 'Sign-in reply parsing regressed.'}
+$bad=ConvertFrom-InstallerResponse -Text '{"code":4001,"msg":"Incorrect password","data":null}'
+if($bad.Ok -or $bad.Code -ne '4001' -or $bad.Message -ne 'Incorrect password' -or $bad.Token){throw 'Failed reply parsing regressed.'}
+$gateway=ConvertFrom-InstallerResponse -Text '<html>Bad Gateway</html>' -StatusCode 502
+if($gateway.Ok -or $gateway.Code -ne 'HTTP 502' -or $gateway.Raw -ne '<html>Bad Gateway</html>'){throw 'A reply that is not JSON must keep the HTTP status.'}
+if((ConvertFrom-InstallerResponse -Text '{"code":2000}' -StatusCode 500).Ok){throw 'An HTTP error is never a success.'}
+
+$logcat=@"
+11-19 10:00:01.100  1234  5678 I HttpLog : HttpLog-Response-1a2b {"code":2000,"data":{"token":"old-token","userId":11}}
+11-19 10:00:02.000  1234  5678 I Other   : unrelated "token":"not-http"
+11-19 10:05:01.100  1234  5678 I HttpLog : HttpLog-Response-3c4d {"code":2000,"data":{"token":"tok-new","userId":42,
+11-19 10:05:01.101  1234  5678 I HttpLog : HttpLog-Response-3c4d "email":"tester@example.com"}}
+11-19 10:05:01.102  1234  5678 I HttpLog : HttpLog-Response-3c4de {"userId":99,"email":"other@example.com"}
+"@
+$found=ConvertFrom-InstallerLogcat -Text $logcat
+if($null -eq $found -or $found.Token -ne 'tok-new' -or $found.UserId -ne '42' -or $found.Email -ne 'tester@example.com'){throw 'Token from the phone log regressed.'}
+if($null -ne (ConvertFrom-InstallerLogcat -Text "11-19 I Other: `"token`":`"x`"")){throw 'Only HttpLog responses may give a token.'}
+if((Format-TokenPreview -Token 'abcdef1234567890wxyz') -ne ('abcdef'+[char]0x2026+'wxyz') -or (Format-TokenPreview -Token 'short') -ne 'short'){throw 'Token preview regressed.'}
+
+$secret=Protect-DevToolsSecret -Text 'not-a-real-password'
+if(-not $secret -or $secret.Contains('not-a-real')){throw 'The password must not be saved as plain text.'}
+if((Unprotect-DevToolsSecret -Text $secret) -ne 'not-a-real-password'){throw 'The saved password did not round-trip.'}
+if((Unprotect-DevToolsSecret -Text 'AAAA') -ne '' -or (Protect-DevToolsSecret -Text '') -ne ''){throw 'An unreadable or empty saved password must come back empty.'}
+
+# BLE log analyzer: one command round trip in the SDK's log-file format, the same in logcat format, and bare frames.
+Add-Type -AssemblyName System.Windows.Forms
+. (Join-Path $root 'dev-tools\ble-analyzer.ps1')
+Initialize-BleAnalyzer
+$box=@{Top=[string][char]0x250C;Side=[string][char]0x2502;Mid=[string][char]0x251C;Bottom=[string][char]0x2514}
+$blocks=@(
+ @('13:24:30.544','SEND',@('[mac:AA:BB:CC:DD:EE:FF] command_start','Cmd=0xAA commandSequence=86 retryPolicy=SEND_ONCE','caller=com.example.app.BleClient.enableAteMode(BleClient.kt:108)')),
+ @('13:24:30.545','SEND',@('[mac:AA:BB:CC:DD:EE:FF] send_frame 0xFB065600AA0500181F0100227204','Cmd=0xAA commandSequence=86 length=14 packet=1/1 protocol=plain')),
+ @('13:24:30.875','RECV',@('[mac:AA:BB:CC:DD:EE:FF] receive_frame 0xFB0656000A0500141F010022687D','Cmd=0x0A commandSequence=86 length=14 packet=1/1 route=response protocol=plain responseTimeMs=330')),
+ @('13:24:30.878','RECV',@('[mac:AA:BB:CC:DD:EE:FF] command_success','Cmd=0xAA commandSequence=86 responseCmd=0x0A responseBusinessSeq=86 retries=0 durationMs=333'))
+)
+$fileLines=New-Object System.Collections.Generic.List[string]
+$logcatLines=New-Object System.Collections.Generic.List[string]
+foreach($block in $blocks){
+ $stamp='[2026-11-20 '+$block[0]+'] ['+$block[1]+'] '
+ $epoch='  1795143070.'+$block[0].Substring(9)+'000  8177  8177 D lib-log : '
+ $body=@($box.Top+'----',$box.Side+'Thread: main',$box.Mid+'----')+@($block[2]|ForEach-Object{$box.Side+$_})+@($box.Bottom+'----')
+ foreach($line in $body){
+  $fileLines.Add($stamp+$line)
+  $logcatLines.Add($epoch+$(if($line.StartsWith($box.Side)){$box.Side+'['+$block[1]+'] '+$line.Substring(1)}else{$line}))
+ }
+}
+function Read-BleRecords([string[]]$Lines){
+ $parser=New-Object Codex.Ble.BleLogParser
+ $seen=New-Object 'System.Collections.Generic.HashSet[object]'
+ foreach($line in $Lines){foreach($record in $parser.Feed($line)){[void]$seen.Add($record)}}
+ foreach($record in $parser.Flush()){[void]$seen.Add($record)}
+ return @($seen)
+}
+foreach($case in @(@('log file',$fileLines.ToArray()),@('logcat',$logcatLines.ToArray()))){
+ $records=@(Read-BleRecords -Lines $case[1])
+ if($records.Count -ne 1){throw "BLE $($case[0]) format: expected one round trip, got $($records.Count)."}
+ $trip=$records[0]
+ if($trip.State -ne 'Success' -or $trip.Send.Command -ne 0xAA -or $trip.Receive.Command -ne 0x0A -or -not $trip.Send.ChecksumOk -or -not $trip.Receive.ChecksumOk){throw "BLE $($case[0]) format: round trip not matched ($($trip.State))."}
+ if($trip.Caller -notmatch 'enableAteMode' -or $trip.SdkElapsedMs -ne 330 -or [int]$trip.ElapsedMs -ne 330 -or -not $trip.Receive.Result){throw "BLE $($case[0]) format: caller, timing or result missing."}
+}
+# The log viewer pads the tag; padded lines read the same.
+$padded=@($fileLines|ForEach-Object{$_ -replace '\] \[(SEND|RECV)\] ','] [$1]     '})
+if(@(Read-BleRecords -Lines $padded).Count -ne 1){throw 'BLE log lines padded by the viewer were not read.'}
+# Bare frames, one per line: requests go out, the rest come back, for every command (not only AA / 0A).
+$bare=@(Read-BleRecords -Lines @('FB065600AA0500181F0100227204','FB 06 56 00 0A 05 00 14 1F 01 00 22 68 7D','FB065700B60100005298'))
+if($bare.Count -ne 2 -or @($bare|Where-Object{$_.Send -and $_.Receive}).Count -ne 1 -or @($bare|Where-Object{$_.Send.Command -eq 0xB6}).Count -ne 1){throw 'Bare BLE frames were not read.'}
+$bad=[Codex.Ble.Protocol]::Decode('FB065600AA0500181F0100227205')
+if($bad.ChecksumOk -ne $false){throw 'A frame with a wrong CRC16 must fail the check.'}
+
+# Protocol HTML (the PDF converter's format): headings found by size and number, a section cut to its own heading.
+$protocolHtml=Join-Path ([IO.Path]::GetTempPath()) ('ble-protocol-test-'+[guid]::NewGuid().ToString('N')+'.html')
+$seqTitle=[string][char]0x5E8F+[char]0x53F7;$lenTitle=[string][char]0x957F+[char]0x5EA6;$defTitle=[string][char]0x5B9A+[char]0x4E49
+$cell={param($left,$top,$text) '<div class="stl_01" style="left:'+$left+'em;top:'+$top+'em;"><span class="stl_73 stl_08" style="position:relative; top:-2.1699em;">'+$text+'</span></div>'}
+$pageLine={param($top,$size,$text) '<div class="stl_01" style="left:7.5em;top:'+$top+'em;"><span class="'+$size+' stl_08" style="position:relative; top:-2.1699em;">'+$text+'</span></div>'}
+$protocolText='<!DOCTYPE html><html><head><meta charset="utf-8" /><style>.stl_65 { font-size: 1.329167em; } .stl_73 { font-size: 0.75em; }</style></head><body>'+
+ '<div id="page_0" class="stl_ stl_02"><div class="stl_view">'+(& $pageLine 10 'stl_65' '2.5 cmd_08 Realtime report')+
+ (& $cell 4 12 $seqTitle)+(& $cell 7 12 ($lenTitle+'(Byte)'))+(& $cell 12 12 $defTitle)+(& $cell 5 14 '1')+(& $cell 8 14 '4')+(& $cell 12 14 'order')+(& $cell 5 15.5 '2')+(& $cell 8 15.5 '32')+(& $cell 12 15.5 'card')+'</div></div>'+
+ '<div id="page_1" class="stl_ stl_02"><div class="stl_view">'+(& $pageLine 8 'stl_73' 'more fields')+(& $pageLine 30 'stl_65' '2.6 cmd_A8 Realtime request')+(& $pageLine 50 'stl_65' ([char]0x9644+[char]0x5F55+' 5.3: states'))+'</div></div></body></html>'
+[IO.File]::WriteAllText($protocolHtml,$protocolText,(New-Object Text.UTF8Encoding($false)))
+try{
+ $protocolDoc=[Codex.Ble.ProtocolDocument]::Load($protocolHtml)
+ if(($protocolDoc.Sections|ForEach-Object{$_.Number}) -join ',' -ne '2.5,2.6,5.3'){throw 'Protocol headings were not found.'}
+ $tableRows=@($protocolDoc.FieldRows($protocolDoc.FindCommand(0x08)))
+ if(($tableRows|ForEach-Object{$_.Number+':'+$_.Start+'+'+$_.Length+':'+$_.Name}) -join ',' -ne '1:7+4:order,2:11+32:card'){throw 'Protocol table rows were not read.'}
+ if($protocolDoc.FindCommand(0x08).Number -ne '2.5' -or $protocolDoc.FindCommand(0xA8).Number -ne '2.6' -or $protocolDoc.FindNumber('5.3').Page -ne 1){throw 'Protocol sections were not matched to commands.'}
+ # Each table row has a red frame; only the highlighted one is shown.
+ $framedHtml=$protocolDoc.SectionHtml($protocolDoc.FindCommand(0x08), 1)
+ if($framedHtml -notmatch 'class="hit" data-row="1" id="row-1" style="[^"]*"' -or $Matches[0] -match 'display:none' -or $framedHtml -notmatch 'data-row="0" id="row-0" style="[^"]*display:none'){throw 'The highlighted protocol row must be framed and the others hidden.'} $sectionHtml=$protocolDoc.SectionHtml($protocolDoc.FindCommand(0x08))
+ if(([regex]::Matches($sectionHtml,'class="slice"')).Count -ne 2 -or $sectionHtml -notmatch 'top:-9\.2em' -or $sectionHtml -notmatch 'height:[\d.]+em"><div style="position:absolute;left:0;top:-[\d.]+em">'){throw 'A section must be cut from its heading across its pages.'}
+ # The last section starts at its own heading (50 - 0.8) on its single page; the text above it is clipped away.
+ $appendixHtml=$protocolDoc.SectionHtml($protocolDoc.FindNumber('5.3'))
+ if(([regex]::Matches($appendixHtml,'class="slice"')).Count -ne 1 -or $appendixHtml -notmatch 'top:-49\.2em'){throw 'A section must not show other headings.'}
+}finally{Remove-Item -LiteralPath $protocolHtml -Force -ErrorAction SilentlyContinue}
+
 # Every text the window uses exists in text.json.
 $text=[IO.File]::ReadAllText((Join-Path $root 'dev-tools\text.json'),[Text.Encoding]::UTF8)|ConvertFrom-Json
 $source=[IO.File]::ReadAllText((Join-Path $root 'dev-tools\DevTools.ps1'))+[IO.File]::ReadAllText((Join-Path $root 'codex-floating-button.ps1'))
 $missing=@([regex]::Matches($source,'\$(?:T|devToolsText)\.([A-Za-z]+)')|ForEach-Object{$_.Groups[1].Value}|Sort-Object -Unique|Where-Object{$null -eq $text.PSObject.Properties[$_]})
 if($missing.Count){throw ('Missing dev tool texts: '+($missing -join ', '))}
 
-Write-Output 'PASS: Dev tools parse adb output, pick Gradle processes, check paths and keep settings.'
+Write-Output 'PASS: Dev tools parse adb output, pick Gradle processes, check paths, keep settings, encrypt installer sign-ins and read BLE logs.'

@@ -1,0 +1,265 @@
+using System;
+using System.Collections.Concurrent;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+
+namespace Codex.Ble
+{
+    public sealed class LogcatCapture : IDisposable
+    {
+        private const int ClockTimeoutMs = 10000;
+        private const string TagFilters =
+            "lib-log:V BLE_SCAN:V BLE_CONNECT:V BLE_DISCONNECT:V BLE_SEND:V BLE_RECV:V BLE_ERROR:V \"*:S\"";
+
+        private readonly object gate = new object();
+        private volatile CaptureSession current;
+        private bool disposed;
+
+        public bool IsRunning
+        {
+            get
+            {
+                CaptureSession session = current;
+                return session != null && !session.Cancelled && !session.Completed;
+            }
+        }
+
+        public bool HasExited
+        {
+            get
+            {
+                CaptureSession session = current;
+                return session != null && session.Completed && session.Output.IsEmpty && session.Errors.IsEmpty;
+            }
+        }
+
+        public int? ExitCode
+        {
+            get
+            {
+                CaptureSession session = current;
+                return session != null && session.Completed ? session.ExitCode : null;
+            }
+        }
+
+        public void Start(string adbPath, string serial)
+        {
+            if (String.IsNullOrWhiteSpace(adbPath))
+                throw new ArgumentException("An ADB executable is required.", "adbPath");
+            if (String.IsNullOrEmpty(serial) || !Regex.IsMatch(serial, @"\A[A-Za-z0-9_.:%\[\]-]+\z"))
+                throw new ArgumentException("An ADB device serial is required.", "serial");
+
+            lock (gate)
+            {
+                if (disposed)
+                    throw new ObjectDisposedException("LogcatCapture");
+                if (IsRunning)
+                    throw new InvalidOperationException("Logcat capture is already running.");
+
+                CaptureSession session = new CaptureSession();
+                current = session;
+                Task.Run(() => Capture(session, adbPath, serial));
+            }
+        }
+
+        public bool TryRead(out string line)
+        {
+            CaptureSession session = current;
+            line = null;
+            return session != null && session.Output.TryDequeue(out line);
+        }
+
+        public bool TryReadError(out string line)
+        {
+            CaptureSession session = current;
+            line = null;
+            return session != null && session.Errors.TryDequeue(out line);
+        }
+
+        public void Stop()
+        {
+            lock (gate)
+            {
+                if (current != null)
+                    current.Cancel();
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (gate)
+            {
+                disposed = true;
+                if (current != null)
+                    current.Cancel();
+            }
+        }
+
+        private static void Capture(CaptureSession session, string adbPath, string serial)
+        {
+            try
+            {
+                string cutoff = ReadDeviceTime(session, adbPath, serial);
+                if (cutoff == null || session.Cancelled)
+                    return;
+
+                // A device timestamp skips all previous-session entries while retaining
+                // entries recorded between the clock lookup and the logcat connection.
+                using (Process process = CreateProcess(adbPath, "-s " + serial +
+                    " logcat -b main -v threadtime -v epoch -v usec -T " + cutoff + " " + TagFilters))
+                {
+                    process.OutputDataReceived += (sender, entry) => {
+                        if (entry.Data != null)
+                            session.Output.Enqueue(entry.Data);
+                    };
+                    process.ErrorDataReceived += (sender, entry) => {
+                        if (entry.Data != null)
+                            session.Errors.Enqueue(entry.Data);
+                    };
+
+                    if (!session.StartProcess(process))
+                        return;
+
+                    try
+                    {
+                        process.BeginOutputReadLine();
+                        process.BeginErrorReadLine();
+                        process.WaitForExit(); // Also waits for redirected stream callbacks.
+                        if (!session.Cancelled)
+                            session.ExitCode = process.ExitCode;
+                    }
+                    finally
+                    {
+                        session.ReleaseProcess(process);
+                    }
+                }
+            }
+            catch (Exception error)
+            {
+                if (!session.Cancelled)
+                    session.Errors.Enqueue(error.Message);
+            }
+            finally
+            {
+                session.Completed = true;
+            }
+        }
+
+        private static string ReadDeviceTime(CaptureSession session, string adbPath, string serial)
+        {
+            using (Process process = CreateProcess(adbPath, "-s " + serial + " shell date +%s.%N"))
+            {
+                if (!session.StartProcess(process))
+                    return null;
+
+                try
+                {
+                    Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+                    Task<string> stderr = process.StandardError.ReadToEndAsync();
+                    if (!process.WaitForExit(ClockTimeoutMs) ||
+                        !Task.WaitAll(new Task[] { stdout, stderr }, ClockTimeoutMs))
+                        throw new TimeoutException("Timed out reading the Android device clock.");
+                    if (session.Cancelled)
+                        return null;
+
+                    string error = stderr.Result.Trim();
+                    if (process.ExitCode != 0)
+                        throw new IOException(error.Length > 0
+                            ? error : "ADB could not read the Android device clock.");
+
+                    string cutoff = stdout.Result.Trim();
+                    if (!Regex.IsMatch(cutoff, @"\A[0-9]{1,12}\.[0-9]{1,9}\z"))
+                        throw new IOException("Android did not return a fractional epoch timestamp.");
+                    return cutoff;
+                }
+                finally
+                {
+                    session.ReleaseProcess(process);
+                }
+            }
+        }
+
+        private static Process CreateProcess(string adbPath, string arguments)
+        {
+            return new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = adbPath,
+                    Arguments = arguments,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8
+                }
+            };
+        }
+
+        private sealed class CaptureSession
+        {
+            private readonly object gate = new object();
+            private Process trackedProcess;
+
+            public volatile bool Cancelled;
+            public volatile bool Completed;
+            public int? ExitCode;
+            public readonly ConcurrentQueue<string> Output = new ConcurrentQueue<string>();
+            public readonly ConcurrentQueue<string> Errors = new ConcurrentQueue<string>();
+
+            public bool StartProcess(Process process)
+            {
+                lock (gate)
+                {
+                    if (Cancelled)
+                        return false;
+                    if (!process.Start())
+                        throw new IOException("ADB did not start.");
+                    trackedProcess = process;
+                    return true;
+                }
+            }
+
+            public void ReleaseProcess(Process process)
+            {
+                lock (gate)
+                {
+                    TryKill(process);
+                    trackedProcess = null;
+                }
+            }
+
+            public void Cancel()
+            {
+                lock (gate)
+                {
+                    Cancelled = true;
+                    if (trackedProcess != null)
+                        TryKill(trackedProcess);
+                }
+            }
+
+            private void TryKill(Process process)
+            {
+                try
+                {
+                    if (!process.HasExited)
+                        process.Kill();
+                }
+                catch (InvalidOperationException)
+                {
+                    // It exited while the capture was stopping.
+                }
+                catch (Win32Exception error)
+                {
+                    Errors.Enqueue(error.Message);
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,1680 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Windows.Forms;
+
+namespace Codex.Ble
+{
+    public sealed class AnalyzerWindow : Form
+    {
+        private static readonly Dictionary<string, AnalyzerWindow> Windows = new Dictionary<string, AnalyzerWindow>();
+        // The dev tools palette: blue on light grey, red only for failures. Text one size up from the WinForms
+        // default and darker grey, so Chinese labels stay readable.
+        private static readonly Color Paper = Color.White;
+        private static readonly Color Page = Color.FromArgb(244, 246, 250);
+        private static readonly Color Ink = Color.FromArgb(31, 41, 55);
+        private static readonly Color Muted = Color.FromArgb(75, 85, 99);
+        private static readonly Color Border = Color.FromArgb(222, 227, 235);
+        private static readonly Color Accent = Color.FromArgb(37, 99, 235);
+        private static readonly Color Selected = Color.FromArgb(219, 234, 254);
+        private static readonly Color ErrorInk = Color.FromArgb(185, 28, 28);
+        // Source Han Sans (Noto Sans SC) when installed, with its Medium weight for headings: rounder and cleaner
+        // than YaHei, and Medium stays sharp where small bold Chinese strokes run together. Otherwise YaHei.
+        private static readonly string UiFamily = HasFont("Noto Sans SC") ? "Noto Sans SC" : "Microsoft YaHei UI";
+        private static readonly bool HasMedium = UiFamily == "Noto Sans SC" && HasFont("Noto Sans SC Medium");
+        private static readonly string StrongFamily = HasMedium ? "Noto Sans SC Medium" : UiFamily;
+        private static readonly FontStyle StrongStyle = HasMedium ? FontStyle.Regular : FontStyle.Bold;
+        private static readonly Font Body = new Font(UiFamily, 10F);
+        private static readonly Font Strong = new Font(StrongFamily, 10F, StrongStyle);
+        private static readonly Font Small = new Font(UiFamily, 9F);
+        // Buttons use the regular weight: small bold Chinese strokes run together and look blurred.
+        private static readonly Font ButtonFont = new Font(UiFamily, 10.5F);
+        private static readonly Font Heading = new Font(StrongFamily, 15F, StrongStyle);
+        private static readonly Font Mono = new Font("Consolas", 10.5F);
+        private static readonly Font MonoStrong = new Font("Consolas", 10.5F, FontStyle.Bold);
+        private static readonly string SettingsFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TNotes", "ble-protocol-folder.txt");
+        // The protocol saved as HTML: read once, shared by every analyzer window; page pictures are the fallback.
+        private static readonly string HtmlSettingsFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TNotes", "ble-protocol-html.txt");
+        private static ProtocolDocument protocol;
+        private static string protocolSource;
+        private Frame documentsFrame;
+        // The protocol table row (序号 and its name) of each field of the frame shown.
+        private Dictionary<Field, ProtocolRow> documentRows = new Dictionary<Field, ProtocolRow>();
+        private ProtocolSection documentRowsSection;
+        private int documentRowsEnd;
+        private static readonly Dictionary<int, string> DocumentTitles = new Dictionary<int, string>
+        {
+            { 2, "§1.2 帧结构" }, { 3, "§1.2 载荷与 CRC16" }, { 5, "§2.5 实时充电数据上报" },
+            { 6, "§2.5 实时充电数据上报（续）" }, { 7, "§2.5 上报／§2.6 请求" }, { 8, "§2.6 实时充电数据请求（续）" },
+            { 9, "§2.9 桩信息设置／查询" }, { 10, "§2.9 当前时间、最大限制电流" },
+            { 11, "§2.9 电网类型、过压阈值" }, { 12, "§2.9 状态查询" }, { 13, "§2.9 状态查询／§2.10 应答" },
+            { 14, "§2.10 应答控制字与参数长度" }, { 16, "§2.15–2.16 故障列表" }, { 17, "§2.16 故障列表／§2.17–2.18 RCD 测试" },
+            { 19, "附录 5.3 桩工作状态" }, { 20, "附录 5.4 桩故障编码" }, { 21, "附录 5.4 续／5.5 桩告警编码" },
+            { 22, "附录 5.7 键值参数" }, { 23, "附录 5.7 键值参数（续）" }
+        };
+
+        private readonly string adbPath;
+        private readonly string serial;
+        private readonly LogcatCapture capture = new LogcatCapture();
+        private readonly BleLogParser parser = new BleLogParser();
+        private readonly List<Record> records = new List<Record>();
+        private readonly Dictionary<Record, DateTimeOffset?> sortTimes = new Dictionary<Record, DateTimeOffset?>();
+        private readonly Timer timer = new Timer { Interval = 80 };
+        private readonly ListBox activity = new ListBox();
+        private readonly Label status = TextLabel("", Small, Muted);
+        private readonly Label summary = TextLabel("尚无报文", Heading, Ink);
+        private readonly Label outcome = TextLabel("", Strong, Accent);
+        private readonly Label details = TextLabel("", Body, Muted);
+        private readonly Label count = TextLabel("0 组", Small, Muted);
+        private readonly ComboBox filterBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, Font = Body, Margin = new Padding(0, 0, 6, 0) };
+        private string filterKey = "all";
+        private bool updatingFilter;
+        // While true the newest record is selected as it arrives. Working in the middle area turns it off, so new
+        // records never pull the view away from the one being read; "回到最新" turns it back on.
+        private bool followNewest = true;
+        private readonly Button followButton = ToolButton("回到最新", true);
+        // The list as shown (newest first) and each record's place in it, for the gap to the previous command.
+        private Record[] shownRecords = new Record[0];
+        private readonly Dictionary<Record, int> shownIndex = new Dictionary<Record, int>();
+        private readonly Button start = ToolButton("开始", true);
+        private readonly Button pause = ToolButton("暂停");
+        private readonly Button clear = ToolButton("清空");
+        private readonly Button sending = ToolButton("发送 · APP → 设备");
+        private readonly Button receiving = ToolButton("接收 · 设备 → APP");
+        private readonly Label hexStatus = TextLabel("", Small, Muted);
+        private readonly HexView hex = new HexView();
+        private readonly TabControl tabs = new TabControl { Dock = DockStyle.Fill };
+        private readonly TabPage fieldTab = new TabPage("载荷字段");
+        private readonly CheckBox showHeader = new CheckBox { Text = "展开帧头与 CRC16 校验", AutoSize = true };
+        private readonly Button payloadButton = ToolButton("圈选全部载荷");
+        private readonly DataGridView fieldGrid = new DataGridView();
+        private readonly RichTextBox explanation = DetailBox();
+        private readonly RichTextBox steps = DetailBox();
+        private readonly RichTextBox api = DetailBox();
+        private readonly RichTextBox raw = DetailBox();
+        private readonly Button fieldDocument = ToolButton("查看协议章节");
+        private readonly FlowLayoutPanel documents = new FlowLayoutPanel();
+        private readonly Panel hexArea = new Panel();
+        private bool reading;
+        private bool changingSelection;
+        private bool showingReceive;
+        private bool hadReceive;
+        private bool selectingRecord;
+        private string documentFolder;
+        private string lastAdbError;
+        private Field selectedField;
+        private Record selectedRecord;
+        private long diagnosticId;
+
+        public static AnalyzerWindow Open(Form owner, string adbPath, string serial, string deviceName)
+        {
+            string key = serial ?? "";
+            AnalyzerWindow existing;
+            if (Windows.TryGetValue(key, out existing) && !existing.IsDisposed)
+            {
+                if (existing.WindowState == FormWindowState.Minimized) existing.WindowState = FormWindowState.Normal;
+                existing.Activate();
+                return existing;
+            }
+            var window = new AnalyzerWindow(adbPath, key, deviceName);
+            window.Icon = owner.Icon;
+            // Sized for and centred on the screen the tool window is on (Show ignores CenterParent).
+            var area = Screen.FromControl(owner).WorkingArea;
+            window.StartPosition = FormStartPosition.Manual;
+            window.MinimumSize = new Size(Math.Min(990, area.Width - 32), Math.Min(650, area.Height - 28));
+            window.Size = new Size(Math.Min(1440, area.Width - 32), Math.Min(940, area.Height - 28));
+            window.Location = new Point(area.Left + (area.Width - window.Width) / 2, area.Top + (area.Height - window.Height) / 2);
+            Windows[key] = window;
+            window.FormClosed += delegate { Windows.Remove(key); };
+            window.Show(owner);
+            return window;
+        }
+
+        /// <summary>Parses log lines handed over from elsewhere, e.g. the file open in the dev tools log viewer.</summary>
+        public void ImportLog(string[] lines, string source)
+        {
+            if (lines != null && lines.Length > 0) ImportLines(lines, String.IsNullOrEmpty(source) ? "日志" : source);
+        }
+
+        private AnalyzerWindow(string sdkAdbPath, string deviceSerial, string deviceName)
+        {
+            adbPath = sdkAdbPath;
+            serial = deviceSerial;
+            documentFolder = FindDocumentFolder();
+            LoadProtocol(FindProtocolHtml());
+            Text = "蓝牙日志解析 · 开发工具";
+            Font = Body;
+            BackColor = Page;
+            ForeColor = Ink;
+
+            // No banner: the title bar already names the window, and the room goes to the bytes and fields.
+            var root = Stack();
+            Rows(root, 50, 30, 0);
+            string phone = String.IsNullOrEmpty(serial) ? "未选择手机" : String.IsNullOrEmpty(deviceName) ? serial : deviceName;
+            var tools = Flow();
+            tools.Padding = new Padding(10, 8, 0, 0);
+            var pasted = ToolButton("粘贴日志");
+            pasted.Click += delegate { PasteLogs(); };
+            var opened = ToolButton("打开日志文件");
+            opened.Click += delegate { OpenLogFiles(); };
+            var phoneLabel = new Label { AutoSize = true, Text = "实时采集：" + phone, Font = Body, ForeColor = Muted, Margin = new Padding(10, 7, 0, 0) };
+            tools.Controls.AddRange(new Control[] { start, pause, clear, pasted, opened, phoneLabel });
+            root.Controls.Add(tools, 0, 0);
+            status.Padding = new Padding(14, 0, 0, 0);
+            root.Controls.Add(status, 0, 1);
+
+            var columns = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Padding = new Padding(8, 0, 8, 8) };
+            columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
+            columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52));
+            columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+            columns.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            columns.Controls.Add(BuildActivity(), 0, 0);
+            var workbench = BuildWorkbench();
+            WatchInteraction(workbench);
+            columns.Controls.Add(workbench, 1, 0);
+            columns.Controls.Add(BuildDocuments(), 2, 0);
+            root.Controls.Add(columns, 0, 2);
+            Controls.Add(root);
+            EnableFileDrop(this);
+
+            start.Click += delegate { StartCapture(); };
+            pause.Click += delegate { PauseCapture(); };
+            clear.Click += delegate { ClearCapture(); };
+            sending.Click += delegate { SelectDirection(false); };
+            receiving.Click += delegate { SelectDirection(true); };
+            timer.Tick += delegate { ReadCapture(); };
+            Shown += delegate { StartCapture(); };
+            FormClosed += delegate { timer.Stop(); timer.Dispose(); capture.Dispose(); };
+            SetStatus(String.IsNullOrEmpty(serial) ? "没有选择手机：可以粘贴日志、打开日志文件，或把 .log 文件拖进窗口。" : "正在启动实时采集…", false);
+            UpdateCaptureControls();
+            ShowRecord(null);
+        }
+
+        private Control BuildActivity()
+        {
+            var layout = Stack();
+            layout.Margin = new Padding(0, 0, 6, 0);
+            layout.Padding = new Padding(9);
+            layout.BackColor = Paper;
+            Rows(layout, 28, 34, 0);
+            var head = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
+            head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            head.Controls.Add(TextLabel("报文往返（最新在上）", Strong, Ink), 0, 0);
+            count.AutoSize = true;
+            count.Dock = DockStyle.Right;
+            count.TextAlign = ContentAlignment.MiddleRight;
+            head.Controls.Add(count, 1, 0);
+            layout.Controls.Add(head, 0, 0);
+            // Polling floods the list (one realtime request every few seconds), so the list can be narrowed to one
+            // command, to failures only, or to everything except the polling.
+            filterBox.SelectedIndexChanged += delegate
+            {
+                if (updatingFilter) return;
+                var choice = filterBox.SelectedItem as FilterChoice;
+                filterKey = choice == null ? "all" : choice.Key;
+                RefreshList(null);
+            };
+            var filterRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
+            filterRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            filterRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            filterRow.Controls.Add(filterBox, 0, 0);
+            followButton.Visible = false;
+            followButton.Margin = new Padding(0, 0, 0, 2);
+            followButton.Font = Small;
+            followButton.Click += delegate { FollowNewest(); };
+            filterRow.Controls.Add(followButton, 1, 0);
+            layout.Controls.Add(filterRow, 0, 1);
+            UpdateFilterChoices();
+            activity.Dock = DockStyle.Fill;
+            activity.IntegralHeight = false;
+            activity.BorderStyle = BorderStyle.FixedSingle;
+            activity.DrawMode = DrawMode.OwnerDrawFixed;
+            activity.ItemHeight = 76;
+            activity.DrawItem += DrawActivityRow;
+            activity.SelectedIndexChanged += delegate
+            {
+                if (selectingRecord) return;
+                // Picking the newest record in the list follows new ones again; any other record stays put.
+                followNewest = activity.SelectedIndex <= 0;
+                ShowRecord(activity.SelectedItem as Record);
+                UpdateFollowButton();
+            };
+            layout.Controls.Add(activity, 0, 2);
+            return layout;
+        }
+
+        private Control BuildWorkbench()
+        {
+            var layout = Stack();
+            layout.Padding = new Padding(10, 9, 10, 9);
+            layout.BackColor = Paper;
+            Rows(layout, 36, 48, 52, 28, 176, 0);
+            summary.AutoEllipsis = true;
+            var heading = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
+            heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            heading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            outcome.AutoSize = true;
+            outcome.Padding = new Padding(8, 2, 8, 2);
+            outcome.MaximumSize = new Size(420, 0);
+            outcome.BackColor = Selected;
+            outcome.TextAlign = ContentAlignment.MiddleRight;
+            heading.Controls.Add(summary, 0, 0);
+            heading.Controls.Add(outcome, 1, 0);
+            layout.Controls.Add(heading, 0, 0);
+            layout.Controls.Add(details, 0, 1);
+            var direction = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
+            direction.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            direction.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            foreach (Button button in new[] { sending, receiving })
+            {
+                button.AutoSize = false;
+                button.Dock = DockStyle.Fill;
+                button.TextAlign = ContentAlignment.MiddleLeft;
+                button.Margin = new Padding(0, 0, 6, 5);
+            }
+            direction.Controls.Add(sending, 0, 0);
+            direction.Controls.Add(receiving, 1, 0);
+            layout.Controls.Add(direction, 0, 2);
+            layout.Controls.Add(hexStatus, 0, 3);
+            hexArea.Dock = DockStyle.Fill;
+            hexArea.AutoScroll = true;
+            hexArea.BackColor = Paper;
+            hexArea.BorderStyle = BorderStyle.FixedSingle;
+            hexArea.Controls.Add(hex);
+            hex.ByteClicked += SelectByte;
+            hexArea.Resize += delegate { UpdateHexWidth(); };
+            layout.Controls.Add(hexArea, 0, 4);
+
+            BuildFieldTab();
+            AddDetailTab("解析过程", steps);
+            AddDetailTab("调用与参数", api);
+            AddDetailTab("原始日志", raw);
+            tabs.Margin = new Padding(0, 8, 0, 0);
+            layout.Controls.Add(tabs, 0, 5);
+            return layout;
+        }
+
+        private void BuildFieldTab()
+        {
+            var layout = Stack();
+            layout.Padding = new Padding(5);
+            Rows(layout, 34, 0, 150, 33);
+            var tools = Flow();
+            showHeader.Padding = new Padding(2, 5, 8, 0);
+            showHeader.CheckedChanged += delegate { RebuildFields(); };
+            payloadButton.Click += delegate { SelectPayload(); };
+            tools.Controls.AddRange(new Control[] { showHeader, payloadButton });
+            layout.Controls.Add(tools, 0, 0);
+
+            fieldGrid.Dock = DockStyle.Fill;
+            fieldGrid.BackgroundColor = Paper;
+            fieldGrid.BorderStyle = BorderStyle.None;
+            fieldGrid.GridColor = Border;
+            fieldGrid.RowHeadersVisible = false;
+            fieldGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            fieldGrid.EnableHeadersVisualStyles = false;
+            fieldGrid.ColumnHeadersDefaultCellStyle.Font = Strong;
+            fieldGrid.ColumnHeadersDefaultCellStyle.BackColor = Page;
+            fieldGrid.ColumnHeadersDefaultCellStyle.ForeColor = Ink;
+            fieldGrid.ColumnHeadersDefaultCellStyle.SelectionBackColor = Page;
+            fieldGrid.ColumnHeadersDefaultCellStyle.Padding = new Padding(4, 5, 4, 5);
+            fieldGrid.DefaultCellStyle.Font = Body;
+            fieldGrid.DefaultCellStyle.ForeColor = Ink;
+            fieldGrid.DefaultCellStyle.Padding = new Padding(4, 3, 4, 3);
+            fieldGrid.RowTemplate.Height = 30;
+            fieldGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            fieldGrid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
+            fieldGrid.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+            fieldGrid.DefaultCellStyle.SelectionBackColor = Selected;
+            fieldGrid.DefaultCellStyle.SelectionForeColor = Accent;
+            fieldGrid.MultiSelect = false;
+            fieldGrid.ReadOnly = true;
+            fieldGrid.AllowUserToAddRows = false;
+            fieldGrid.AllowUserToDeleteRows = false;
+            fieldGrid.AllowUserToResizeRows = false;
+            fieldGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            // 文档序号: the row of this frame's table in the protocol section, to find the field there.
+            AddColumn("文档序号", 12);
+            AddColumn("位置", 10);
+            AddColumn("字段", 20);
+            AddColumn("原始 HEX", 24);
+            AddColumn("解析结果", 25);
+            AddColumn("页码", 9);
+            fieldGrid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
+            fieldGrid.Columns[0].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            fieldGrid.Columns[0].DefaultCellStyle.ForeColor = Accent;
+            fieldGrid.Columns[3].DefaultCellStyle.Font = Mono;
+            fieldGrid.SelectionChanged += delegate
+            {
+                if (!changingSelection && fieldGrid.SelectedRows.Count > 0)
+                    ShowField(fieldGrid.SelectedRows[0].Tag as Field);
+            };
+            layout.Controls.Add(fieldGrid, 0, 1);
+            explanation.BackColor = Page;
+            layout.Controls.Add(explanation, 0, 2);
+            var links = Flow();
+            fieldDocument.Click += delegate { if (selectedField != null) OpenFieldSection(selectedField); };
+            links.Controls.Add(fieldDocument);
+            layout.Controls.Add(links, 0, 3);
+            fieldTab.Controls.Add(layout);
+            tabs.TabPages.Add(fieldTab);
+        }
+
+        private void AddColumn(string title, float weight)
+        {
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = title, FillWeight = weight, SortMode = DataGridViewColumnSortMode.NotSortable });
+        }
+
+        private void AddDetailTab(string title, RichTextBox box)
+        {
+            var tab = new TabPage(title) { Padding = new Padding(6) };
+            tab.Controls.Add(box);
+            tabs.TabPages.Add(tab);
+        }
+
+        private Control BuildDocuments()
+        {
+            var layout = Stack();
+            layout.Padding = new Padding(9);
+            layout.Margin = new Padding(6, 0, 0, 0);
+            layout.BackColor = Paper;
+            Rows(layout, 27, 35, 0, 40);
+            layout.Controls.Add(TextLabel("协议章节", Strong, Ink), 0, 0);
+            layout.Controls.Add(TextLabel("EN+ 三代欧标蓝牙通讯协议  V1.11", Body, Muted), 0, 1);
+            documents.Dock = DockStyle.Fill;
+            documents.FlowDirection = FlowDirection.TopDown;
+            documents.WrapContents = false;
+            documents.AutoScroll = true;
+            documents.Resize += delegate { ResizeDocumentButtons(); };
+            layout.Controls.Add(documents, 0, 2);
+            var browse = ToolButton("选择协议文件…");
+            browse.Click += delegate { ChooseProtocolHtml(); };
+            layout.Controls.Add(browse, 0, 3);
+            return layout;
+        }
+
+        private static bool HasFont(string family)
+        {
+            using (var fonts = new System.Drawing.Text.InstalledFontCollection())
+                return fonts.Families.Any(item => String.Equals(item.Name, family, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static TableLayoutPanel Stack()
+        {
+            var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, Margin = Padding.Empty };
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            return table;
+        }
+
+        private static void Rows(TableLayoutPanel table, params int[] heights)
+        {
+            table.RowCount = heights.Length;
+            foreach (int height in heights)
+                table.RowStyles.Add(height == 0 ? new RowStyle(SizeType.Percent, 100) : new RowStyle(SizeType.Absolute, height));
+        }
+
+        private static FlowLayoutPanel Flow()
+        {
+            return new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty, WrapContents = false };
+        }
+
+        private static Label TextLabel(string text, Font font, Color color)
+        {
+            return new Label { Text = text, Font = font, ForeColor = color, Dock = DockStyle.Fill, AutoSize = false, Margin = Padding.Empty, TextAlign = ContentAlignment.MiddleLeft };
+        }
+
+        private static Button ToolButton(string text, bool primary = false)
+        {
+            var button = new Button { Text = text, AutoSize = true, FlatStyle = FlatStyle.Flat, Font = ButtonFont,
+                ForeColor = primary ? Accent : Ink, BackColor = primary ? Selected : Paper, Padding = new Padding(5, 1, 5, 1), Margin = new Padding(0, 0, 6, 4) };
+            button.FlatAppearance.BorderColor = primary ? Accent : Border;
+            return button;
+        }
+
+        private static RichTextBox DetailBox()
+        {
+            return new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None,
+                BackColor = Paper, ForeColor = Ink, Font = Body, DetectUrls = false, Margin = Padding.Empty };
+        }
+
+        private static string StateLabel(Record record)
+        {
+            switch (record.State)
+            {
+                case "Waiting": return "等待应答";
+                case "Sent": return "已发送";
+                case "Received": return "已接收";
+                case "Success": return "成功";
+                case "Timeout": return "超时";
+                case "Failure": return "失败";
+                case "ParseError": return "解析异常";
+                case "Unpaired": return "未配对";
+                case "DeviceEvent": return "设备主动上报";
+                case "Handshake": return "连接／握手";
+                case "Truncated": return "报文截断";
+                case "Redacted": return "载荷已遮盖";
+                case "SecureEnvelope": return "加密外层";
+                case "Retry": return "正在重试";
+                case "CaptureError": return "ADB 异常";
+                case "Interrupted": return "未捕获应答";
+                default: return record.State ?? "已记录";
+            }
+        }
+
+        private static bool IsError(Record record)
+        {
+            return record.State == "Failure" || record.State == "Timeout" || record.State == "ParseError" || record.State == "CaptureError";
+        }
+
+        private static string CommandText(int? command)
+        {
+            return command.HasValue ? "0x" + command.Value.ToString("X2", CultureInfo.InvariantCulture) : "—";
+        }
+
+        private static string Milliseconds(double? value)
+        {
+            return value.HasValue ? value.Value.ToString("0.###", CultureInfo.InvariantCulture) + " ms" : "—";
+        }
+
+        private static string TimeText(DateTimeOffset? time, bool showDay = false)
+        {
+            // Chinese style in this computer's local time, e.g. "11月20日 14:04:21.782".
+            return time.HasValue ? time.Value.ToLocalTime().ToString(showDay ? "M月d日 HH:mm:ss.fff" : "HH:mm:ss.fff", CultureInfo.InvariantCulture) : "—";
+        }
+
+        private static string RecordTitle(Record record)
+        {
+            if (record.Event == "connection_failed") return "蓝牙连接失败";
+            if (record.Event == "connection_timeout") return "蓝牙连接超时";
+            Frame frame = record.Send ?? record.Receive;
+            if (frame != null && frame.IsRedacted && record.Command.HasValue)
+                return "敏感指令 " + CommandText(record.Command) + "（SDK 不记录内容）";
+            string title = frame == null ? null : frame.Function;
+            if (String.IsNullOrEmpty(title) && record.Receive != null) title = record.Receive.Function;
+            if (String.IsNullOrEmpty(title) && record.Command.HasValue) title = "指令 " + CommandText(record.Command);
+            return String.IsNullOrEmpty(title) ? StateLabel(record) : title;
+        }
+
+        private void DrawActivityRow(object sender, DrawItemEventArgs args)
+        {
+            if (args.Index < 0 || args.Index >= activity.Items.Count) return;
+            var record = (Record)activity.Items[args.Index];
+            var bounds = args.Bounds;
+            bool active = (args.State & DrawItemState.Selected) != 0;
+            using (var fill = new SolidBrush(active ? Selected : Paper)) args.Graphics.FillRectangle(fill, bounds);
+            using (var pen = new Pen(Border)) args.Graphics.DrawLine(pen, bounds.Left, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
+            if (active)
+                using (var bar = new SolidBrush(Accent)) args.Graphics.FillRectangle(bar, bounds.Left, bounds.Top, 4, bounds.Height - 1);
+            // Three lines, each with a right-hand value: what it was and its sequence number; how it went with both
+            // command codes, and the round trip; when it was sent, and the gap since the previous command in the list.
+            var g = args.Graphics;
+            int used = DrawRight(g, bounds, 6, 22, record.Sequence.HasValue ? "#" + record.Sequence.Value : "", active ? Accent : Muted);
+            DrawLine(g, Narrow(bounds, used), 6, 22, RecordTitle(record), Strong, active ? Accent : Ink);
+            string codes = record.Send != null && record.Receive != null ? CommandText(record.Send.Command) + " → " + CommandText(record.Receive.Command)
+                : record.Command.HasValue ? CommandText(record.Command) : "";
+            used = DrawRight(g, bounds, 30, 19, record.ElapsedMs.HasValue ? "往返 " + Milliseconds(record.ElapsedMs) : "", Muted);
+            DrawLine(g, Narrow(bounds, used), 30, 19, StateLabel(record) + (codes.Length > 0 ? "  ·  " + codes : ""), Small, IsError(record) ? ErrorInk : Muted);
+            string gap = IntervalText(record, false);
+            used = DrawRight(g, bounds, 51, 19, gap == null ? "" : "间隔 " + gap, Muted);
+            string when = record.SendTime.HasValue && record.ReceiveTime.HasValue ? TimeText(record.SendTime, true) + " → " + TimeText(record.ReceiveTime)
+                : record.SendTime.HasValue ? "发送 " + TimeText(record.SendTime, true)
+                : record.ReceiveTime.HasValue ? "接收 " + TimeText(record.ReceiveTime, true)
+                : "事件 " + TimeText(record.Time, true);
+            DrawLine(g, Narrow(bounds, used), 51, 19, when, Small, Muted);
+        }
+
+        private static Rectangle Narrow(Rectangle row, int used)
+        {
+            return new Rectangle(row.X, row.Y, Math.Max(1, row.Width - used), row.Height);
+        }
+
+        private static int DrawRight(Graphics drawing, Rectangle row, int top, int height, string text, Color color)
+        {
+            // A short value at the right end of a list line; returns the width it took.
+            if (String.IsNullOrEmpty(text)) return 0;
+            int width = TextRenderer.MeasureText(drawing, text, Small, Size.Empty, TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width + 6;
+            TextRenderer.DrawText(drawing, text, Small, new Rectangle(row.Right - width - 8, row.Y + top, width, height), color,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+            return width + 8;
+        }
+
+        private static DateTimeOffset? StartTime(Record record)
+        {
+            return record.SendTime ?? record.ReceiveTime ?? record.Time;
+        }
+
+        private Record PreviousShown(Record record)
+        {
+            // The older neighbour in the list as it is shown (newest first), so a filtered list gives the gap between
+            // the commands it shows, e.g. between two realtime polls.
+            int index;
+            return record != null && shownIndex.TryGetValue(record, out index) && index + 1 < shownRecords.Length ? shownRecords[index + 1] : null;
+        }
+
+        private string IntervalText(Record record, bool precise)
+        {
+            Record previous = PreviousShown(record);
+            if (previous == null) return null;
+            DateTimeOffset? now = StartTime(record), before = StartTime(previous);
+            if (!now.HasValue || !before.HasValue) return null;
+            double ms = Math.Max(0, (now.Value - before.Value).TotalMilliseconds);
+            if (ms < 1000) return ms.ToString("0", CultureInfo.InvariantCulture) + " ms";
+            if (ms < 60000) return (ms / 1000).ToString(precise ? "0.000" : "0.00", CultureInfo.InvariantCulture) + " s";
+            var span = TimeSpan.FromMilliseconds(ms);
+            return span.TotalHours >= 1 ? (int)span.TotalHours + " 小时 " + span.Minutes + " 分" : span.Minutes + " 分 " + span.Seconds + " 秒";
+        }
+
+        private static void DrawLine(Graphics drawing, Rectangle row, int top, int height, string text, Font font, Color color)
+        {
+            var rectangle = new Rectangle(row.X + 12, row.Y + top, Math.Max(1, row.Width - 20), height);
+            TextRenderer.DrawText(drawing, text, font, rectangle, color, TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+
+        private void SetStatus(string message, bool error)
+        {
+            status.Text = message;
+            status.ForeColor = error ? ErrorInk : Muted;
+        }
+
+        private void UpdateCaptureControls()
+        {
+            start.Enabled = !reading && !String.IsNullOrWhiteSpace(adbPath) && !String.IsNullOrWhiteSpace(serial);
+            pause.Enabled = reading;
+            if (selectedRecord == null) details.Text = EmptyDetails();
+        }
+
+        private string EmptyDetails()
+        {
+            if (reading) return "等待所选手机产生新的蓝牙日志…";
+            return start.Enabled ? "可点「开始」继续采集，或粘贴已有日志。" : "可粘贴已有日志，或在「开发工具」选择手机。";
+        }
+
+        private void StartCapture()
+        {
+            if (reading || !start.Enabled) return;
+            parser.Clear();
+            lastAdbError = null;
+            try
+            {
+                capture.Start(adbPath, serial);
+                reading = true;
+                timer.Start();
+                SetStatus("实时读取中 · 只读取本次采集开始后的新日志", false);
+            }
+            catch (Exception error)
+            {
+                AddCaptureError("无法启动 adb logcat。" + error.Message);
+            }
+            UpdateCaptureControls();
+        }
+
+        private void PauseCapture()
+        {
+            if (!reading) return;
+            ReadCapture();
+            if (!reading) return;
+            timer.Stop();
+            reading = false;
+            capture.Stop();
+            AcceptChanges(parser.Flush());
+            FinishOpenRequests();
+            parser.Clear();
+            SetStatus("已暂停 · 已解析的报文保留，再次开始时读取新日志", false);
+            UpdateCaptureControls();
+        }
+
+        private void ClearCapture()
+        {
+            bool restart = reading;
+            followNewest = true;
+            timer.Stop();
+            reading = false;
+            capture.Stop();
+            parser.Clear();
+            selectedRecord = null;
+            sortTimes.Clear();
+            records.Clear();
+            activity.Items.Clear();
+            UpdateFilterChoices();
+            RefreshList(null);
+            ShowRecord(null);
+            SetStatus("已清空工作台", false);
+            UpdateCaptureControls();
+            if (restart) StartCapture();
+        }
+
+        private void ReadCapture()
+        {
+            if (!reading) return;
+            var changes = new HashSet<Record>();
+            string line;
+            try
+            {
+                for (int index = 0; index < 600 && capture.TryRead(out line); index++)
+                    changes.UnionWith(parser.Feed(line));
+                for (int index = 0; index < 100 && capture.TryReadError(out line); index++)
+                {
+                    if (String.IsNullOrWhiteSpace(line) || line.StartsWith("* daemon ", StringComparison.OrdinalIgnoreCase)) continue;
+                    AddCaptureError(line);
+                }
+                if (capture.HasExited)
+                {
+                    changes.UnionWith(parser.Flush());
+                    timer.Stop();
+                    reading = false;
+                    if (String.IsNullOrEmpty(lastAdbError))
+                        AddCaptureError("adb logcat 已结束（退出码 " + (capture.ExitCode.HasValue ? capture.ExitCode.Value.ToString() : "未知") + "）。请检查手机连接后重新开始。");
+                    capture.Stop();
+                    AcceptChanges(changes);
+                    FinishOpenRequests();
+                    UpdateCaptureControls();
+                    return;
+                }
+                AcceptChanges(changes);
+            }
+            catch (Exception error)
+            {
+                timer.Stop();
+                reading = false;
+                capture.Stop();
+                AcceptChanges(changes);
+                FinishOpenRequests();
+                AddCaptureError("读取日志时发生异常。" + error.Message);
+                UpdateCaptureControls();
+            }
+        }
+
+        private void AddCaptureError(string message)
+        {
+            SetStatus(message, true);
+            if (String.Equals(lastAdbError, message, StringComparison.Ordinal)) return;
+            lastAdbError = message;
+            AcceptChanges(new[] { new Record { Id = --diagnosticId, State = "CaptureError", Time = DateTimeOffset.Now,
+                Error = message, Raw = message, Event = "adb logcat", Device = serial } });
+        }
+
+        private void FinishOpenRequests()
+        {
+            var unfinished = records.Where(record => record.State == "Waiting").ToArray();
+            foreach (var record in unfinished) record.State = "Interrupted";
+            if (unfinished.Length > 0) AcceptChanges(unfinished);
+        }
+
+        private static DateTimeOffset? MostRecent(Record record)
+        {
+            if (!record.SendTime.HasValue) return record.ReceiveTime ?? record.Time;
+            if (!record.ReceiveTime.HasValue) return record.Time > record.SendTime ? record.Time : record.SendTime;
+            return record.ReceiveTime > record.SendTime ? record.ReceiveTime : record.SendTime;
+        }
+
+        private int InsertIndex(DateTimeOffset? time)
+        {
+            int lo = 0;
+            int hi = records.Count;
+            while (lo < hi)
+            {
+                int mid = lo + (hi - lo) / 2;
+                if (Nullable.Compare(sortTimes[records[mid]], time) > 0) lo = mid + 1;
+                else hi = mid;
+            }
+            return lo;
+        }
+
+        private void AcceptChanges(IEnumerable<Record> changes)
+        {
+            var updated = changes.Distinct().ToArray();
+            if (updated.Length == 0) return;
+            foreach (var record in updated)
+            {
+                DateTimeOffset? oldTime;
+                var time = MostRecent(record);
+                if (sortTimes.TryGetValue(record, out oldTime))
+                {
+                    if (time == oldTime) continue;
+                    records.Remove(record);
+                }
+                sortTimes[record] = time;
+                records.Insert(InsertIndex(time), record);
+            }
+            UpdateFilterChoices();
+            RefreshList(updated);
+        }
+
+        private void WatchInteraction(Control control)
+        {
+            // Any click or wheel in the middle area means the selected record is being read.
+            control.MouseDown += delegate { HoldSelection(); };
+            control.MouseWheel += delegate { HoldSelection(); };
+            foreach (Control child in control.Controls) WatchInteraction(child);
+        }
+
+        private void HoldSelection()
+        {
+            if (!followNewest || selectedRecord == null) return;
+            followNewest = false;
+            UpdateFollowButton();
+        }
+
+        private void FollowNewest()
+        {
+            followNewest = true;
+            if (activity.Items.Count > 0)
+            {
+                activity.SelectedIndex = 0;
+                activity.TopIndex = 0;
+            }
+            UpdateFollowButton();
+        }
+
+        private void UpdateFollowButton()
+        {
+            // Shown while the view is held; it says how many newer records arrived above the one being read.
+            int newer = activity.SelectedIndex;
+            followButton.Visible = !followNewest && activity.Items.Count > 0;
+            followButton.Text = newer > 0 ? "↑ " + newer + " 条新报文" : "回到最新";
+        }
+
+        private void RefreshList(ICollection<Record> updated)
+        {
+            // The list shows the filtered records; the newest stays selected while the top row is selected.
+            Record previous = activity.SelectedItem as Record;
+            bool follow = previous == null || (followNewest && activity.SelectedIndex == 0);
+            Record oldTop = activity.TopIndex >= 0 && activity.TopIndex < activity.Items.Count ? activity.Items[activity.TopIndex] as Record : null;
+            Record[] shown = records.Where(Matches).ToArray();
+            shownRecords = shown;
+            shownIndex.Clear();
+            for (int position = 0; position < shown.Length; position++) shownIndex[shown[position]] = position;
+            activity.BeginUpdate();
+            selectingRecord = true;
+            try
+            {
+                activity.Items.Clear();
+                activity.Items.AddRange(shown);
+                int index = follow ? 0 : Array.IndexOf(shown, previous);
+                if (index < 0)
+                {
+                    // The record being read is no longer in the list (cleared or filtered out): start from the newest.
+                    index = 0;
+                    followNewest = true;
+                }
+                activity.SelectedIndex = shown.Length > 0 ? index : -1;
+                int top = oldTop == null || follow ? 0 : Array.IndexOf(shown, oldTop);
+                if (shown.Length > 0) activity.TopIndex = Math.Max(0, top);
+            }
+            finally
+            {
+                selectingRecord = false;
+                activity.EndUpdate();
+            }
+            count.Text = shown.Length == records.Count ? records.Count + " 组" : shown.Length + " / " + records.Count + " 组";
+            UpdateFollowButton();
+            var current = activity.SelectedItem as Record;
+            if (!ReferenceEquals(current, selectedRecord) || (updated != null && current != null && updated.Contains(current))) ShowRecord(current);
+        }
+
+        private sealed class FilterChoice
+        {
+            public readonly string Key, Text;
+            public FilterChoice(string key, string text, int number) { Key = key; Text = text + "（" + number + "）"; }
+            public override string ToString() { return Text; }
+        }
+
+        private static int Family(Record record)
+        {
+            // A request and its reply share a family: 0xA8 and 0x08 are both "realtime data".
+            int? command = record.Send != null && record.Send.Command.HasValue ? record.Send.Command : record.Command ?? (record.Receive == null ? null : record.Receive.Command);
+            if (!command.HasValue) return -1;
+            return command.Value >= 0xA0 && command.Value <= 0xBF ? command.Value - 0xA0 : command.Value;
+        }
+
+        private static string FamilyName(int family)
+        {
+            switch (family)
+            {
+                case -1: return "连接与错误事件";
+                case 0x08: return "实时充电数据  A8 / 08";
+                case 0x0A: return "桩信息设置／查询  AA / 0A";
+                case 0x16: return "故障列表  B6 / 16";
+                case 0x17: return "RCD 测试开关  B7 / 17";
+                default: return "指令 " + CommandText(family);
+            }
+        }
+
+        private bool Matches(Record record)
+        {
+            if (filterKey == "errors") return IsError(record);
+            if (filterKey == "quiet") return Family(record) != 0x08;
+            if (filterKey.StartsWith("cmd:", StringComparison.Ordinal)) return Family(record).ToString(CultureInfo.InvariantCulture) == filterKey.Substring(4);
+            return true;
+        }
+
+        private void UpdateFilterChoices()
+        {
+            if (filterBox.DroppedDown) return;
+            var choices = new List<FilterChoice> { new FilterChoice("all", "全部报文", records.Count) };
+            int errors = records.Count(IsError);
+            if (errors > 0) choices.Add(new FilterChoice("errors", "只看异常", errors));
+            int polling = records.Count(record => Family(record) == 0x08);
+            if (polling > 0 && polling < records.Count) choices.Add(new FilterChoice("quiet", "隐藏实时数据轮询", records.Count - polling));
+            foreach (var group in records.GroupBy(Family).OrderBy(group => group.Key))
+                choices.Add(new FilterChoice("cmd:" + group.Key.ToString(CultureInfo.InvariantCulture), FamilyName(group.Key), group.Count()));
+            int index = choices.FindIndex(choice => choice.Key == filterKey);
+            if (index < 0) { filterKey = "all"; index = 0; }
+            updatingFilter = true;
+            filterBox.BeginUpdate();
+            try
+            {
+                filterBox.Items.Clear();
+                filterBox.Items.AddRange(choices.ToArray());
+                filterBox.SelectedIndex = index;
+            }
+            finally
+            {
+                filterBox.EndUpdate();
+                updatingFilter = false;
+            }
+        }
+
+        private void ImportLines(IEnumerable<string> lines, string source)
+        {
+            // A separate parser per import, so pasted or opened logs never mix with the live capture's open blocks.
+            var importer = new BleLogParser();
+            var imported = new List<Record>();
+            var unique = new HashSet<Record>();
+            foreach (string logLine in lines)
+                foreach (var record in importer.Feed(logLine)) if (unique.Add(record)) imported.Add(record);
+            foreach (var record in importer.Flush()) if (unique.Add(record)) imported.Add(record);
+            foreach (var record in imported.Where(record => record.State == "Waiting")) record.State = "Interrupted";
+            AcceptChanges(imported);
+            SetStatus(imported.Count > 0 ? source + "：解析出 " + imported.Count + " 组记录" : source + "：没有识别出蓝牙收发日志或 FB 开头的报文。", imported.Count == 0);
+        }
+
+        private void ImportFiles(IEnumerable<string> paths)
+        {
+            foreach (string path in paths)
+            {
+                try
+                {
+                    var file = new FileInfo(path);
+                    if (!file.Exists) continue;
+                    if (file.Length > 200L * 1024 * 1024) { SetStatus(file.Name + " 超过 200 MB，没有打开。", true); continue; }
+                    UseWaitCursor = true;
+                    ImportLines(File.ReadLines(path, System.Text.Encoding.UTF8), file.Name);
+                }
+                catch (Exception error) { SetStatus("无法读取 " + Path.GetFileName(path) + "：" + error.Message, true); }
+                finally { UseWaitCursor = false; }
+            }
+        }
+
+        private void OpenLogFiles()
+        {
+            using (var dialog = new OpenFileDialog { Title = "打开蓝牙日志文件", Filter = "日志文件 (*.log;*.txt)|*.log;*.txt|所有文件 (*.*)|*.*", Multiselect = true })
+            {
+                if (dialog.ShowDialog(this) == DialogResult.OK) ImportFiles(dialog.FileNames);
+            }
+        }
+
+        private void EnableFileDrop(Control control)
+        {
+            // A log file dropped anywhere on the window is parsed like an opened one.
+            control.AllowDrop = true;
+            control.DragEnter += (sender, args) => args.Effect = args.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+            control.DragDrop += (sender, args) =>
+            {
+                var files = args.Data.GetData(DataFormats.FileDrop) as string[];
+                if (files != null) BeginInvoke(new Action(() => ImportFiles(files)));
+            };
+            foreach (Control child in control.Controls) EnableFileDrop(child);
+        }
+
+        private void PasteLogs()
+        {
+            using (var dialog = new Form { Text = "粘贴蓝牙收发日志", StartPosition = FormStartPosition.CenterParent, Size = new Size(820, 520), Font = Body })
+            using (var box = new TextBox { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Both, WordWrap = false, Font = Mono, MaxLength = 0 })
+            {
+                var layout = Stack();
+                layout.Padding = new Padding(10);
+                Rows(layout, 48, 0, 42);
+                var hint = TextLabel("可以粘贴：手机上的蓝牙日志文件内容（「显示日志」里看到的）、Logcat 输出、Android Studio 复制的日志；也可以每行一条 FB 06 开头的原始 HEX。", Body, Muted);
+                hint.TextAlign = ContentAlignment.TopLeft;
+                layout.Controls.Add(hint, 0, 0);
+                layout.Controls.Add(box, 0, 1);
+                var row = Flow();
+                var parseButton = ToolButton("解析日志", true);
+                parseButton.DialogResult = DialogResult.OK;
+                var cancelButton = ToolButton("取消");
+                cancelButton.DialogResult = DialogResult.Cancel;
+                row.Controls.AddRange(new Control[] { parseButton, cancelButton });
+                layout.Controls.Add(row, 0, 2);
+                dialog.Controls.Add(layout);
+                dialog.CancelButton = cancelButton;
+                if (dialog.ShowDialog(this) != DialogResult.OK || String.IsNullOrWhiteSpace(box.Text)) return;
+                ImportLines(box.Lines, "粘贴的日志");
+            }
+        }
+
+        private Frame ActiveFrame
+        {
+            get { return selectedRecord == null ? null : showingReceive ? selectedRecord.Receive : selectedRecord.Send; }
+        }
+
+        private void ShowRecord(Record record)
+        {
+            bool changed = !ReferenceEquals(record, selectedRecord);
+            selectedRecord = record;
+            if (changed || (!hadReceive && record != null && record.Receive != null))
+            {
+                showingReceive = record != null && record.Receive != null;
+                selectedField = null;
+            }
+            if (changed && showHeader.Checked)
+            {
+                changingSelection = true;
+                showHeader.Checked = false;
+                changingSelection = false;
+            }
+            hadReceive = record != null && record.Receive != null;
+            summary.Text = record == null ? "尚无报文" : RecordTitle(record);
+            string value = record == null || record.Receive == null ? "" : record.Receive.Result ?? "";
+            if (value.Length > 72) value = value.Substring(0, 69) + "…";
+            outcome.Text = value;
+            outcome.Visible = !String.IsNullOrWhiteSpace(value);
+            details.ForeColor = record != null && IsError(record) ? ErrorInk : Muted;
+            details.Text = record == null ? EmptyDetails() : RecordDetails(record);
+            raw.Text = record == null ? "" : record.Raw ?? "";
+            UpdateRecordView();
+        }
+
+        private string RecordDetails(Record record)
+        {
+            var parts = new List<string> { StateLabel(record) };
+            if (record.Sequence.HasValue) parts.Add("序号 #" + record.Sequence.Value);
+            if (record.ElapsedMs.HasValue) parts.Add("往返耗时 " + Milliseconds(record.ElapsedMs));
+            string gap = IntervalText(record, true);
+            if (gap != null) parts.Add("距上一条指令 " + gap);
+            if (record.SdkElapsedMs.HasValue) parts.Add("SDK 记录 " + Milliseconds(record.SdkElapsedMs));
+            string line = String.Join("   ·   ", parts);
+            return String.IsNullOrWhiteSpace(record.Error) ? line : line + Environment.NewLine + record.Error;
+        }
+
+        private void SelectDirection(bool receive)
+        {
+            showingReceive = receive;
+            selectedField = null;
+            UpdateRecordView();
+        }
+
+        private static void UpdateDirection(Button button, string title, Frame frame, DateTimeOffset? time, bool selected)
+        {
+            button.Enabled = frame != null;
+            button.ForeColor = selected ? Accent : Ink;
+            button.BackColor = selected ? Selected : Paper;
+            button.FlatAppearance.BorderColor = selected ? Accent : Border;
+            button.Text = title + (frame == null ? "\r\n未捕获" : "   " + CommandText(frame.Command) + "\r\n" + TimeText(time));
+        }
+
+        private void UpdateRecordView()
+        {
+            var record = selectedRecord;
+            UpdateDirection(sending, "发送 · APP → 设备", record == null ? null : record.Send, record == null ? null : record.SendTime, !showingReceive);
+            UpdateDirection(receiving, "接收 · 设备 → APP", record == null ? null : record.Receive, record == null ? null : record.ReceiveTime, showingReceive);
+            Frame frame = ActiveFrame;
+            hex.Bytes = frame == null ? new byte[0] : frame.Bytes ?? new byte[0];
+            hex.Mask = frame == null || frame.Fields == null ? new Field[0] : frame.Fields.Where(item => item.Hex != null && item.Hex.Contains("**")).ToArray();
+            hex.Placeholder = frame != null && frame.IsRedacted ? "原始 HEX 已被 SDK 遮盖" : "这条记录没有可展示的原始字节";
+            hex.SetSelection(-1, -1);
+            if (frame == null) hexStatus.Text = "原始 HEX";
+            else
+            {
+                string check = frame.ChecksumOk.HasValue ? frame.ChecksumOk.Value ? "CRC16 通过" : "CRC16 不一致" : "CRC16 未验证";
+                hexStatus.Text = "原始 HEX   ·   " + hex.Bytes.Length + " 字节   ·   " + check + "   ·   字节位置 = 左边行号 + 上面列号";
+            }
+            RebuildFields();
+            RefreshDocuments(frame);
+            api.Text = DescribeApi(record, frame);
+            UpdateHexWidth();
+        }
+
+        private static int PayloadLength(Frame frame)
+        {
+            if (frame == null || frame.Bytes == null || frame.Bytes.Length < 9 || frame.Bytes[0] != 0xFB || frame.Bytes[1] != 6) return 0;
+            int length = frame.Bytes[5] | frame.Bytes[6] << 8;
+            return length + 9 == frame.Bytes.Length ? length : 0;
+        }
+
+        private void RebuildFields()
+        {
+            if (changingSelection) return;
+            Frame frame = ActiveFrame;
+            changingSelection = true;
+            Field field = null;
+            try
+            {
+                fieldGrid.Rows.Clear();
+                DataGridViewRow activeRow = null;
+                MatchDocumentRows(frame);
+                if (frame != null && frame.Fields != null)
+                {
+                    foreach (var definition in frame.Fields.Where(item => showHeader.Checked || !item.IsHeader))
+                    {
+                        string range = definition.End == definition.Start ? definition.Start.ToString() : definition.Start + "–" + definition.End;
+                        string page = definition.Page > 0 ? "P" + definition.Page.ToString("00") : "";
+                        ProtocolRow documentRow;
+                        documentRows.TryGetValue(definition, out documentRow);
+                        // Past the end of the table (the document writes "..." for repeated groups, e.g. fault slots 2-10).
+                        bool repeated = documentRow == null && !definition.IsHeader && documentRowsEnd > 0 && definition.Start >= documentRowsEnd;
+                        int index = fieldGrid.Rows.Add(documentRow != null ? documentRow.Number : repeated ? "…" : "", range, definition.Name, definition.Hex, definition.Value ?? "", page);
+                        var row = fieldGrid.Rows[index];
+                        row.Tag = definition;
+                        if (documentRow != null)
+                            row.Cells[0].ToolTipText = "协议「" + documentRowsSection.Title + "」表格序号 " + documentRow.Number + (documentRow.Name.Length > 0 ? "：" + documentRow.Name : "") + "。点「查看协议章节」对照。";
+                        else if (repeated)
+                            row.Cells[0].ToolTipText = "协议表格到这里用「...」表示后面按前面的格式重复。";
+                        if (definition.IsHeader) row.DefaultCellStyle.ForeColor = Muted;
+                        if (ReferenceEquals(selectedField, definition)) activeRow = row;
+                        // Picked first: for parameter frames (AA / 0A) the parameter value from byte 11, else the first payload field.
+                        bool parameter = frame.Command == 0xAA || frame.Command == 0x0A;
+                        if (activeRow == null && !definition.IsHeader && (field == null || (parameter && field.Start < 11 && definition.Start >= 11)))
+                            field = definition;
+                    }
+                }
+                if (activeRow == null && field != null) activeRow = fieldGrid.Rows.Cast<DataGridViewRow>().First(row => ReferenceEquals(row.Tag, field));
+                fieldGrid.ClearSelection();
+                if (activeRow != null)
+                {
+                    fieldGrid.CurrentCell = activeRow.Cells[2];
+                    activeRow.Selected = true;
+                    field = activeRow.Tag as Field;
+                }
+            }
+            finally { changingSelection = false; }
+            payloadButton.Enabled = PayloadLength(frame) > 0;
+            showHeader.Enabled = frame != null && frame.Fields != null && frame.Fields.Any(item => item.IsHeader);
+            ShowField(field);
+        }
+
+        private void SelectByte(int index)
+        {
+            // A click on a byte above picks the field that holds it below. Payload fields come first; a header byte
+            // (frame head, length, CRC) shows the header rows when they are hidden.
+            Frame frame = ActiveFrame;
+            if (frame == null || frame.Fields == null) return;
+            Field field = frame.Fields.FirstOrDefault(item => !item.IsHeader && item.Start <= index && item.End >= index)
+                ?? frame.Fields.FirstOrDefault(item => item.Start <= index && item.End >= index);
+            if (field == null) return;
+            // Stay on 解析过程 when it is open (it follows the selection); otherwise show the field table.
+            if (tabs.SelectedTab != steps.Parent) tabs.SelectedTab = fieldTab;
+            selectedField = field;
+            if (field.IsHeader && !showHeader.Checked) showHeader.Checked = true;
+            DataGridViewRow row = fieldGrid.Rows.Cast<DataGridViewRow>().FirstOrDefault(item => ReferenceEquals(item.Tag, field));
+            if (row == null) return;
+            changingSelection = true;
+            try
+            {
+                fieldGrid.ClearSelection();
+                row.Selected = true;
+                fieldGrid.CurrentCell = row.Cells[2];
+                if (!row.Displayed) fieldGrid.FirstDisplayedScrollingRowIndex = Math.Max(0, row.Index - 1);
+            }
+            finally { changingSelection = false; }
+            // The bytes clicked are already in view, so the hex area keeps its place.
+            ShowField(field, false);
+        }
+
+        private void ShowField(Field field, bool scrollHex = true)
+        {
+            selectedField = field;
+            fieldDocument.Enabled = field != null && field.Page > 0;
+            if (field == null)
+            {
+                hex.SetSelection(-1, -1);
+                explanation.Text = ActiveFrame == null ? "" : "当前报文没有可展开的载荷字段。可看原始日志或展开帧头。";
+            }
+            else
+            {
+                hex.SetSelection(field.Start, field.End);
+                ShowText(explanation, FieldStory(field));
+            }
+            if (scrollHex) hexArea.AutoScrollPosition = new Point(0, Math.Max(0, hex.SelectionTop - 4));
+            ShowText(steps, DescribeSteps(selectedRecord, ActiveFrame));
+            // An open protocol viewer on this frame's section moves its red frame to the field's row.
+            if (protocol != null && documentRowsSection != null) ProtocolViewer.Follow(documentRowsSection, SelectedDocumentRow(documentRowsSection));
+        }
+
+        private string FieldStory(Field field)
+        {
+            // The selected position told step by step: its bytes in hex, decimal and binary, how they become the
+            // value, then the protocol's own note.
+            string n = Environment.NewLine;
+            var text = new System.Text.StringBuilder();
+            string range = field.End == field.Start ? "位置 " + field.Start : "位置 " + field.Start + "–" + field.End;
+            text.Append("【").Append(range).Append("】").Append(field.Name).Append("  →  ").Append(field.Value).Append(n);
+            Frame frame = ActiveFrame;
+            bool hidden = field.Hex != null && field.Hex.Contains("**");
+            int length = field.End - field.Start + 1;
+            if (!hidden && frame != null && frame.Bytes != null && field.End < frame.Bytes.Length)
+            {
+                text.Append("原始字节（十六进制 → 十进制 → 二进制）：").Append(n);
+                int listed = Math.Min(length, 8);
+                for (int index = field.Start; index < field.Start + listed; index++)
+                {
+                    int value = frame.Bytes[index];
+                    text.Append("    位置 ").Append(index).Append("：0x").Append(value.ToString("X2")).Append("  →  ").Append(value)
+                        .Append("  →  ").Append(Convert.ToString(value, 2).PadLeft(8, '0').Insert(4, " ")).Append(n);
+                }
+                if (length > listed) text.Append("    …… 共 ").Append(length).Append(" 个字节").Append(n);
+            }
+            if (field.Detail != null && field.Detail.Count > 0)
+            {
+                text.Append("怎么算出来的：").Append(n);
+                int step = 1;
+                foreach (string line in field.Detail)
+                {
+                    if (line.StartsWith("    ", StringComparison.Ordinal)) text.Append("      ").Append(line.TrimStart()).Append(n);
+                    else text.Append("    ").Append(step++).Append(". ").Append(line).Append(n);
+                }
+            }
+            ProtocolRow documentRow;
+            if (documentRows.TryGetValue(field, out documentRow))
+                text.Append("协议文档：「").Append(documentRowsSection.Title).Append("」表格序号 ").Append(documentRow.Number)
+                    .Append(documentRow.Name.Length > 0 ? "（" + documentRow.Name + "）" : "").Append(n);
+            if (!String.IsNullOrWhiteSpace(field.Explanation))
+                text.Append("协议说明：").Append(field.Explanation).Append(field.Page > 0 ? "（P" + field.Page.ToString("00") + "）" : "").Append(n);
+            return text.ToString();
+        }
+
+        private static void ShowText(RichTextBox box, string text)
+        {
+            // Plain text with the headline and section titles in the strong font, scrolled to the top.
+            box.Text = text ?? "";
+            int start = 0;
+            foreach (string line in box.Lines)
+            {
+                bool heading = line.StartsWith("【", StringComparison.Ordinal) || line.EndsWith("：", StringComparison.Ordinal) && !line.StartsWith(" ", StringComparison.Ordinal)
+                    || line.StartsWith("一、", StringComparison.Ordinal) || line.StartsWith("二、", StringComparison.Ordinal) || line.StartsWith("当前选中", StringComparison.Ordinal);
+                if (heading && line.Length > 0)
+                {
+                    box.Select(start, line.Length);
+                    box.SelectionFont = Strong;
+                }
+                start += line.Length + 1;
+            }
+            box.Select(0, 0);
+            box.ScrollToCaret();
+        }
+
+        private void SelectPayload()
+        {
+            Frame frame = ActiveFrame;
+            int length = PayloadLength(frame);
+            if (length == 0) return;
+            changingSelection = true;
+            fieldGrid.ClearSelection();
+            changingSelection = false;
+            selectedField = null;
+            fieldDocument.Enabled = false;
+            hex.SetSelection(7, 6 + length);
+            hexArea.AutoScrollPosition = new Point(0, Math.Max(0, hex.SelectionTop - 4));
+            explanation.Text = "全部载荷   ·   位置 7–" + (6 + length) + "   ·   " + length + " 字节" + Environment.NewLine
+                + "固定头部占位置 0–6，后面的 " + length + " 字节是该指令携带的数据。点选表格中的字段，可以单独查看它的字节与换算。";
+            ShowText(steps, DescribeSteps(selectedRecord, frame));
+        }
+
+        private string DescribeSteps(Record record, Frame frame)
+        {
+            if (record == null) return "";
+            if (frame == null) return record.Error ?? "当前记录没有可解析的报文字节。";
+            string n = Environment.NewLine;
+            var text = new System.Text.StringBuilder();
+            if (selectedField != null)
+            {
+                // The position selected above (or in the field table) comes first.
+                text.Append("当前选中").Append(n).Append(FieldStory(selectedField)).Append(n).Append("—————— 整条报文 ——————").Append(n).Append(n);
+            }
+            text.Append(showingReceive ? "设备 → APP" : "APP → 设备").Append("   ").Append(CommandText(frame.Command)).Append("   ")
+                .Append(String.IsNullOrEmpty(frame.Function) ? RecordTitle(record) : frame.Function).Append("   ·   ").Append(StateLabel(record)).Append(n);
+            if (record.SendTime.HasValue && record.ReceiveTime.HasValue)
+                text.Append("往返耗时：接收 ").Append(TimeText(record.ReceiveTime)).Append(" − 发送 ").Append(TimeText(record.SendTime)).Append(" = ").Append(Milliseconds(record.ElapsedMs)).Append(n);
+            Record previous = PreviousShown(record);
+            string gap = IntervalText(record, true);
+            if (previous != null && gap != null)
+                text.Append("指令间隔：距上一条 ").Append(gap).Append("（上一条：").Append(RecordTitle(previous))
+                    .Append(previous.Sequence.HasValue ? " #" + previous.Sequence.Value : "").Append("，").Append(TimeText(StartTime(previous))).Append("）").Append(n);
+            if (!String.IsNullOrWhiteSpace(record.Error)) text.Append("注意：").Append(record.Error).Append(n);
+            if (!String.IsNullOrWhiteSpace(frame.Error) && frame.Error != record.Error) text.Append("注意：").Append(frame.Error).Append(n);
+            if (!String.IsNullOrWhiteSpace(frame.Steps))
+                text.Append(n).Append("一、帧结构与校验").Append(n).Append(frame.Steps.Replace("\n", n)).Append(n);
+            var fields = frame.Fields == null ? new List<Field>() : frame.Fields.Where(item => !item.IsHeader).ToList();
+            if (fields.Count > 0)
+            {
+                // Each field as "position  name  bytes -> value", then why, so every value can be traced to its bytes.
+                text.Append(n).Append("二、逐字段解析（位置从 0 起）").Append(n);
+                foreach (var field in fields)
+                {
+                    string range = field.End == field.Start ? field.Start.ToString() : field.Start + "–" + field.End;
+                    string hex = field.Hex != null && field.Hex.Length > 47 ? field.Hex.Substring(0, 47) + " …" : field.Hex;
+                    text.Append("[").Append(range).Append("]  ").Append(field.Name).Append("：").Append(hex).Append("  →  ").Append(field.Value).Append(n);
+                    if (!String.IsNullOrWhiteSpace(field.Explanation)) text.Append("        ").Append(field.Explanation).Append(n);
+                }
+            }
+            if (!String.IsNullOrWhiteSpace(frame.Result)) text.Append(n).Append("结论：").Append(frame.Result).Append(n);
+            return text.ToString();
+        }
+
+        private static string DescribeApi(Record record, Frame frame)
+        {
+            if (record == null) return "";
+            var paragraphs = new List<string>();
+            paragraphs.Add("Octopus 调用来源" + Environment.NewLine + (String.IsNullOrWhiteSpace(record.Caller) ? "当前日志里没有调用类与方法。" : record.Caller));
+            if (frame != null && !String.IsNullOrWhiteSpace(frame.Api)) paragraphs.Add("SDK API" + Environment.NewLine + frame.Api);
+            if (frame != null && !String.IsNullOrWhiteSpace(frame.Arguments)) paragraphs.Add("参数与来源" + Environment.NewLine + frame.Arguments);
+            if (frame != null && !String.IsNullOrWhiteSpace(frame.Decoder)) paragraphs.Add("设备 → APP 解包" + Environment.NewLine + frame.Decoder);
+            return String.Join(Environment.NewLine + Environment.NewLine, paragraphs);
+        }
+
+        private void UpdateHexWidth()
+        {
+            hex.Width = Math.Max(hex.ContentWidth, hexArea.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 2);
+        }
+
+        private void ResizeDocumentButtons()
+        {
+            int width = Math.Max(60, documents.ClientSize.Width - 7 - SystemInformation.VerticalScrollBarWidth);
+            foreach (var control in documents.Controls.Cast<Control>()) control.Width = width;
+        }
+
+        private static string FindProtocolHtml()
+        {
+            // The HTML chosen before, else "协议文档\蓝牙协议\*蓝牙模式协议*.html" on a fixed drive (the newest one).
+            try
+            {
+                if (File.Exists(HtmlSettingsFile))
+                {
+                    string saved = File.ReadAllText(HtmlSettingsFile).Trim();
+                    if (File.Exists(saved)) return saved;
+                }
+                foreach (DriveInfo drive in DriveInfo.GetDrives().Where(item => item.DriveType == DriveType.Fixed))
+                {
+                    string folder = Path.Combine(drive.RootDirectory.FullName, "协议文档", "蓝牙协议");
+                    if (!Directory.Exists(folder)) continue;
+                    var file = new DirectoryInfo(folder).GetFiles("*蓝牙模式协议*.htm*").OrderByDescending(item => item.LastWriteTime).FirstOrDefault();
+                    if (file != null) return file.FullName;
+                }
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            return null;
+        }
+
+        private void LoadProtocol(string path)
+        {
+            // Read in the background (about half a second); the section buttons replace the page buttons when ready.
+            if (String.IsNullOrEmpty(path) || (protocol != null && String.Equals(protocolSource, path, StringComparison.OrdinalIgnoreCase))) return;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                ProtocolDocument loaded = null;
+                string failure = null;
+                try { loaded = ProtocolDocument.Load(path); }
+                catch (Exception error) { failure = error.Message; }
+                if (IsDisposed || !IsHandleCreated && !WaitForHandle()) return;
+                BeginInvoke(new Action(() =>
+                {
+                    if (loaded != null && loaded.Sections.Count > 0) { protocol = loaded; protocolSource = path; RefreshDocuments(documentsFrame); RebuildFields(); }
+                    else if (failure != null) SetStatus("读不了协议 HTML：" + failure, true);
+                }));
+            });
+        }
+
+        private bool WaitForHandle()
+        {
+            for (int i = 0; i < 100 && !IsHandleCreated && !IsDisposed; i++) System.Threading.Thread.Sleep(50);
+            return IsHandleCreated && !IsDisposed;
+        }
+
+        private void ChooseProtocolHtml()
+        {
+            using (var dialog = new OpenFileDialog { Title = "选择协议 HTML（从协议 PDF 转换的网页）", Filter = "网页 (*.html;*.htm)|*.html;*.htm" })
+            {
+                if (protocolSource != null) dialog.InitialDirectory = Path.GetDirectoryName(protocolSource);
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(HtmlSettingsFile));
+                    File.WriteAllText(HtmlSettingsFile, dialog.FileName);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+                protocol = null;
+                LoadProtocol(dialog.FileName);
+                SetStatus("正在读取协议：" + Path.GetFileName(dialog.FileName), false);
+            }
+        }
+
+        private void AddSection(List<ProtocolSection> list, ProtocolSection section)
+        {
+            if (section != null && !list.Contains(section)) list.Add(section);
+        }
+
+        private List<ProtocolSection> RelatedSections(Frame frame)
+        {
+            // This frame's own section, the one of its request or reply, the appendices its fields refer to, then
+            // the frame layout (1.2).
+            var list = new List<ProtocolSection>();
+            if (frame != null && frame.Command.HasValue) AddSection(list, protocol.FindCommand(frame.Command.Value));
+            if (selectedRecord != null)
+                foreach (var other in new[] { selectedRecord.Send, selectedRecord.Receive })
+                    if (other != null && other != frame && other.Command.HasValue) AddSection(list, protocol.FindCommand(other.Command.Value));
+            if (frame != null && frame.Fields != null)
+                foreach (var field in frame.Fields)
+                    foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(field.Explanation ?? "", "附录\\s*(\\d+\\.\\d+)"))
+                        AddSection(list, protocol.FindNumber(match.Groups[1].Value));
+            AddSection(list, protocol.FindNumber("1.2"));
+            return list;
+        }
+
+        private ProtocolRow SelectedDocumentRow(ProtocolSection section)
+        {
+            // The selected field's row, when the section opened is the one holding it.
+            ProtocolRow row;
+            return selectedField != null && section == documentRowsSection && documentRows.TryGetValue(selectedField, out row) ? row : null;
+        }
+
+        private void MatchDocumentRows(Frame frame)
+        {
+            // Lay the section's table rows over the payload: a field belongs to the row whose bytes hold its first byte.
+            documentRows = new Dictionary<Field, ProtocolRow>();
+            documentRowsSection = null;
+            documentRowsEnd = 0;
+            if (protocol == null || frame == null || frame.Fields == null || !frame.Command.HasValue) return;
+            documentRowsSection = protocol.FindCommand(frame.Command.Value);
+            var rows = protocol.FieldRows(documentRowsSection);
+            var last = rows.LastOrDefault();
+            if (last != null && last.Length > 0) documentRowsEnd = last.Start + last.Length;
+            foreach (var field in frame.Fields)
+            {
+                if (field.IsHeader) continue;
+                var row = rows.FirstOrDefault(item => field.Start >= item.Start && (item.Length < 0 || field.Start < item.Start + item.Length));
+                if (row != null) documentRows[field] = row;
+            }
+        }
+
+        private void OpenFieldSection(Field field)
+        {
+            if (protocol == null) { OpenDocument(field.Page); return; }
+            // The field's row in its frame's table, framed in red; else an appendix the field points to, the frame
+            // layout for header bytes, or the frame's own section.
+            ProtocolRow documentRow;
+            if (documentRowsSection != null && documentRows.TryGetValue(field, out documentRow))
+            {
+                ProtocolViewer.OpenSection(this, protocol, documentRowsSection, Body, Strong, Heading, documentRow);
+                return;
+            }
+            ProtocolSection section = null;
+            var appendix = System.Text.RegularExpressions.Regex.Match(field.Explanation ?? "", "附录\\s*(\\d+\\.\\d+)");
+            if (appendix.Success) section = protocol.FindNumber(appendix.Groups[1].Value);
+            if (section == null && field.IsHeader) section = protocol.FindNumber("1.2");
+            Frame frame = ActiveFrame;
+            if (section == null && frame != null && frame.Command.HasValue) section = protocol.FindCommand(frame.Command.Value);
+            if (section == null) section = protocol.FindPage(field.Page);
+            ProtocolViewer.OpenSection(this, protocol, section, Body, Strong, Heading);
+        }
+
+        private void RefreshDocuments(Frame frame)
+        {
+            documentsFrame = frame;
+            documents.SuspendLayout();
+            while (documents.Controls.Count > 0) documents.Controls[0].Dispose();
+            if (protocol != null)
+            {
+                foreach (var section in RelatedSections(frame))
+                {
+                    var target = section;
+                    var button = ToolButton(section.Title);
+                    button.AutoSize = false;
+                    button.Height = 50;
+                    button.Font = Strong;
+                    button.TextAlign = ContentAlignment.MiddleLeft;
+                    button.Click += delegate { ProtocolViewer.OpenSection(this, protocol, target, Body, Strong, Heading, SelectedDocumentRow(target)); };
+                    documents.Controls.Add(button);
+                }
+                ResizeDocumentButtons();
+                documents.ResumeLayout();
+                return;
+            }
+            var pages = (frame == null || frame.Pages == null ? new int[0] : frame.Pages).Concat(new[] { 2, 3 }).Distinct();
+            foreach (int page in pages)
+            {
+                int target = page;
+                string title;
+                if (!DocumentTitles.TryGetValue(page, out title)) title = "协议参数定义";
+                var button = ToolButton("P" + page.ToString("00") + "  " + title);
+                button.AutoSize = false;
+                button.Height = 50;
+                // The same weight as the record titles on the left.
+                button.Font = Strong;
+                button.TextAlign = ContentAlignment.MiddleLeft;
+                button.Click += delegate { OpenDocument(target); };
+                documents.Controls.Add(button);
+            }
+            ResizeDocumentButtons();
+            documents.ResumeLayout();
+        }
+
+        private static string FindPage(string folder, int page)
+        {
+            if (String.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) return null;
+            string mask = "*-" + page.ToString("00") + ".png";
+            try
+            {
+                string match = Directory.EnumerateFiles(folder, mask).FirstOrDefault();
+                if (match != null) return match;
+                foreach (string child in Directory.EnumerateDirectories(folder))
+                {
+                    match = Directory.EnumerateFiles(child, mask).FirstOrDefault();
+                    if (match != null) return match;
+                }
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            return null;
+        }
+
+        private static string FindDocumentFolder()
+        {
+            try
+            {
+                if (File.Exists(SettingsFile))
+                {
+                    string saved = File.ReadAllText(SettingsFile).Trim();
+                    if (FindPage(saved, 2) != null) return saved;
+                }
+                foreach (DriveInfo drive in DriveInfo.GetDrives().Where(item => item.DriveType == DriveType.Fixed))
+                {
+                    var folder = Path.Combine(drive.RootDirectory.FullName, "协议文档", "蓝牙协议新png");
+                    var page = FindPage(folder, 2);
+                    if (page != null) return Path.GetDirectoryName(page);
+                }
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            return null;
+        }
+
+        private bool ChooseDocumentFolder()
+        {
+            using (var dialog = new FolderBrowserDialog { Description = "选择「欧标-交流-蓝牙模式协议」PNG 原页目录", ShowNewFolderButton = false })
+            {
+                if (documentFolder != null) dialog.SelectedPath = documentFolder;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return false;
+                var page = FindPage(dialog.SelectedPath, 2);
+                if (page == null)
+                {
+                    SetStatus("这个目录里没有找到协议第 2 页 PNG，请选择编号原图所在目录。", true);
+                    return false;
+                }
+                documentFolder = Path.GetDirectoryName(page);
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(SettingsFile));
+                    File.WriteAllText(SettingsFile, documentFolder);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+                SetStatus("已定位协议原页目录。", false);
+                return true;
+            }
+        }
+
+        private void OpenDocument(int page)
+        {
+            var file = FindPage(documentFolder, page);
+            if (file == null && ChooseDocumentFolder()) file = FindPage(documentFolder, page);
+            if (file == null) return;
+            try
+            {
+                using (var source = Image.FromFile(file))
+                using (var image = new Bitmap(source))
+                using (var viewer = new Form { Text = "EN+ 三代欧标蓝牙通讯协议 V1.11  ·  第 " + page + " 页", Size = new Size(870, 850), StartPosition = FormStartPosition.CenterParent, Font = Body })
+                {
+                    var layout = Stack();
+                    Rows(layout, 42, 0);
+                    var controls = Flow();
+                    controls.Padding = new Padding(7);
+                    var zoom = ToolButton("查看原尺寸");
+                    controls.Controls.Add(zoom);
+                    layout.Controls.Add(controls, 0, 0);
+                    var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Page };
+                    var picture = new PictureBox { Image = image, SizeMode = PictureBoxSizeMode.StretchImage };
+                    scroll.Controls.Add(picture);
+                    bool original = false;
+                    Action resize = delegate
+                    {
+                        int width = original ? image.Width : Math.Max(140, scroll.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 4);
+                        picture.Size = new Size(width, image.Height * width / image.Width);
+                    };
+                    scroll.Resize += delegate { resize(); };
+                    zoom.Click += delegate { original = !original; zoom.Text = original ? "适合宽度" : "查看原尺寸"; resize(); };
+                    layout.Controls.Add(scroll, 0, 1);
+                    viewer.Controls.Add(layout);
+                    viewer.Shown += delegate { resize(); };
+                    viewer.ShowDialog(this);
+                    picture.Image = null;
+                }
+            }
+            catch (Exception error) { SetStatus("无法打开协议第 " + page + " 页。" + error.Message, true); }
+        }
+
+        private sealed class HexView : Control
+        {
+            // A plain hex dump: 16 bytes a row, the row's first position on the left and 0-15 across the top,
+            // so position = row + column. The selected field's bytes are filled blue where they are.
+            private const int Columns = 16;
+            private const int Gutter = 48;
+            private const int Header = 24;
+            private const int CellWidth = 31;
+            private const int CellHeight = 25;
+            private const int GroupGap = 10;
+            private byte[] bytes = new byte[0];
+            private int first = -1;
+            private int last = -1;
+
+            public string Placeholder { get; set; }
+            public Field[] Mask { get; set; }
+            public int SelectionTop { get { return first < 0 ? 0 : Header + (first / Columns) * CellHeight; } }
+            public int ContentWidth { get { return Gutter + Columns * CellWidth + GroupGap + 8; } }
+            public byte[] Bytes { get { return bytes; } set { bytes = value ?? new byte[0]; Height = ContentHeight(); Invalidate(); } }
+
+            /// <summary>Raised with the position of the byte that was clicked.</summary>
+            public event Action<int> ByteClicked;
+
+            public HexView()
+            {
+                BackColor = Paper;
+                DoubleBuffered = true;
+                AccessibleName = "原始 HEX 和字节位置";
+                SetStyle(ControlStyles.ResizeRedraw, true);
+            }
+
+            private int ByteAt(Point point)
+            {
+                for (int index = 0; index < bytes.Length; index++)
+                    if (Cell(index).Contains(point)) return index;
+                return -1;
+            }
+
+            protected override void OnMouseMove(MouseEventArgs args)
+            {
+                base.OnMouseMove(args);
+                Cursor = ByteAt(args.Location) >= 0 ? Cursors.Hand : Cursors.Default;
+            }
+
+            protected override void OnMouseDown(MouseEventArgs args)
+            {
+                base.OnMouseDown(args);
+                int index = args.Button == MouseButtons.Left ? ByteAt(args.Location) : -1;
+                if (index >= 0 && ByteClicked != null) ByteClicked(index);
+            }
+
+            public void SetSelection(int begin, int end)
+            {
+                first = begin;
+                last = end;
+                Invalidate();
+            }
+
+            private int ContentHeight()
+            {
+                int rows = (bytes.Length + Columns - 1) / Columns;
+                return bytes.Length == 0 ? 44 : Header + rows * CellHeight + 6;
+            }
+
+            private Rectangle Cell(int index)
+            {
+                int column = index % Columns;
+                return new Rectangle(Gutter + column * CellWidth + (column >= 8 ? GroupGap : 0), Header + (index / Columns) * CellHeight, CellWidth, CellHeight);
+            }
+
+            protected override void OnPaint(PaintEventArgs args)
+            {
+                base.OnPaint(args);
+                var g = args.Graphics;
+                if (bytes.Length == 0)
+                {
+                    TextRenderer.DrawText(g, Placeholder ?? "", Body, new Point(10, 12), Muted);
+                    return;
+                }
+                const TextFormatFlags center = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+                const TextFormatFlags right = TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+                using (var pen = new Pen(Border))
+                {
+                    g.DrawLine(pen, Gutter - 6, Header - 2, Gutter + Columns * CellWidth + GroupGap, Header - 2);
+                    g.DrawLine(pen, Gutter - 6, Header - 2, Gutter - 6, ContentHeight() - 4);
+                }
+                for (int column = 0; column < Columns; column++)
+                {
+                    var cell = Cell(column);
+                    TextRenderer.DrawText(g, column.ToString(), Small, new Rectangle(cell.Left, 0, cell.Width, Header - 3), Muted, center);
+                }
+                bool active = first >= 0 && last >= first && first < bytes.Length;
+                using (var fill = new SolidBrush(Selected))
+                {
+                    for (int index = 0; index < bytes.Length; index++)
+                    {
+                        var cell = Cell(index);
+                        if (index % Columns == 0)
+                            TextRenderer.DrawText(g, index.ToString(), Small, new Rectangle(0, cell.Top, Gutter - 12, cell.Height), Muted, right);
+                        if (!args.ClipRectangle.IntersectsWith(cell)) continue;
+                        bool selected = active && index >= first && index <= last;
+                        if (selected) g.FillRectangle(fill, cell.Left + 1, cell.Top + 2, cell.Width - 2, cell.Height - 4);
+                        bool hidden = Mask != null && Mask.Any(field => field.Start <= index && field.End >= index);
+                        TextRenderer.DrawText(g, hidden ? "**" : bytes[index].ToString("X2"), selected ? MonoStrong : Mono, cell, selected ? Accent : Ink, center);
+                    }
+                }
+            }
+        }
+    }
+}

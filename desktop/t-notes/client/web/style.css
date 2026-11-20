@@ -16,3 +16,12 @@ html,body{height:100%}body{display:flex;flex-direction:column;overflow:hidden}.a
 dialog button.full{margin-top:8px}#username[readonly]{background:#f5f7f8;color:var(--muted)}
 /* Web addresses in notes: blue, underlined, and long ones wrap instead of widening the page. */
 .web-link{color:var(--accent);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere;cursor:pointer}.web-link:hover{color:#1d4ed8;text-decoration-thickness:2px}
+/* The record panel: the content scrolls, the action bar stays at the bottom with large buttons that are easy to hit. */
+.editor{display:flex;flex-direction:column;overflow:hidden}.editor-top{flex:none}.editor-body{flex:1;min-height:0;overflow-y:auto}
+.editor-actions{flex:none;display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.editor-actions button{flex:1;width:auto;min-width:0;height:44px;padding:6px 8px;gap:6px;border:1px solid var(--line);background:#fff;font-size:14px}
+.editor-actions button:hover:not(:disabled){background:var(--tint);border-color:#c7d7fb;color:var(--accent)}.editor-actions button[aria-pressed=true]{background:var(--tint);border-color:#c7d7fb;color:var(--accent)}.editor-actions button[hidden]{display:none}
+/* Larger reading text. */
+#read-title{font-size:22px}#read-body{font-size:16px;line-height:1.85}.read-field p,.read-field input[readonly]{font-size:15px}
+/* With a record open the action bar is at the bottom; messages float above it instead of covering the buttons. */
+body.library #notice,body:not(.quick-list) #notice{inset:auto auto 112px 50%}

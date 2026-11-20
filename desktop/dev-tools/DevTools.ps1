@@ -17,6 +17,7 @@ if (-not $createdNew) {
 try {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
+    Add-Type -AssemblyName System.Net.Http
     [System.Windows.Forms.Application]::EnableVisualStyles()
 
     . (Join-Path $PSScriptRoot 'dev-tools-core.ps1')
@@ -38,6 +39,9 @@ try {
         Viewer = $null
         Preview = $null
         Tasks = $null
+        Install = $null
+        Account = $null
+        AaptPath = $null
         Cancel = $false
     }
 
@@ -57,32 +61,41 @@ try {
         Error = [System.Drawing.Color]::FromArgb(220, 38, 38)
         Output = [System.Drawing.Color]::FromArgb(249, 250, 252)
     }
-    $uiFont = 'Microsoft YaHei UI'
+    # Source Han Sans (Noto Sans SC) when installed, with its Medium weight where bold was used: small bold
+    # Chinese strokes run together, Medium stays sharp. Otherwise YaHei, as before.
+    $installedFonts = @((New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name })
+    $uiFont = if ($installedFonts -contains 'Noto Sans SC') { 'Noto Sans SC' } else { 'Microsoft YaHei UI' }
+    $strongFont = if ($uiFont -eq 'Noto Sans SC' -and $installedFonts -contains 'Noto Sans SC Medium') { 'Noto Sans SC Medium' } else { $uiFont }
+    $strongStyle = if ($strongFont -ne $uiFont) { [System.Drawing.FontStyle]::Regular } else { [System.Drawing.FontStyle]::Bold }
     $fonts = [pscustomobject]@{
         Body = New-Object System.Drawing.Font($uiFont, 9)
-        Caption = New-Object System.Drawing.Font($uiFont, 9, [System.Drawing.FontStyle]::Bold)
-        TileTitle = New-Object System.Drawing.Font($uiFont, 10.5, [System.Drawing.FontStyle]::Bold)
+        Caption = New-Object System.Drawing.Font($strongFont, 9, $strongStyle)
+        TileTitle = New-Object System.Drawing.Font($strongFont, 10.5, $strongStyle)
         TileHint = New-Object System.Drawing.Font($uiFont, 8.5)
         Icon = New-Object System.Drawing.Font('Segoe MDL2 Assets', 15)
-        Status = New-Object System.Drawing.Font($uiFont, 9, [System.Drawing.FontStyle]::Bold)
+        Status = New-Object System.Drawing.Font($strongFont, 9, $strongStyle)
         Log = New-Object System.Drawing.Font('Consolas', 9)
         ResultSmall = New-Object System.Drawing.Font($uiFont, 8.5)
-        ResultTitle = New-Object System.Drawing.Font($uiFont, 9, [System.Drawing.FontStyle]::Bold)
-        ResultStrong = New-Object System.Drawing.Font($uiFont, 10.5, [System.Drawing.FontStyle]::Bold)
+        ResultTitle = New-Object System.Drawing.Font($strongFont, 9, $strongStyle)
+        ResultStrong = New-Object System.Drawing.Font($strongFont, 10.5, $strongStyle)
         ResultCode = New-Object System.Drawing.Font('Consolas', 9.5)
-        StackName = New-Object System.Drawing.Font($uiFont, 9.5, [System.Drawing.FontStyle]::Bold)
+        StackName = New-Object System.Drawing.Font($strongFont, 9.5, $strongStyle)
         StackClass = New-Object System.Drawing.Font('Consolas', 8.5)
         Badge = New-Object System.Drawing.Font($uiFont, 8)
+        DropIcon = New-Object System.Drawing.Font('Segoe MDL2 Assets', 22)
     }
     $glyphs = [pscustomobject]@{
         Phone = [string][char]0xE8EA
         Stop = [string][char]0xE71A
         Download = [string][char]0xE896
         List = [string][char]0xE8FD
+        Search = [string][char]0xE721
         Camera = [string][char]0xE722
         Scroll = [string][char]0xE8CB
         Layers = [string][char]0xE81E
+        Package = [string][char]0xE7B8
         Wrench = [string][char]0xE90F
+        Account = [string][char]0xE8F8
     }
     $doubleBuffered = [System.Windows.Forms.Control].GetProperty('DoubleBuffered', [System.Reflection.BindingFlags]'NonPublic, Instance')
     $newline = [Environment]::NewLine
@@ -291,12 +304,16 @@ try {
             [Parameter(Mandatory = $true)]
             [string[]]$Arguments,
 
-            [int]$TimeoutSeconds = 30
+            [int]$TimeoutSeconds = 30,
+
+            # Another program run the same way, e.g. aapt.
+            [string]$FileName = $state.AdbPath
         )
 
         # adb runs as a child process while the window keeps responding; it is stopped after the time limit.
         $info = New-Object System.Diagnostics.ProcessStartInfo
-        $info.FileName = $state.AdbPath
+        $info.FileName = $FileName
+        $info.StandardOutputEncoding = [Text.Encoding]::UTF8
         $info.Arguments = ConvertTo-ProcessArgumentString -Arguments $Arguments
         $info.UseShellExecute = $false
         $info.CreateNoWindow = $true
@@ -398,8 +415,8 @@ try {
     $form.Font = $fonts.Body
     $form.BackColor = $theme.Page
     $form.ForeColor = $theme.Text
-    $form.ClientSize = New-Object System.Drawing.Size(640, 822)
-    $form.MinimumSize = New-Object System.Drawing.Size(560, 782)
+    $form.ClientSize = New-Object System.Drawing.Size(640, 862)
+    $form.MinimumSize = New-Object System.Drawing.Size(560, 822)
     $form.MaximizeBox = $false
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $form.Icon = New-ToolsIcon
@@ -432,15 +449,18 @@ try {
     })
     $refreshButton = New-SmallButton -Text $T.Refresh
 
-    # Pairs: the app on screen, screenshots, Bluetooth logs; then the computer-side Gradle stop across the full width.
+    # Pairs: the app on screen, installing and building, screenshots, Bluetooth logs; then the installer account.
     $tiles = @(
         (New-ActionTile -Glyph $glyphs.Phone -Title $T.Activity -Hint $T.ActivityHint -Action { Invoke-DevAction -Title $T.Activity -Body { Invoke-ActivityCheck } }),
         (New-ActionTile -Glyph $glyphs.Layers -Title $T.TaskStacks -Hint $T.TaskStacksHint -Action { Invoke-DevAction -Title $T.TaskStacks -Body { Open-TaskWindow } }),
+        (New-ActionTile -Glyph $glyphs.Package -Title $T.ApkTitle -Hint $T.ApkHint -Action { Open-InstallWindow }),
+        (New-ActionTile -Glyph $glyphs.Stop -Title $T.StopGradle -Hint $T.StopGradleHint -Action { Invoke-DevAction -Title $T.StopGradle -Body { Invoke-GradleStop } }),
         (New-ActionTile -Glyph $glyphs.Camera -Title $T.Screenshot -Hint $T.ScreenshotHint -Action { Invoke-DevAction -Title $T.Screenshot -Body { Invoke-PhoneScreenshot } }),
         (New-ActionTile -Glyph $glyphs.Scroll -Title $T.LongScreenshot -Hint $T.LongScreenshotHint -Action { Invoke-DevAction -Title $T.LongScreenshot -Body { Invoke-LongScreenshot } }),
         (New-ActionTile -Glyph $glyphs.Download -Title $T.ExportBle -Hint $T.ExportBleHint -Action { Invoke-DevAction -Title $T.ExportBle -Body { Invoke-BleExport } }),
         (New-ActionTile -Glyph $glyphs.List -Title $T.ShowBle -Hint $T.ShowBleHint -Action { Invoke-DevAction -Title $T.ShowBle -Body { Open-LogViewer } }),
-        (New-ActionTile -Glyph $glyphs.Stop -Title $T.StopGradle -Hint $T.StopGradleHint -Action { Invoke-DevAction -Title $T.StopGradle -Body { Invoke-GradleStop } })
+        (New-ActionTile -Glyph $glyphs.Search -Title $T.AnalyzeBle -Hint $T.AnalyzeBleHint -Action { Invoke-DevAction -Title $T.AnalyzeBle -Body { Open-BleAnalyzer } }),
+        (New-ActionTile -Glyph $glyphs.Account -Title $T.AccountTitle -Hint $T.AccountHint -Action { Open-AccountWindow })
     )
 
     $pathCaption = New-Caption -Text $T.PathGroup
@@ -450,6 +470,12 @@ try {
     $remoteField = New-InputField
     $remoteField.Box.Text = $settings.RemoteLogPath
     $defaultButton = New-SmallButton -Text $T.Default
+    $packageLabel = New-Object System.Windows.Forms.Label
+    $packageLabel.Text = $T.ApPackage
+    $packageLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    $packageField = New-InputField
+    $packageField.Box.Text = $settings.ApLogPackage
+    $packageDefaultButton = New-SmallButton -Text $T.Default
     $exportLabel = New-Object System.Windows.Forms.Label
     $exportLabel.Text = $T.ExportPath
     $exportLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
@@ -474,11 +500,11 @@ try {
 
     $form.Controls.AddRange([System.Windows.Forms.Control[]]@(
         $phoneCaption, $phoneBox, $refreshButton,
-        $pathCaption, $remoteLabel, $remoteField.Frame, $defaultButton, $exportLabel, $exportField.Frame, $browseButton,
+        $pathCaption, $remoteLabel, $remoteField.Frame, $defaultButton, $packageLabel, $packageField.Frame, $packageDefaultButton, $exportLabel, $exportField.Frame, $browseButton,
         $statusLabel, $clearButton, $stopButton, $output.Frame
     ))
     $form.Controls.AddRange([System.Windows.Forms.Control[]]$tiles)
-    $busyControls = @($tiles) + @($phoneBox, $refreshButton, $defaultButton, $browseButton)
+    $busyControls = @($tiles) + @($phoneBox, $refreshButton, $defaultButton, $packageDefaultButton, $browseButton)
 
     function Update-MainLayout {
         $width = $form.ClientSize.Width
@@ -494,16 +520,16 @@ try {
         # Two tiles per row; a last tile without a partner spans the whole row.
         $tileWidth = [int](($inner - 12) / 2)
         for ($index = 0; $index -lt $tiles.Count; $index++) {
-            $top = 86 + [Math]::Floor($index / 2) * 82
+            $top = 86 + [Math]::Floor($index / 2) * 72
             if ($index -eq $tiles.Count - 1 -and $index % 2 -eq 0) {
-                $tiles[$index].SetBounds($pad, $top, $inner, 72)
+                $tiles[$index].SetBounds($pad, $top, $inner, 64)
             }
             else {
                 $left = if ($index % 2 -eq 0) { $pad } else { $width - $pad - $tileWidth }
-                $tiles[$index].SetBounds($left, $top, $tileWidth, 72)
+                $tiles[$index].SetBounds($left, $top, $tileWidth, 64)
             }
         }
-        $y = 86 + [Math]::Ceiling($tiles.Count / 2) * 82 + 8
+        $y = 86 + [Math]::Ceiling($tiles.Count / 2) * 72 + 8
 
         $labelWidth = 86
         $fieldLeft = $pad + $labelWidth
@@ -512,14 +538,17 @@ try {
         $remoteLabel.SetBounds($pad, $y + 26, $labelWidth, 32)
         $remoteField.Frame.SetBounds($fieldLeft, $y + 26, $fieldWidth, 32)
         $defaultButton.SetBounds($width - $pad - $buttonWidth, $y + 26, $buttonWidth, 32)
-        $exportLabel.SetBounds($pad, $y + 66, $labelWidth, 32)
-        $exportField.Frame.SetBounds($fieldLeft, $y + 66, $fieldWidth, 32)
-        $browseButton.SetBounds($width - $pad - $buttonWidth, $y + 66, $buttonWidth, 32)
+        $packageLabel.SetBounds($pad, $y + 66, $labelWidth, 32)
+        $packageField.Frame.SetBounds($fieldLeft, $y + 66, $fieldWidth, 32)
+        $packageDefaultButton.SetBounds($width - $pad - $buttonWidth, $y + 66, $buttonWidth, 32)
+        $exportLabel.SetBounds($pad, $y + 106, $labelWidth, 32)
+        $exportField.Frame.SetBounds($fieldLeft, $y + 106, $fieldWidth, 32)
+        $browseButton.SetBounds($width - $pad - $buttonWidth, $y + 106, $buttonWidth, 32)
 
-        $statusLabel.SetBounds($pad, $y + 116, $inner - 112, 28)
-        $clearButton.SetBounds($width - $pad - 86, $y + 114, 86, 32)
-        $stopButton.SetBounds($width - $pad - 102, $y + 114, 102, 32)
-        $output.Frame.SetBounds($pad, $y + 154, $inner, [Math]::Max(80, $height - $y - 154 - $pad))
+        $statusLabel.SetBounds($pad, $y + 156, $inner - 112, 28)
+        $clearButton.SetBounds($width - $pad - 86, $y + 154, 86, 32)
+        $stopButton.SetBounds($width - $pad - 102, $y + 154, 102, 32)
+        $output.Frame.SetBounds($pad, $y + 194, $inner, [Math]::Max(80, $height - $y - 194 - $pad))
     }
 
     function Set-Status {
@@ -547,9 +576,9 @@ try {
     }
 
     function Add-OutputText {
-        param([string]$Text, [System.Drawing.Font]$Font, [System.Drawing.Color]$Color)
+        param([string]$Text, [System.Drawing.Font]$Font, [System.Drawing.Color]$Color, $Box = $output.Box)
 
-        $box = $output.Box
+        $box = $Box
         $box.SelectionStart = $box.TextLength
         $box.SelectionLength = 0
         $box.SelectionFont = $Font
@@ -558,9 +587,9 @@ try {
     }
 
     function Set-OutputParagraph {
-        param([int]$Indent, [int]$Hanging)
+        param([int]$Indent, [int]$Hanging, $Box = $output.Box)
 
-        $box = $output.Box
+        $box = $Box
         $box.SelectionStart = $box.TextLength
         $box.SelectionLength = 0
         $box.SelectionIndent = $Indent
@@ -574,26 +603,31 @@ try {
             [AllowEmptyCollection()]
             [object[]]$Lines = @(),
             [bool]$Success,
-            [string]$Summary
+            [string]$Summary,
+            # A header word other than success / failure, e.g. "cancelled", shown in grey.
+            [string]$Word = '',
+            # Another result box (the APK install window) and no main status line.
+            $Box = $output.Box,
+            [switch]$NoStatus
         )
 
         # Each result: a header line, then "label  value" rows. A wrapped value continues under its own column.
-        $word = if ($Success) { $T.Success } else { $T.Failure }
-        $box = $output.Box
+        $word = if ($Word) { $Word } elseif ($Success) { $T.Success } else { $T.Failure }
+        $box = $Box
         $box.ReadOnly = $false
         try {
-            Set-OutputParagraph -Indent 0 -Hanging 0
+            Set-OutputParagraph -Indent 0 -Hanging 0 -Box $box
             if ($box.TextLength -gt 0) {
-                Add-OutputText -Text "`n" -Font $fonts.ResultSmall -Color $theme.Muted
+                Add-OutputText -Text "`n" -Font $fonts.ResultSmall -Color $theme.Muted -Box $box
             }
-            Add-OutputText -Text ((Get-Date -Format 'HH:mm:ss') + '   ') -Font $fonts.ResultSmall -Color $theme.Muted
-            Add-OutputText -Text $Title -Font $fonts.ResultTitle -Color $theme.Text
-            Add-OutputText -Text ('   ' + $word + "`n") -Font $fonts.ResultTitle -Color $(if ($Success) { $theme.Accent } else { $theme.Error })
+            Add-OutputText -Text ((Get-Date -Format 'HH:mm:ss') + '   ') -Font $fonts.ResultSmall -Color $theme.Muted -Box $box
+            Add-OutputText -Text $Title -Font $fonts.ResultTitle -Color $theme.Text -Box $box
+            Add-OutputText -Text ('   ' + $word + "`n") -Font $fonts.ResultTitle -Color $(if ($Word) { $theme.Muted } elseif ($Success) { $theme.Accent } else { $theme.Error }) -Box $box
             foreach ($item in $Lines) {
                 $line = if ($item -isnot [string]) { $item } elseif ($Success) { New-ResultLine -Value $item } else { New-ResultLine -Value $item -Style Error }
-                Set-OutputParagraph -Indent 14 -Hanging $(if ($line.Label) { 78 } else { 0 })
+                Set-OutputParagraph -Indent 14 -Hanging $(if ($line.Label) { 78 } else { 0 }) -Box $box
                 if ($line.Label) {
-                    Add-OutputText -Text ($line.Label + "`t") -Font $fonts.ResultSmall -Color $theme.Muted
+                    Add-OutputText -Text ($line.Label + "`t") -Font $fonts.ResultSmall -Color $theme.Muted -Box $box
                 }
                 switch ($line.Style) {
                     'Strong' { $font = $fonts.ResultStrong; $color = $theme.Accent }
@@ -602,7 +636,7 @@ try {
                     'Error' { $font = $fonts.Body; $color = $theme.Error }
                     default { $font = $fonts.Body; $color = $theme.Text }
                 }
-                Add-OutputText -Text ($line.Value + "`n") -Font $font -Color $color
+                Add-OutputText -Text ($line.Value + "`n") -Font $font -Color $color -Box $box
             }
         }
         finally {
@@ -610,8 +644,9 @@ try {
         }
         $box.SelectionStart = $box.TextLength
         $box.ScrollToCaret()
+        if ($NoStatus) { return }
         $summaryText = if ($Summary) { $Summary.Replace("`r", ' ').Replace("`n", ' ') } else { $word }
-        Set-Status -Text ([string][char]0x25CF + '  ' + $word + '  ' + $summaryText) -Kind $(if ($Success) { 'Success' } else { 'Failure' })
+        Set-Status -Text ([string][char]0x25CF + '  ' + $word + '  ' + $summaryText) -Kind $(if ($Word) { 'Muted' } elseif ($Success) { 'Success' } else { 'Failure' })
     }
 
     function Set-Busy {
@@ -742,8 +777,14 @@ try {
             if (-not $Quiet) { Write-Result -Title $Title -Lines @($T.BadExportPath) -Success $false -Summary $T.BadExportPath }
             return $false
         }
+        $package = $packageField.Box.Text.Trim()
+        if (-not (Test-AndroidPackageName -Name $package)) {
+            if (-not $Quiet) { Write-Result -Title $Title -Lines @($T.BadPackage) -Success $false -Summary $T.BadPackage }
+            return $false
+        }
         $settings.RemoteLogPath = $remote
         $settings.ExportPath = $export
+        $settings.ApLogPackage = $package
         try { Save-DevToolsSettings -Path $settingsPath -Settings $settings } catch { }
         return $true
     }
@@ -806,6 +847,17 @@ try {
         $isPng = $bytes.Length -gt 8 -and $bytes[0] -eq 0x89 -and $bytes[1] -eq 0x50 -and $bytes[2] -eq 0x4E -and $bytes[3] -eq 0x47
         if ($result.TimedOut -or -not $isPng) {
             $message = if ($result.TimedOut) { $T.TimedOut -f $result.TimeoutSeconds } else { $T.ScreenshotFailed }
+            if (-not $result.TimedOut -and -not (Test-AdbFailed -Result $result)) {
+                # The phone answered but gave no picture: usually a window on screen forbids capture.
+                $windows = Invoke-Adb -Arguments @('-s', $Device.Serial, 'shell', "dumpsys window windows | grep -E '^  Window #|fl=|isOnScreen='") -TimeoutSeconds 20
+                $secure = @(Find-SecureWindows -Text $windows.Output)
+                if ($secure -contains 'InputMethod') {
+                    $message = $T.ScreenshotSecureKeyboard
+                }
+                elseif ($secure.Count -gt 0) {
+                    $message = $T.ScreenshotSecureWindow -f ($secure -join ', ')
+                }
+            }
             return [pscustomobject]@{ Bitmap = $null; Bytes = $bytes; Error = $message; Detail = (Get-AdbErrorDetail -Result $result) }
         }
         $stream = New-Object System.IO.MemoryStream(, $bytes)
@@ -1331,6 +1383,10 @@ try {
         $refreshListButton = New-GlyphButton -Glyph ([string][char]0xE72C) -Tip $T.RefreshTip -Tips $tips
         $saveButton = New-PrimaryButton -Text $T.SaveToPc
         $tips.SetToolTip($saveButton, $T.SaveTip)
+        $apButton = New-SmallButton -Text $T.ExportApLogs
+        $tips.SetToolTip($apButton, $T.ExportApTip)
+        $analyzeButton = New-SmallButton -Text $T.ViewerAnalyze
+        $tips.SetToolTip($analyzeButton, $T.ViewerAnalyzeTip)
         # The address box works like Explorer's: type a phone path and press Enter.
         $addressField = New-InputField
         $addressField.Box.Font = $fonts.ResultCode
@@ -1385,7 +1441,7 @@ try {
         $saveMenuItem.ShortcutKeyDisplayString = 'Ctrl+S'
         $list.ContextMenuStrip = $listMenu
 
-        $viewerForm.Controls.AddRange([System.Windows.Forms.Control[]]@($backButton, $forwardButton, $upButton, $refreshListButton, $addressField.Frame, $saveButton, $filterLabel, $filterField.Frame, $split, $viewerStatus))
+        $viewerForm.Controls.AddRange([System.Windows.Forms.Control[]]@($backButton, $forwardButton, $upButton, $refreshListButton, $addressField.Frame, $saveButton, $apButton, $analyzeButton, $filterLabel, $filterField.Frame, $split, $viewerStatus))
         $viewer = [pscustomobject]@{
             Form = $viewerForm
             Tips = $tips
@@ -1394,6 +1450,8 @@ try {
             Up = $upButton
             Refresh = $refreshListButton
             Save = $saveButton
+            ApExport = $apButton
+            Analyze = $analyzeButton
             Menu = $listMenu
             Address = $addressField
             FilterLabel = $filterLabel
@@ -1423,6 +1481,12 @@ try {
         $upButton.Add_Click({ Open-ViewerParent })
         $refreshListButton.Add_Click({ Update-ViewerFolder })
         $saveButton.Add_Click({ Save-ViewerItem })
+        $apButton.Add_Click({ Export-ApLogs })
+        # The file on the right goes to the BLE analyzer, which pulls out each command and its reply.
+        $analyzeButton.Add_Click({
+            $viewer = $state.Viewer
+            if ($null -ne $viewer -and $viewer.FileName) { Open-BleAnalyzer -Lines $viewer.Lines -Source $viewer.FileName }
+        })
         $saveMenuItem.Add_Click({ Save-ViewerItem })
         $listMenu.Add_Opening({
             param($sender, $eventArgs)
@@ -1490,9 +1554,13 @@ try {
         $viewer.FilterLabel.SetBounds($width - $pad - $filterWidth - 50, 14, 44, 32)
         $addressLeft = $pad + 166
         $saveWidth = 104
-        $addressWidth = [Math]::Max(120, $width - $pad - $filterWidth - 60 - $saveWidth - 10 - $addressLeft)
+        $apWidth = 112
+        $analyzeWidth = 96
+        $addressWidth = [Math]::Max(120, $width - $pad - $filterWidth - 60 - $saveWidth - 10 - $apWidth - 8 - $analyzeWidth - 8 - $addressLeft)
         $viewer.Address.Frame.SetBounds($addressLeft, 14, $addressWidth, 32)
         $viewer.Save.SetBounds($addressLeft + $addressWidth + 10, 14, $saveWidth, 32)
+        $viewer.ApExport.SetBounds($addressLeft + $addressWidth + 10 + $saveWidth + 8, 14, $apWidth, 32)
+        $viewer.Analyze.SetBounds($addressLeft + $addressWidth + 10 + $saveWidth + 8 + $apWidth + 8, 14, $analyzeWidth, 32)
         $viewer.Split.SetBounds($pad, 58, $width - 2 * $pad, [Math]::Max(100, $height - 58 - 40))
         $viewer.Status.SetBounds($pad, $height - 36, $width - 2 * $pad, 28)
         Update-ViewerColumns
@@ -1515,6 +1583,8 @@ try {
         $viewer.Up.Enabled = $idle -and $viewer.Directory -and $viewer.Directory -ne '/'
         $viewer.Refresh.Enabled = $idle
         $viewer.Save.Enabled = $idle -and ($viewer.List.SelectedItems.Count -gt 0 -or [bool]$viewer.FilePath)
+        $viewer.ApExport.Enabled = $idle
+        $viewer.Analyze.Enabled = $idle -and [bool]$viewer.FileName
     }
 
     function Set-ViewerStatus {
@@ -1745,6 +1815,103 @@ try {
         Start-Process -FilePath (Join-Path $env:WINDIR 'explorer.exe') -ArgumentList ('/select,"' + $destination + '"')
     }
 
+    function Export-ApLogs {
+        # Copies the AP logs the app downloaded from chargers (its private cache/charger_logs/<SN>/ folder) to this
+        # computer. A private folder is readable only through run-as, which Android allows for debug builds only.
+        $viewer = $state.Viewer
+        if ($null -eq $viewer -or $viewer.Busy) { return }
+        if (-not (Save-PathInputs -Title $T.ExportApLogs)) {
+            Set-ViewerStatus -Text $statusLabel.Text.TrimStart([char]0x25CF, ' ') -Failure
+            return
+        }
+        $package = $settings.ApLogPackage
+        $device = $viewer.Device
+        $lines = New-Object System.Collections.Generic.List[object]
+        $lines.Add((New-ResultLine -Label $T.LabelPhone -Value (Get-DeviceLabel -Device $device)))
+        $lines.Add((New-ResultLine -Label $T.LabelApp -Value $package -Style Code))
+        $lines.Add((New-ResultLine -Label $T.LabelFrom -Value 'cache/charger_logs' -Style Code))
+        $failure = $null
+        $saved = 0
+        $skipped = New-Object System.Collections.Generic.List[string]
+        $target = Join-Path $settings.ExportPath (Join-Path (Get-DeviceFolderName -Model $device.Model -Serial $device.Serial) 'charger_logs')
+
+        $viewer.Busy = $true
+        Update-ViewerButtons
+        $viewer.Form.UseWaitCursor = $true
+        try {
+            Set-ViewerStatus -Text $T.ApListing
+            $list = Invoke-Adb -Arguments @('-s', $device.Serial, 'shell', "run-as $package find cache/charger_logs -type f -exec stat -c '%s %Y %n' {} +") -TimeoutSeconds 60
+            if ($null -eq $state.Viewer) { return }
+            $said = $list.Output + "`n" + $list.Error
+            if ($list.TimedOut) { $failure = $T.TimedOut -f $list.TimeoutSeconds }
+            elseif ($said -match '(?i)not debuggable') { $failure = $T.ApNotDebuggable -f $package }
+            elseif ($said -match '(?i)unknown package|not installed|not an application') { $failure = $T.ApNotInstalled -f $package }
+            elseif ($said -match '(?i)no such file') { $failure = $T.ApNoLogs }
+            if ($null -eq $failure) {
+                # A file still ending in .download is being written by the app; it is left out.
+                $files = @(ConvertFrom-RemoteFileStat -Text $list.Output -Root 'cache/charger_logs' | Where-Object { -not $_.Name.EndsWith('.download') })
+                if ($files.Count -eq 0) {
+                    $failure = $T.ApNoLogs
+                }
+            }
+            if ($null -eq $failure) {
+                try {
+                    New-Item -ItemType Directory -Path $target -Force | Out-Null
+                }
+                catch {
+                    $failure = $T.CannotCreate -f $target
+                }
+            }
+            if ($null -eq $failure) {
+                $index = 0
+                foreach ($file in $files) {
+                    $index++
+                    Set-ViewerStatus -Text ($T.ApCopying -f $index, $files.Count, $file.Name)
+                    # The path goes into the phone command in single quotes; names that could break out are skipped.
+                    if ($file.Path -match '[''"`$;&|<>\\]') { $skipped.Add($file.Name); continue }
+                    $copy = Invoke-Adb -Arguments @('-s', $device.Serial, 'exec-out', "run-as $package cat '$($file.Path)'") -TimeoutSeconds 300
+                    if ($null -eq $state.Viewer) { return }
+                    # The size must match, so a cut-off transfer or an error message is never saved as a log.
+                    if ($copy.TimedOut -or $copy.Bytes.Length -ne $file.Size) { $skipped.Add($file.Name); continue }
+                    $local = Join-Path $target (ConvertTo-LocalRelativePath -Name $file.Name)
+                    New-Item -ItemType Directory -Path (Split-Path -Parent $local) -Force | Out-Null
+                    [IO.File]::WriteAllBytes($local, $copy.Bytes)
+                    $saved++
+                }
+            }
+        }
+        finally {
+            if ($null -ne $state.Viewer) {
+                $viewer.Busy = $false
+                $viewer.Form.UseWaitCursor = $false
+                Update-ViewerButtons
+            }
+        }
+
+        if ($null -ne $failure) {
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $failure -Style Error))
+            Write-Result -Title $T.ExportApLogs -Lines $lines.ToArray() -Success $false -Summary $failure
+            Set-ViewerStatus -Text $failure -Failure
+            return
+        }
+        $summary = $T.ApExported -f $saved, $target
+        $lines.Add((New-ResultLine -Label $T.LabelTo -Value $target -Style Code))
+        $lines.Add((New-ResultLine -Label $T.LabelResult -Value ($T.ApExportedShort -f $saved) -Style $(if ($skipped.Count) { 'Error' } else { 'Strong' })))
+        if ($skipped.Count) {
+            $lines.Add((New-ResultLine -Label $T.LabelNote -Value ($T.ApSkipped -f $skipped.Count, ($skipped -join ', ')) -Style Error))
+        }
+        Write-Result -Title $T.ExportApLogs -Lines $lines.ToArray() -Success ($skipped.Count -eq 0) -Summary $summary
+        if ($skipped.Count) {
+            Set-ViewerStatus -Text ($summary + '  ' + ($T.ApSkipped -f $skipped.Count, ($skipped -join ', '))) -Failure
+        }
+        else {
+            Set-ViewerStatus -Text $summary -Success
+        }
+        if ($saved -gt 0) {
+            Start-Process -FilePath (Join-Path $env:WINDIR 'explorer.exe') -ArgumentList ('"' + $target + '"')
+        }
+    }
+
     function Request-ViewerFile {
         param($File, [switch]$Force)
 
@@ -1827,6 +1994,31 @@ try {
         Set-ViewerStatus -Text $summary
     }
 
+    function Open-BleAnalyzer {
+        param(
+            # Log lines to parse at once (the file open in the log viewer), and their file name.
+            [string[]]$Lines = @(),
+            [string]$Source = ''
+        )
+
+        if (-not $state.AdbPath) {
+            $state.AdbPath = Find-AdbPath
+        }
+        $index = $phoneBox.SelectedIndex
+        $serial = ''
+        $deviceName = ''
+        if ($index -ge 0 -and $index -lt $state.Devices.Count) {
+            $device = $state.Devices[$index]
+            if ($device.State -eq 'device') {
+                $serial = $device.Serial
+                $deviceName = Get-DeviceLabel -Device $device
+            }
+        }
+
+        . (Join-Path $PSScriptRoot 'ble-analyzer.ps1')
+        Show-BleAnalyzer -Owner $form -AdbPath ([string]$state.AdbPath) -Serial $serial -DeviceName $deviceName -Lines $Lines -Source $Source
+    }
+
     function Open-LogViewer {
         $device = Get-UsableDevice -Title $T.ShowBle
         if ($null -eq $device -or -not (Save-PathInputs -Title $T.ShowBle)) {
@@ -1866,6 +2058,413 @@ try {
         )
         Write-Result -Title $T.ShowBle -Lines $openedLines -Success $true -Summary ($T.ViewerOpened -f $label)
         Set-ViewerDirectory -Path $settings.RemoteLogPath -OpenNewestDepth 3
+    }
+
+    # ---------------- APK install ----------------
+
+    function Test-ApkDrop {
+        param($Data)
+
+        # Only a dragged .apk file is accepted.
+        if (-not $Data.GetDataPresent([System.Windows.Forms.DataFormats]::FileDrop)) { return $null }
+        $files = @($Data.GetData([System.Windows.Forms.DataFormats]::FileDrop))
+        $apk = @($files | Where-Object { [IO.Path]::GetExtension([string]$_) -ieq '.apk' -and (Test-Path -LiteralPath $_ -PathType Leaf) }) | Select-Object -First 1
+        return $apk
+    }
+
+    $apkDragEnter = {
+        param($sender, $eventArgs)
+        $eventArgs.Effect = if (Test-ApkDrop -Data $eventArgs.Data) { [System.Windows.Forms.DragDropEffects]::Copy } else { [System.Windows.Forms.DragDropEffects]::None }
+    }
+    $apkDragDrop = {
+        param($sender, $eventArgs)
+        $apk = Test-ApkDrop -Data $eventArgs.Data
+        if ($apk) { Open-InstallWindow -ApkPath $apk }
+    }
+
+    function Enable-ApkDrop {
+        param($Control)
+
+        # Dropping an APK anywhere on the window (or on the tool window) picks it for installing.
+        $Control.AllowDrop = $true
+        $Control.Add_DragEnter($apkDragEnter)
+        $Control.Add_DragDrop($apkDragDrop)
+        foreach ($child in $Control.Controls) { Enable-ApkDrop -Control $child }
+    }
+
+    $dropZonePaint = {
+        param($sender, $eventArgs)
+
+        $graphics = $eventArgs.Graphics
+        $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $graphics.Clear($theme.Page)
+        $hover = [bool]$sender.Tag
+        $path = New-RoundedPath -X 1 -Y 1 -Width ($sender.Width - 3) -Height ($sender.Height - 3) -Radius 12
+        $fill = New-Object System.Drawing.SolidBrush($(if ($hover) { $theme.AccentSoft } else { $theme.Card }))
+        $pen = New-Object System.Drawing.Pen($(if ($hover) { $theme.Accent } else { $theme.AccentBorder }), 2)
+        $pen.DashStyle = [System.Drawing.Drawing2D.DashStyle]::Dash
+        try {
+            $graphics.FillPath($fill, $path)
+            $graphics.DrawPath($pen, $path)
+        }
+        finally {
+            $pen.Dispose(); $fill.Dispose(); $path.Dispose()
+        }
+        $center = [System.Windows.Forms.TextFormatFlags]'HorizontalCenter, VerticalCenter, NoPadding, NoPrefix'
+        [System.Windows.Forms.TextRenderer]::DrawText($graphics, [string][char]0xE7B8, $fonts.DropIcon, [System.Drawing.Rectangle]::new(0, 16, $sender.Width, 40), $theme.Accent, $center)
+        [System.Windows.Forms.TextRenderer]::DrawText($graphics, $T.ApkDrop, $fonts.TileTitle, [System.Drawing.Rectangle]::new(0, 60, $sender.Width, 24), $theme.Text, $center)
+        [System.Windows.Forms.TextRenderer]::DrawText($graphics, $T.ApkDropHint, $fonts.TileHint, [System.Drawing.Rectangle]::new(0, 86, $sender.Width, 20), $theme.Muted, $center)
+    }
+
+    function New-InstallWindow {
+        $installForm = New-Object System.Windows.Forms.Form
+        $installForm.Font = $fonts.Body
+        $installForm.BackColor = $theme.Page
+        $installForm.ForeColor = $theme.Text
+        $installForm.ClientSize = New-Object System.Drawing.Size(600, 766)
+        $installForm.MinimumSize = New-Object System.Drawing.Size(520, 620)
+        $installForm.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+        $installForm.Icon = $form.Icon
+
+        $target = New-Caption -Text ''
+        $drop = New-Object System.Windows.Forms.Panel
+        $drop.Cursor = [System.Windows.Forms.Cursors]::Hand
+        $drop.Tag = $false
+        $doubleBuffered.SetValue($drop, $true, $null)
+        $drop.Add_Paint($dropZonePaint)
+        $info = New-Object System.Windows.Forms.Label
+        $info.ForeColor = $theme.Text
+        $info.AutoEllipsis = $true
+        $info.Font = $fonts.Body
+        $warning = New-Object System.Windows.Forms.Label
+        $warning.ForeColor = $theme.Error
+        $warning.AutoEllipsis = $true
+
+        $optionsCaption = New-Caption -Text $T.ApkOptions
+        $boxes = @{}
+        foreach ($flag in 'r', 'c', 't', 'd') {
+            $box = New-Object System.Windows.Forms.CheckBox
+            $box.Text = $T.('ApkFlag' + $flag.ToUpper())
+            $box.Font = $fonts.Body
+            $box.AutoSize = $false
+            $box.Checked = $settings.InstallFlags.Contains($flag)
+            $box.Cursor = [System.Windows.Forms.Cursors]::Hand
+            $boxes[$flag] = $box
+        }
+        $command = New-Object System.Windows.Forms.Label
+        $command.Font = $fonts.ResultCode
+        $command.ForeColor = $theme.Muted
+        # Two lines, so the uninstall-then-install command is shown in full.
+        $installButton = New-PrimaryButton -Text $T.ApkInstall
+        $installButton.Font = $fonts.TileTitle
+        $result = New-FramedRichText
+
+        $installForm.Controls.AddRange([System.Windows.Forms.Control[]]@($target, $drop, $info, $warning, $optionsCaption, $boxes['r'], $boxes['c'], $boxes['t'], $boxes['d'], $command, $installButton, $result.Frame))
+        $window = [pscustomobject]@{
+            Form = $installForm; Target = $target; Drop = $drop; Info = $info; Warning = $warning; OptionsCaption = $optionsCaption; Options = $boxes; Command = $command
+            Install = $installButton; Result = $result.Box; Apk = $null; Badge = $null; Installed = $null; Busy = $false
+        }
+
+        $drop.Add_Click({ Select-ApkFile })
+        $drop.Add_MouseEnter({ param($sender, $eventArgs) $sender.Tag = $true; $sender.Invalidate() })
+        $drop.Add_MouseLeave({ param($sender, $eventArgs) $sender.Tag = $false; $sender.Invalidate() })
+        foreach ($box in $boxes.Values) { $box.Add_CheckedChanged({ Save-InstallOptions; Update-InstallWindow }) }
+        $installButton.Add_Click({ Invoke-ApkInstall })
+        $installForm.Add_Resize({ Update-InstallLayout })
+        $installForm.Add_Activated({ Update-InstallWindow })
+        $installForm.Add_FormClosed({ $state.Install = $null })
+        Enable-ApkDrop -Control $installForm
+        return $window
+    }
+
+    function Update-InstallLayout {
+        $window = $state.Install
+        if ($null -eq $window) { return }
+        $width = $window.Form.ClientSize.Width
+        $height = $window.Form.ClientSize.Height
+        $pad = 18
+        $inner = $width - 2 * $pad
+        $window.Target.SetBounds($pad, 12, $inner, 22)
+        $window.Drop.SetBounds($pad, 40, $inner, 120)
+        $window.Info.SetBounds($pad, 168, $inner, 62)
+        $window.Warning.SetBounds($pad, 230, $inner, 22)
+        $window.OptionsCaption.SetBounds($pad, 258, $inner, 22)
+        $y = 284
+        foreach ($flag in 'r', 'c', 't', 'd') {
+            $window.Options[$flag].SetBounds($pad + 4, $y, $inner - 4, 26)
+            $y += 28
+        }
+        $window.Command.SetBounds($pad, $y + 4, $inner, 38)
+        $window.Install.SetBounds($pad, $y + 48, $inner, 44)
+        $top = $y + 104
+        $window.Result.Parent.Parent.SetBounds($pad, $top, $inner, [Math]::Max(80, $height - $top - $pad))
+    }
+
+    function Get-InstallFlags {
+        $window = $state.Install
+        return ((@('r', 'c', 't', 'd') | Where-Object { $window.Options[$_].Checked }) -join '')
+    }
+
+    function Save-InstallOptions {
+        if ($null -eq $state.Install) { return }
+        $settings.InstallFlags = Get-InstallFlags
+        try { Save-DevToolsSettings -Path $settingsPath -Settings $settings } catch { }
+    }
+
+    function Update-InstallWindow {
+        # Target phone, the chosen APK with its version against the one on the phone, and the exact command.
+        $window = $state.Install
+        if ($null -eq $window) { return }
+        $device = $null
+        $index = $phoneBox.SelectedIndex
+        if ($index -ge 0 -and $index -lt @($state.Devices).Count) { $device = @($state.Devices)[$index] }
+        $phone = if ($null -ne $device) { Get-DeviceLabel -Device $device } else { $T.NoPhone }
+        $window.Form.Text = $T.ApkWindowTitle -f $phone
+        $window.Target.Text = $T.ApkTarget -f $phone
+        if ($null -eq $window.Apk) {
+            $window.Info.ForeColor = $theme.Muted
+            $window.Info.Text = $T.ApkNone
+        }
+        else {
+            $file = Get-Item -LiteralPath $window.Apk
+            $lines = New-Object System.Collections.Generic.List[string]
+            $lines.Add(($T.ApkFileLine -f $file.Name, (Format-ByteSize -Bytes $file.Length)))
+            if ($null -ne $window.Badge -and $window.Badge.Package) {
+                $name = if ($window.Badge.Label) { $window.Badge.Label + '  ' } else { '' }
+                $lines.Add(($T.ApkAppLine -f $name, $window.Badge.Package, $window.Badge.VersionName, $window.Badge.VersionCode))
+                if ($null -ne $window.Installed) {
+                    $lines.Add(($T.ApkInstalledLine -f $window.Installed.VersionName, $window.Installed.VersionCode))
+                }
+                elseif ($null -ne $device) {
+                    $lines.Add($T.ApkNotInstalledLine)
+                }
+            }
+            $window.Info.ForeColor = $theme.Text
+            $window.Info.Text = $lines -join [Environment]::NewLine
+        }
+        # Options this APK needs on this phone but that are not ticked, said before installing.
+        $needed = @(Get-InstallWarnings -Apk $window.Badge -Installed $window.Installed -Flags (Get-InstallFlags))
+        $window.Warning.Text = (($needed | ForEach-Object { $T.('ApkWarn' + $_.ToUpper()) }) -join ([string][char]0xFF1B))
+        $serial = if ($null -ne $device) { $device.Serial } else { '<phone>' }
+        $apkName = if ($null -ne $window.Apk) { Split-Path -Leaf $window.Apk } else { '<app.apk>' }
+        $flags = Get-InstallFlags
+        # Keeping the data (-r) and clearing it are opposites: with clearing ticked, -r does not apply.
+        $window.Options['r'].Enabled = -not $flags.Contains('c')
+        $install = 'adb -s ' + $serial + ' ' + ((Get-InstallArguments -Flags $flags -ApkPath $apkName) -join ' ')
+        if ($flags.Contains('c')) {
+            $package = if ($null -ne $window.Badge -and $window.Badge.Package) { $window.Badge.Package } else { '<package>' }
+            $install = 'adb -s ' + $serial + ' uninstall ' + $package + '  ' + [char]0x2192 + '  ' + $install
+        }
+        $window.Command.Text = $install
+        $window.Install.Enabled = -not $window.Busy -and $null -ne $window.Apk
+    }
+
+    function Select-ApkFile {
+        $dialog = New-Object System.Windows.Forms.OpenFileDialog
+        try {
+            $dialog.Title = $T.ApkChoose
+            $dialog.Filter = $T.ApkFilter + '|*.apk'
+            if ($settings.ApkFolder -and (Test-Path -LiteralPath $settings.ApkFolder -PathType Container)) { $dialog.InitialDirectory = $settings.ApkFolder }
+            if ($dialog.ShowDialog($state.Install.Form) -eq [System.Windows.Forms.DialogResult]::OK) {
+                Set-InstallApk -ApkPath $dialog.FileName
+            }
+        }
+        finally {
+            $dialog.Dispose()
+        }
+    }
+
+    function Set-InstallApk {
+        param([string]$ApkPath)
+
+        $window = $state.Install
+        if ($null -eq $window -or $window.Busy) { return }
+        $window.Apk = $ApkPath
+        $window.Badge = $null
+        $window.Installed = $null
+        $settings.ApkFolder = Split-Path -Parent $ApkPath
+        try { Save-DevToolsSettings -Path $settingsPath -Settings $settings } catch { }
+        Update-InstallWindow
+        # Package and version from the APK, and the version already on the phone, when the tools allow it.
+        if (-not $state.AaptPath) { $state.AaptPath = Find-AaptPath -AdbPath $state.AdbPath }
+        if ($state.AaptPath) {
+            $badging = Invoke-Adb -FileName $state.AaptPath -Arguments @('dump', 'badging', $ApkPath) -TimeoutSeconds 30
+            if ($null -eq $state.Install) { return }
+            $window.Badge = ConvertFrom-ApkBadging -Text $badging.Output
+            $manifest = Invoke-Adb -FileName $state.AaptPath -Arguments @('dump', 'xmltree', $ApkPath, 'AndroidManifest.xml') -TimeoutSeconds 30
+            if ($null -eq $state.Install) { return }
+            if (Test-ApkTestOnly -Text $manifest.Output) { $window.Badge.TestOnly = $true }
+            $index = $phoneBox.SelectedIndex
+            if ($window.Badge.Package -and (Test-AndroidPackageName -Name $window.Badge.Package) -and $index -ge 0 -and $index -lt @($state.Devices).Count -and @($state.Devices)[$index].State -eq 'device') {
+                $installed = Invoke-Adb -Arguments @('-s', @($state.Devices)[$index].Serial, 'shell', "dumpsys package $($window.Badge.Package) | grep -E 'versionCode=|versionName='") -TimeoutSeconds 20
+                if ($null -eq $state.Install) { return }
+                $window.Installed = ConvertFrom-InstalledPackage -Text $installed.Output
+            }
+        }
+        Update-InstallWindow
+    }
+
+    function Open-InstallWindow {
+        param([string]$ApkPath = '')
+
+        if ($null -eq $state.Install) {
+            $state.Install = New-InstallWindow
+        }
+        $window = $state.Install
+        if (-not $window.Form.Visible) {
+            # Centred over the tool window, kept on its screen.
+            $area = [System.Windows.Forms.Screen]::FromControl($form).WorkingArea
+            $left = [Math]::Max($area.Left, [Math]::Min($form.Left + [int](($form.Width - $window.Form.Width) / 2), $area.Right - $window.Form.Width))
+            $top = [Math]::Max($area.Top, [Math]::Min($form.Top + [int](($form.Height - $window.Form.Height) / 2), $area.Bottom - $window.Form.Height))
+            $window.Form.Location = New-Object System.Drawing.Point($left, $top)
+            $window.Form.Show()
+            Update-InstallLayout
+        }
+        if ($window.Form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized) {
+            $window.Form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+        }
+        $window.Form.Activate()
+        Update-InstallWindow
+        if ($ApkPath) { Set-InstallApk -ApkPath $ApkPath }
+    }
+
+    function Invoke-ApkInstall {
+        $window = $state.Install
+        if ($null -eq $window -or $window.Busy -or $null -eq $window.Apk) { return }
+        $device = Get-UsableDevice -Title $T.ApkTitle
+        if ($null -eq $device) {
+            Write-Result -Title $T.ApkTitle -Lines @($statusLabel.Text.TrimStart([char]0x25CF, ' ')) -Success $false -Summary '' -Box $window.Result -NoStatus
+            return
+        }
+        if (-not (Test-Path -LiteralPath $window.Apk -PathType Leaf)) {
+            Write-Result -Title $T.ApkTitle -Lines @(($T.ApkMissingFile -f $window.Apk)) -Success $false -Summary ($T.ApkMissingFile -f $window.Apk)
+            Write-Result -Title $T.ApkTitle -Lines @(($T.ApkMissingFile -f $window.Apk)) -Success $false -Summary '' -Box $window.Result -NoStatus
+            return
+        }
+        $flags = Get-InstallFlags
+        $lines = New-Object System.Collections.Generic.List[object]
+        $lines.Add((New-ResultLine -Label $T.LabelPhone -Value (Get-DeviceLabel -Device $device)))
+        $lines.Add((New-ResultLine -Label $T.LabelFile -Value $window.Apk -Style Code))
+        if ($null -ne $window.Badge -and $window.Badge.Package) {
+            $lines.Add((New-ResultLine -Label $T.LabelApp -Value ($T.ApkAppValue -f $window.Badge.Package, $window.Badge.VersionName, $window.Badge.VersionCode) -Style Code))
+        }
+        $clear = $flags.Contains('c')
+        $parts = @($flags.ToCharArray() | Where-Object { -not ($_ -eq 'r' -and $clear) } | ForEach-Object { if ($_ -eq 'c') { $T.ApkOptionClear } else { '-' + $_ } })
+        $options = if ($parts.Count) { $parts -join ' ' } else { $T.ApkNoOptions }
+        if ($clear -and -not ($null -ne $window.Badge -and (Test-AndroidPackageName -Name $window.Badge.Package))) {
+            # Uninstalling needs the package name, which comes from aapt.
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $T.ApkClearNoPackage -Style Error))
+            Write-Result -Title $T.ApkTitle -Lines $lines.ToArray() -Success $false -Summary $T.ApkClearNoPackage
+            Write-Result -Title $T.ApkTitle -Lines $lines.ToArray() -Success $false -Summary '' -Box $window.Result -NoStatus
+            return
+        }
+        $lines.Add((New-ResultLine -Label $T.ApkLabelOptions -Value $options -Style Code))
+
+        $window.Busy = $true
+        Update-InstallWindow
+        $window.Form.UseWaitCursor = $true
+        $watch = [System.Diagnostics.Stopwatch]::StartNew()
+        $stopped = $null
+        $cleared = $false
+        $result = $null
+        try {
+            if ($clear) {
+                # Clearing the data: the old version is uninstalled first, which deletes everything the app stored.
+                # That cannot be undone, so it is confirmed first, naming the app and the version on the phone.
+                $package = $window.Badge.Package
+                $query = Invoke-Adb -Arguments @('-s', $device.Serial, 'shell', "dumpsys package $package | grep -E 'versionCode=|versionName='") -TimeoutSeconds 20
+                $current = ConvertFrom-InstalledPackage -Text $query.Output
+                if ($null -eq $current) {
+                    $lines.Add((New-ResultLine -Label $T.ApkLabelUninstall -Value $T.ApkNothingToUninstall))
+                    $window.Installed = $null
+                }
+                else {
+                    $name = if ($window.Badge.Label) { $window.Badge.Label } else { $package }
+                    $answer = [System.Windows.Forms.MessageBox]::Show($window.Form, ($T.ApkClearConfirm -f $name, $package, $current.VersionName, $current.VersionCode), $T.ApkClearTitle, [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning, [System.Windows.Forms.MessageBoxDefaultButton]::Button2)
+                    if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) {
+                        $stopped = 'Cancelled'
+                    }
+                    else {
+                        $window.Install.Text = $T.ApkUninstalling
+                        Set-Status -Text $T.ApkUninstalling
+                        $removal = Invoke-Adb -Arguments @('-s', $device.Serial, 'uninstall', $package) -TimeoutSeconds 120
+                        $removed = if ($removal.TimedOut) { [pscustomobject]@{ Result = 'Failed'; Code = 'TIMEOUT'; Message = ($T.TimedOut -f $removal.TimeoutSeconds) } } else { ConvertFrom-UninstallOutput -Text ($removal.Output + "`n" + $removal.Error) -ExitCode $removal.ExitCode }
+                        if ($removed.Result -eq 'Failed') {
+                            $known = $T.UninstallErrors.PSObject.Properties[$removed.Code]
+                            $explain = if ($null -ne $known) { $known.Value } else { @($T.UninstallErrorUnknown, $T.ApkErrorUnknownHint) }
+                            $lines.Add((New-ResultLine -Label $T.LabelResult -Value ($T.ApkUninstallFailed -f $explain[0]) -Style Error))
+                            $lines.Add((New-ResultLine -Label $T.ApkLabelHint -Value $explain[1]))
+                            $lines.Add((New-ResultLine -Label $T.ApkLabelCode -Value $removed.Code -Style Code))
+                            $lines.Add((New-ResultLine -Label $T.ApkLabelEnglish -Value $removed.Message -Style Code))
+                            $stopped = 'Failed'
+                        }
+                        elseif ($removed.Result -eq 'Removed') {
+                            $lines.Add((New-ResultLine -Label $T.ApkLabelUninstall -Value ($T.ApkUninstalled -f $current.VersionName, $current.VersionCode)))
+                            $window.Installed = $null
+                            $cleared = $true
+                        }
+                        else {
+                            $lines.Add((New-ResultLine -Label $T.ApkLabelUninstall -Value $T.ApkNothingToUninstall))
+                        }
+                    }
+                }
+            }
+            if ($null -eq $stopped) {
+                $window.Install.Text = $T.ApkInstalling
+                Set-Status -Text $T.ApkInstallingStatus
+                $result = Invoke-Adb -Arguments (@('-s', $device.Serial) + (Get-InstallArguments -Flags $flags -ApkPath $window.Apk)) -TimeoutSeconds 600
+            }
+        }
+        finally {
+            if ($null -ne $state.Install) {
+                $window.Busy = $false
+                $window.Form.UseWaitCursor = $false
+                $window.Install.Text = $T.ApkInstall
+            }
+        }
+        if ($null -eq $state.Install) { return }
+        if ($stopped -eq 'Cancelled') {
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $T.ApkClearCancelled -Style Muted))
+            Write-Result -Title $T.ApkTitle -Lines $lines.ToArray() -Success $false -Summary $T.ApkClearCancelled -Word $T.Cancelled
+            Write-Result -Title $T.ApkTitle -Lines $lines.ToArray() -Success $false -Summary '' -Word $T.Cancelled -Box $window.Result -NoStatus
+            Update-InstallWindow
+            return
+        }
+        if ($stopped -eq 'Failed') {
+            $summary = $lines[$lines.Count - 4].Value
+            Write-Result -Title $T.ApkTitle -Lines $lines.ToArray() -Success $false -Summary $summary
+            Write-Result -Title $T.ApkTitle -Lines $lines.ToArray() -Success $false -Summary $summary -Box $window.Result -NoStatus
+            Update-InstallWindow
+            return
+        }
+        $seconds = $watch.Elapsed.TotalSeconds.ToString('0.0')
+        $outcome = if ($result.TimedOut) { [pscustomobject]@{ Success = $false; Code = 'TIMEOUT'; Message = ($T.TimedOut -f $result.TimeoutSeconds) } } else { ConvertFrom-InstallOutput -Text ($result.Output + "`n" + $result.Error) -ExitCode $result.ExitCode }
+
+        if ($outcome.Success) {
+            $before = $window.Installed
+            $summary = if ($cleared) { $T.ApkFreshAfterClear } elseif ($null -ne $before) { $T.ApkUpdated -f $before.VersionName, $before.VersionCode } else { $T.ApkInstalledNew }
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $summary -Style Strong))
+            $lines.Add((New-ResultLine -Label $T.ApkLabelTime -Value ($T.ApkSeconds -f $seconds)))
+            $lines.Add((New-ResultLine -Label $T.ApkLabelEnglish -Value $outcome.Message -Style Muted))
+        }
+        else {
+            # A plain explanation and what to do, then Android's own error name and English message.
+            $known = $T.ApkErrors.PSObject.Properties[$outcome.Code]
+            $explain = if ($null -ne $known) { $known.Value } else { @(($T.ApkErrorUnknown -f $outcome.Code), $T.ApkErrorUnknownHint) }
+            $summary = $T.ApkFailed -f $explain[0]
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $summary -Style Error))
+            $lines.Add((New-ResultLine -Label $T.ApkLabelHint -Value $explain[1]))
+            $lines.Add((New-ResultLine -Label $T.ApkLabelCode -Value $outcome.Code -Style Code))
+            $lines.Add((New-ResultLine -Label $T.ApkLabelEnglish -Value $outcome.Message -Style Code))
+        }
+        Write-Result -Title $T.ApkTitle -Lines $lines.ToArray() -Success $outcome.Success -Summary $summary
+        Write-Result -Title $T.ApkTitle -Lines $lines.ToArray() -Success $outcome.Success -Summary $summary -Box $window.Result -NoStatus
+        # The phone now has a new version: read it again for the next install.
+        if ($outcome.Success -and $null -ne $window.Badge -and $window.Badge.Package) {
+            $installed = Invoke-Adb -Arguments @('-s', $device.Serial, 'shell', "dumpsys package $($window.Badge.Package) | grep -E 'versionCode=|versionName='") -TimeoutSeconds 20
+            if ($null -ne $state.Install) { $window.Installed = ConvertFrom-InstalledPackage -Text $installed.Output }
+        }
+        Update-InstallWindow
     }
 
     # ---------------- Task stacks ----------------
@@ -2131,6 +2730,477 @@ try {
         Write-Result -Title $T.TaskStacks -Lines $lines -Success $true -Summary $message
     }
 
+    # ---------------- Installer account ----------------
+
+    function New-DangerButton {
+        param([string]$Text)
+
+        # Red, for the one step that cannot be undone.
+        $button = New-SmallButton -Text $Text
+        $button.BackColor = $theme.Error
+        $button.ForeColor = [System.Drawing.Color]::White
+        $button.FlatAppearance.BorderSize = 0
+        $button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(185, 28, 28)
+        $button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(153, 27, 27)
+        $button.Add_EnabledChanged({
+            param($sender, $eventArgs)
+            $sender.BackColor = if ($sender.Enabled) { $theme.Error } else { [System.Drawing.Color]::FromArgb(252, 165, 165) }
+        })
+        return $button
+    }
+
+    function New-FieldLabel {
+        param([string]$Text)
+
+        $label = New-Object System.Windows.Forms.Label
+        $label.Text = $Text
+        $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+        return $label
+    }
+
+    function Invoke-InstallerRequest {
+        param(
+            [string]$Method,
+            [string]$Url,
+            # Form fields, sent as application/x-www-form-urlencoded.
+            $Form = $null,
+            [string]$Token = '',
+            [int]$TimeoutSeconds = 30
+        )
+
+        # Sent in the background while the window keeps responding, like adb. A reply with any HTTP status
+        # comes back as Status and Text; Error is set only when no reply arrived.
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $client = New-Object System.Net.Http.HttpClient
+        $client.Timeout = [TimeSpan]::FromSeconds($TimeoutSeconds)
+        $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::new($Method), $Url)
+        try {
+            $headers = Get-InstallerApiHeaders
+            foreach ($name in $headers.Keys) {
+                [void]$request.Headers.TryAddWithoutValidation($name, [string]$headers[$name])
+            }
+            if ($Token) {
+                [void]$request.Headers.TryAddWithoutValidation('satoken', $Token)
+            }
+            if ($null -ne $Form) {
+                $pairs = New-Object 'System.Collections.Generic.Dictionary[string,string]'
+                foreach ($name in $Form.Keys) { $pairs[$name] = [string]$Form[$name] }
+                $request.Content = [System.Net.Http.FormUrlEncodedContent]::new($pairs)
+            }
+            $send = $client.SendAsync($request)
+            while (-not $send.IsCompleted) {
+                if ($state.Closing) { $client.CancelPendingRequests() }
+                [System.Windows.Forms.Application]::DoEvents()
+                Start-Sleep -Milliseconds 20
+            }
+            if ($send.IsCanceled) {
+                return [pscustomobject]@{ Status = 0; Text = ''; Error = ($T.TimedOut -f $TimeoutSeconds) }
+            }
+            if ($send.IsFaulted) {
+                return [pscustomobject]@{ Status = 0; Text = ''; Error = $send.Exception.GetBaseException().Message }
+            }
+            $response = $send.Result
+            try {
+                $read = $response.Content.ReadAsStringAsync()
+                while (-not $read.IsCompleted) {
+                    [System.Windows.Forms.Application]::DoEvents()
+                    Start-Sleep -Milliseconds 20
+                }
+                $text = if ($read.IsFaulted -or $read.IsCanceled) { '' } else { [string]$read.Result }
+                return [pscustomobject]@{ Status = [int]$response.StatusCode; Text = $text; Error = '' }
+            }
+            finally {
+                $response.Dispose()
+            }
+        }
+        finally {
+            $request.Dispose()
+            $client.Dispose()
+        }
+    }
+
+    function New-AccountWindow {
+        $accountForm = New-Object System.Windows.Forms.Form
+        $accountForm.Text = $T.AccountTitle
+        $accountForm.Font = $fonts.Body
+        $accountForm.BackColor = $theme.Page
+        $accountForm.ForeColor = $theme.Text
+        $accountForm.ClientSize = New-Object System.Drawing.Size(580, 660)
+        $accountForm.MinimumSize = New-Object System.Drawing.Size(500, 580)
+        $accountForm.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+        $accountForm.Icon = $form.Icon
+
+        $envLabel = New-FieldLabel -Text $T.AccountEnv
+        $envBox = New-Object System.Windows.Forms.ComboBox
+        $envBox.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+        $envBox.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+        $envBox.BackColor = $theme.Card
+        $envBox.Font = $fonts.Body
+        foreach ($name in (Get-InstallerApiHosts).Keys) { [void]$envBox.Items.Add($name) }
+        $envBox.SelectedItem = $settings.InstallerEnv
+        if ($envBox.SelectedIndex -lt 0) { $envBox.SelectedIndex = 0 }
+        $hostLabel = New-Object System.Windows.Forms.Label
+        $hostLabel.Font = $fonts.ResultCode
+        $hostLabel.ForeColor = $theme.Muted
+        $hostLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+        $hostLabel.AutoEllipsis = $true
+
+        $loginCaption = New-Caption -Text $T.AccountLoginGroup
+        $emailLabel = New-FieldLabel -Text $T.AccountEmail
+        $emailField = New-InputField
+        $emailField.Box.Text = $settings.InstallerEmail
+        $passwordLabel = New-FieldLabel -Text $T.AccountPassword
+        $passwordField = New-InputField
+        $passwordField.Box.UseSystemPasswordChar = $true
+        $passwordField.Box.Text = Unprotect-DevToolsSecret -Text $settings.InstallerPassword
+        $loginButton = New-PrimaryButton -Text $T.AccountLogin
+        $remember = New-Object System.Windows.Forms.Label
+        $remember.Text = $T.AccountRemember
+        $remember.Font = $fonts.TileHint
+        $remember.ForeColor = $theme.Muted
+        $remember.AutoEllipsis = $true
+
+        $tokenCaption = New-Caption -Text $T.AccountTokenGroup
+        $tokenLabel = New-FieldLabel -Text $T.AccountToken
+        $tokenField = New-InputField
+        $readButton = New-SmallButton -Text $T.AccountReadPhone
+        $tips = New-Object System.Windows.Forms.ToolTip
+        $readTip = [string]$T.AccountReadTip
+        $tips.SetToolTip($readButton, $readTip)
+        $whoLabel = New-Object System.Windows.Forms.Label
+        $whoLabel.AutoEllipsis = $true
+        $whoLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+
+        $deleteButton = New-DangerButton -Text $T.AccountDelete
+        $deleteButton.Font = $fonts.TileTitle
+        $result = New-FramedRichText
+
+        $accountForm.Controls.AddRange([System.Windows.Forms.Control[]]@(
+            $envLabel, $envBox, $hostLabel,
+            $loginCaption, $emailLabel, $emailField.Frame, $passwordLabel, $passwordField.Frame, $loginButton, $remember,
+            $tokenCaption, $tokenLabel, $tokenField.Frame, $readButton, $whoLabel,
+            $deleteButton, $result.Frame
+        ))
+        $window = [pscustomobject]@{
+            Form = $accountForm; EnvLabel = $envLabel; Env = $envBox; HostLabel = $hostLabel
+            LoginCaption = $loginCaption; EmailLabel = $emailLabel; Email = $emailField; PasswordLabel = $passwordLabel; Password = $passwordField; Login = $loginButton; Remember = $remember
+            TokenCaption = $tokenCaption; TokenLabel = $tokenLabel; Token = $tokenField; Read = $readButton; Who = $whoLabel
+            Delete = $deleteButton; Result = $result.Box; Tips = $tips
+            # The account the token in the box belongs to (Token and Text), when it came from signing in or the phone.
+            Known = $null
+            Busy = $false
+        }
+
+        $envBox.Add_SelectedIndexChanged({
+            if ($null -eq $state.Account) { return }
+            $settings.InstallerEnv = [string]$state.Account.Env.SelectedItem
+            try { Save-DevToolsSettings -Path $settingsPath -Settings $settings } catch { }
+            Update-AccountWindow
+        })
+        $loginButton.Add_Click({ Invoke-AccountLogin })
+        $enterSignsIn = {
+            param($sender, $eventArgs)
+            if ($eventArgs.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+                $eventArgs.SuppressKeyPress = $true
+                Invoke-AccountLogin
+            }
+        }
+        $emailField.Box.Add_KeyDown($enterSignsIn)
+        $passwordField.Box.Add_KeyDown($enterSignsIn)
+        $readButton.Add_Click({ Read-AccountToken })
+        $deleteButton.Add_Click({ Invoke-AccountDelete })
+        $tokenField.Box.Add_TextChanged({ Update-AccountWindow })
+        $accountForm.Add_Resize({ Update-AccountLayout })
+        $accountForm.Add_FormClosed({
+            if ($null -ne $state.Account) { $state.Account.Tips.Dispose() }
+            $state.Account = $null
+        })
+        return $window
+    }
+
+    function Update-AccountLayout {
+        $window = $state.Account
+        if ($null -eq $window) { return }
+        $width = $window.Form.ClientSize.Width
+        $height = $window.Form.ClientSize.Height
+        $pad = 18
+        $inner = $width - 2 * $pad
+        $labelWidth = 56
+        $buttonWidth = 120
+        $fieldLeft = $pad + $labelWidth
+        $fieldWidth = $inner - $labelWidth
+        $shortWidth = $fieldWidth - $buttonWidth - 10
+
+        $window.EnvLabel.SetBounds($pad, 14, $labelWidth, 30)
+        $window.Env.SetBounds($fieldLeft, 17, 110, 26)
+        $window.HostLabel.SetBounds($fieldLeft + 122, 14, $fieldWidth - 122, 30)
+
+        $window.LoginCaption.SetBounds($pad, 60, $inner, 20)
+        $window.EmailLabel.SetBounds($pad, 86, $labelWidth, 32)
+        $window.Email.Frame.SetBounds($fieldLeft, 86, $fieldWidth, 32)
+        $window.PasswordLabel.SetBounds($pad, 126, $labelWidth, 32)
+        $window.Password.Frame.SetBounds($fieldLeft, 126, $shortWidth, 32)
+        $window.Login.SetBounds($width - $pad - $buttonWidth, 126, $buttonWidth, 32)
+        $window.Remember.SetBounds($fieldLeft, 162, $fieldWidth, 20)
+
+        $window.TokenCaption.SetBounds($pad, 196, $inner, 20)
+        $window.TokenLabel.SetBounds($pad, 222, $labelWidth, 32)
+        $window.Token.Frame.SetBounds($fieldLeft, 222, $shortWidth, 32)
+        $window.Read.SetBounds($width - $pad - $buttonWidth, 222, $buttonWidth, 32)
+        $window.Who.SetBounds($fieldLeft, 258, $fieldWidth, 24)
+
+        $window.Delete.SetBounds($pad, 294, $inner, 44)
+        $window.Result.Parent.Parent.SetBounds($pad, 354, $inner, [Math]::Max(80, $height - 354 - $pad))
+    }
+
+    function Update-AccountWindow {
+        # The server address, whose account the token belongs to, and which buttons can be used now.
+        $window = $state.Account
+        if ($null -eq $window) { return }
+        $window.HostLabel.Text = (Get-InstallerApiHosts)[[string]$window.Env.SelectedItem]
+        $token = $window.Token.Box.Text.Trim()
+        if (-not $token) {
+            $window.Who.ForeColor = $theme.Muted
+            $window.Who.Text = $T.AccountNone
+        }
+        elseif ($null -ne $window.Known -and $window.Known.Token -eq $token) {
+            $window.Who.ForeColor = $theme.Text
+            $window.Who.Text = $window.Known.Text
+        }
+        else {
+            $window.Who.ForeColor = $theme.Muted
+            $window.Who.Text = $T.AccountManual
+        }
+        $window.Env.Enabled = -not $window.Busy
+        $window.Login.Enabled = -not $window.Busy
+        $window.Read.Enabled = -not $window.Busy
+        $window.Delete.Enabled = -not $window.Busy -and [bool]$token
+    }
+
+    function Write-AccountResult {
+        param([object[]]$Lines, [bool]$Success, [string]$Summary, [string]$Word = '')
+
+        Write-Result -Title $T.AccountTitle -Lines $Lines -Success $Success -Summary $Summary -Word $Word
+        if ($null -ne $state.Account) {
+            Write-Result -Title $T.AccountTitle -Lines $Lines -Success $Success -Summary $Summary -Word $Word -Box $state.Account.Result -NoStatus
+        }
+    }
+
+    function Add-AccountServerLines {
+        param($Lines, $Answer)
+
+        # The server's own code and reply, for when the reason is not clear.
+        if ($Answer.Code) {
+            $Lines.Add((New-ResultLine -Label $T.ApkLabelCode -Value $Answer.Code -Style Code))
+        }
+        if ($Answer.Raw) {
+            $raw = if ($Answer.Raw.Length -gt 600) { $Answer.Raw.Substring(0, 600) + [char]0x2026 } else { $Answer.Raw }
+            $Lines.Add((New-ResultLine -Label $T.AccountLabelServer -Value $raw -Style Muted))
+        }
+    }
+
+    function Set-AccountBusy {
+        param([bool]$Busy, $Button = $null, [string]$Text = '')
+
+        $window = $state.Account
+        if ($null -eq $window) { return }
+        $window.Busy = $Busy
+        $window.Form.UseWaitCursor = $Busy
+        if ($null -ne $Button) { $Button.Text = $Text }
+        if ($Busy) { Set-Status -Text $Text }
+        Update-AccountWindow
+    }
+
+    function Invoke-AccountLogin {
+        $window = $state.Account
+        if ($null -eq $window -or $window.Busy) { return }
+        $email = $window.Email.Box.Text.Trim()
+        $password = $window.Password.Box.Text
+        $envName = [string]$window.Env.SelectedItem
+        $server = (Get-InstallerApiHosts)[$envName]
+        $lines = New-Object System.Collections.Generic.List[object]
+        $lines.Add((New-ResultLine -Label $T.AccountLabelEnv -Value ($envName + '  ' + $server) -Style Code))
+        if (-not $email -or -not $password) {
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $T.AccountNeedLogin -Style Error))
+            Write-AccountResult -Lines $lines.ToArray() -Success $false -Summary $T.AccountNeedLogin
+            return
+        }
+        $lines.Add((New-ResultLine -Label $T.AccountLabelAccount -Value $email -Style Code))
+
+        Set-AccountBusy -Busy $true -Button $window.Login -Text $T.AccountLoggingIn
+        $response = $null
+        try {
+            # The email and password are encrypted with the server's public key, as the app does.
+            $body = [ordered]@{
+                email = ConvertTo-InstallerCipherText -Text $email
+                password = ConvertTo-InstallerCipherText -Text $password
+            }
+            $response = Invoke-InstallerRequest -Method 'POST' -Url ($server + 'app/installer/user/login') -Form $body
+        }
+        catch {
+            $response = [pscustomobject]@{ Status = 0; Text = ''; Error = $_.Exception.Message }
+        }
+        finally {
+            Set-AccountBusy -Busy $false -Button $window.Login -Text $T.AccountLogin
+        }
+        if ($null -eq $state.Account) { return }
+
+        if ($response.Error) {
+            $summary = $T.AccountRequestFailed -f $response.Error
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $summary -Style Error))
+            Write-AccountResult -Lines $lines.ToArray() -Success $false -Summary $summary
+            return
+        }
+        $answer = ConvertFrom-InstallerResponse -Text $response.Text -StatusCode $response.Status
+        if ($answer.Ok -and $answer.Token) {
+            $window.Known = [pscustomobject]@{ Token = $answer.Token; Text = ($T.AccountFromLogin -f $envName, $answer.UserId, $email) }
+            $window.Token.Box.Text = $answer.Token
+            # Remembered for next time; the password only in encrypted form.
+            $settings.InstallerEmail = $email
+            $settings.InstallerPassword = Protect-DevToolsSecret -Text $password
+            try { Save-DevToolsSettings -Path $settingsPath -Settings $settings } catch { }
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $T.AccountLoginOk -Style Strong))
+            $lines.Add((New-ResultLine -Label 'userId' -Value $answer.UserId -Style Code))
+            $lines.Add((New-ResultLine -Label $T.AccountLabelToken -Value (Format-TokenPreview -Token $answer.Token) -Style Code))
+            Write-AccountResult -Lines $lines.ToArray() -Success $true -Summary $T.AccountLoginOk
+        }
+        else {
+            $reason = if ($answer.Message) { $answer.Message } else { $T.AccountNoMessage }
+            $summary = $T.AccountLoginFailed -f $reason
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $summary -Style Error))
+            Add-AccountServerLines -Lines $lines -Answer $answer
+            Write-AccountResult -Lines $lines.ToArray() -Success $false -Summary $summary
+        }
+        Update-AccountWindow
+    }
+
+    function Read-AccountToken {
+        $window = $state.Account
+        if ($null -eq $window -or $window.Busy) { return }
+        $device = Get-UsableDevice -Title $T.AccountTitle
+        if ($null -eq $device) {
+            Write-Result -Title $T.AccountTitle -Lines @($statusLabel.Text.TrimStart([char]0x25CF, ' ')) -Success $false -Summary '' -Box $window.Result -NoStatus
+            return
+        }
+        $lines = New-Object System.Collections.Generic.List[object]
+        $lines.Add((New-ResultLine -Label $T.LabelPhone -Value (Get-DeviceLabel -Device $device)))
+
+        Set-AccountBusy -Busy $true -Button $window.Read -Text $T.AccountReading
+        try {
+            # Only the app's HTTP log lines are sent over; the whole log can be many megabytes.
+            $log = Invoke-Adb -Arguments @('-s', $device.Serial, 'shell', 'logcat -d | grep -F HttpLog-Response-') -TimeoutSeconds 60
+        }
+        finally {
+            Set-AccountBusy -Busy $false -Button $window.Read -Text $T.AccountReadPhone
+        }
+        if ($null -eq $state.Account) { return }
+
+        if (Test-AdbFailed -Result $log) {
+            $message = Get-AdbFailureText -Result $log
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $message -Style Error))
+            Write-AccountResult -Lines $lines.ToArray() -Success $false -Summary $message
+            return
+        }
+        $found = ConvertFrom-InstallerLogcat -Text $log.Output
+        if ($null -eq $found) {
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $T.AccountNoLog -Style Error))
+            Write-AccountResult -Lines $lines.ToArray() -Success $false -Summary $T.AccountNoLog
+            return
+        }
+        $userId = if ($found.UserId) { $found.UserId } else { $T.AccountUnknown }
+        $email = if ($found.Email) { $found.Email } else { $T.AccountUnknown }
+        $window.Known = [pscustomobject]@{ Token = $found.Token; Text = ($T.AccountFromPhone -f $userId, $email) }
+        $window.Token.Box.Text = $found.Token
+        $message = $T.AccountRead -f $userId, $email
+        $lines.Add((New-ResultLine -Label $T.LabelResult -Value $message -Style Strong))
+        $lines.Add((New-ResultLine -Label $T.AccountLabelToken -Value (Format-TokenPreview -Token $found.Token) -Style Code))
+        Write-AccountResult -Lines $lines.ToArray() -Success $true -Summary $message
+        Update-AccountWindow
+    }
+
+    function Invoke-AccountDelete {
+        $window = $state.Account
+        if ($null -eq $window -or $window.Busy) { return }
+        $token = $window.Token.Box.Text.Trim()
+        $envName = [string]$window.Env.SelectedItem
+        $server = (Get-InstallerApiHosts)[$envName]
+        $lines = New-Object System.Collections.Generic.List[object]
+        $lines.Add((New-ResultLine -Label $T.AccountLabelEnv -Value ($envName + '  ' + $server) -Style Code))
+        if (-not $token) {
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $T.AccountNeedToken -Style Error))
+            Write-AccountResult -Lines $lines.ToArray() -Success $false -Summary $T.AccountNeedToken
+            return
+        }
+        $who = $window.Who.Text
+        $lines.Add((New-ResultLine -Label $T.AccountLabelAccount -Value $who))
+        $lines.Add((New-ResultLine -Label $T.AccountLabelToken -Value (Format-TokenPreview -Token $token) -Style Code))
+
+        # Deregistering cannot be undone, so it is confirmed first, naming the server and the account.
+        $answer = [System.Windows.Forms.MessageBox]::Show($window.Form, ($T.AccountConfirm -f $envName, $who), $T.AccountConfirmTitle, [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning, [System.Windows.Forms.MessageBoxDefaultButton]::Button2)
+        if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) {
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $T.AccountCancelled -Style Muted))
+            Write-AccountResult -Lines $lines.ToArray() -Success $false -Summary $T.AccountCancelled -Word $T.Cancelled
+            return
+        }
+
+        Set-AccountBusy -Busy $true -Button $window.Delete -Text $T.AccountDeleting
+        $response = $null
+        try {
+            $response = Invoke-InstallerRequest -Method 'DELETE' -Url ($server + 'app/installer/user/delete') -Token $token
+        }
+        catch {
+            $response = [pscustomobject]@{ Status = 0; Text = ''; Error = $_.Exception.Message }
+        }
+        finally {
+            Set-AccountBusy -Busy $false -Button $window.Delete -Text $T.AccountDelete
+        }
+        if ($null -eq $state.Account) { return }
+
+        if ($response.Error) {
+            $summary = $T.AccountRequestFailed -f $response.Error
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $summary -Style Error))
+            Write-AccountResult -Lines $lines.ToArray() -Success $false -Summary $summary
+            return
+        }
+        $reply = ConvertFrom-InstallerResponse -Text $response.Text -StatusCode $response.Status
+        if ($reply.Ok) {
+            $window.Known = $null
+            $window.Token.Box.Text = ''
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $T.AccountDeleted -Style Strong))
+            $lines.Add((New-ResultLine -Label $T.ApkLabelHint -Value $T.AccountDeletedHint))
+            Write-AccountResult -Lines $lines.ToArray() -Success $true -Summary $T.AccountDeleted
+        }
+        else {
+            $reason = if ($reply.Message) { $reply.Message } else { $T.AccountNoMessage }
+            $summary = $T.AccountDeleteFailed -f $reason
+            $lines.Add((New-ResultLine -Label $T.LabelResult -Value $summary -Style Error))
+            Add-AccountServerLines -Lines $lines -Answer $reply
+            Write-AccountResult -Lines $lines.ToArray() -Success $false -Summary $summary
+        }
+        Update-AccountWindow
+    }
+
+    function Open-AccountWindow {
+        if ($null -eq $state.Account) {
+            $state.Account = New-AccountWindow
+        }
+        $window = $state.Account
+        if (-not $window.Form.Visible) {
+            # Centred over the tool window, kept on its screen.
+            $area = [System.Windows.Forms.Screen]::FromControl($form).WorkingArea
+            $left = [Math]::Max($area.Left, [Math]::Min($form.Left + [int](($form.Width - $window.Form.Width) / 2), $area.Right - $window.Form.Width))
+            $top = [Math]::Max($area.Top, [Math]::Min($form.Top + [int](($form.Height - $window.Form.Height) / 2), $area.Bottom - $window.Form.Height))
+            $window.Form.Location = New-Object System.Drawing.Point($left, $top)
+            $window.Form.Show()
+            Update-AccountLayout
+            $window.Form.ActiveControl = $window.Login
+        }
+        if ($window.Form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized) {
+            $window.Form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+        }
+        $window.Form.Activate()
+        Update-AccountWindow
+    }
     # ---------------- Events ----------------
 
     $refreshButton.Add_Click({
@@ -2167,6 +3237,11 @@ try {
             $dialog.Dispose()
         }
     })
+    $packageDefaultButton.Add_Click({
+        $packageField.Box.Text = (Get-DevToolsDefaultSettings).ApLogPackage
+        [void](Save-PathInputs -Title $T.PathGroup -Quiet)
+    })
+    $packageField.Box.Add_Leave({ [void](Save-PathInputs -Title $T.PathGroup -Quiet) })
     $remoteField.Box.Add_Leave({ [void](Save-PathInputs -Title $T.PathGroup -Quiet) })
     $exportField.Box.Add_Leave({ [void](Save-PathInputs -Title $T.PathGroup -Quiet) })
     $clearButton.Add_Click({
@@ -2198,7 +3273,16 @@ try {
         if ($null -ne $state.Tasks) {
             $state.Tasks.Form.Close()
         }
+        if ($null -ne $state.Install) {
+            $state.Install.Form.Close()
+        }
+        if ($null -ne $state.Account) {
+            $state.Account.Form.Close()
+        }
     })
+
+    # An APK dropped anywhere on the tool window opens the install window with it.
+    Enable-ApkDrop -Control $form
 
     Update-MainLayout
     $anchorParts = @()

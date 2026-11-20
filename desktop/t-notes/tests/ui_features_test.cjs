@@ -247,8 +247,52 @@ function browserPreferences(){
   assert(fs.readFileSync(openLog,'utf8').split('\n').filter(Boolean).length===2,'A refused address was opened');
   await c.context().close();
 
+  // Staying logged in: a remembered login opens the vault again without the password, also when the backend fails
+  // for a moment at startup, and the window comes back where the user left off. Only an explicit logout asks for
+  // the password again. The record's buttons sit at the bottom with labels, and reading text is larger.
+  const portD=await freePort(),dataD=path.join(work,'d');
+  await startBackend(portD,dataD);
+  const d=await open(portD);
+  await d.locator('#auth-mode').click();
+  await d.locator('#username').fill('qa-place');await d.locator('#master').fill(master);await d.locator('#master-confirm').fill(master);
+  assert(await d.locator('#remember').isChecked(),'Remembering the login is not on by default');
+  await d.locator('#auth-submit').click();await d.locator('#workspace').waitFor({state:'visible',timeout:20000});
+  await addRecord(d,'First',async()=>{await d.locator('#body').fill('第一条记录');});
+  for(let index=1;index<=14;index++)await addRecord(d,'Place '+index,async()=>{await d.locator('#body').fill('placeholder '+index);});
+  await d.locator('[data-quick-filter="all"]').click();
+  await row(d,'First').locator('.record-open').click();await d.locator('#read-content').waitFor({state:'visible'});
+  const panel=await d.evaluate(()=>{
+   const bar=document.querySelector('.editor-actions'),footer=document.querySelector('footer').getBoundingClientRect(),box=bar.getBoundingClientRect();
+   return {inBar:['edit','pin','copy','delete'].every(id=>bar.contains(document.getElementById(id))),labels:[...bar.querySelectorAll('button:not([hidden]) span')].map(s=>s.textContent).join(','),
+    atBottom:footer.top-box.bottom>=0&&footer.top-box.bottom<=24,tall:box.height>=44,body:getComputedStyle(document.getElementById('read-body')).fontSize,title:getComputedStyle(document.getElementById('read-title')).fontSize};
+  });
+  assert(panel.inBar&&panel.labels==='编辑,置顶,复制,删除'&&panel.atBottom&&panel.tall,'Record buttons are not in the bottom bar: '+JSON.stringify(panel));
+  assert(panel.body==='16px'&&panel.title==='22px','Reading text is not larger: '+JSON.stringify(panel));
+  // Reopening with a record open: no password, same record open.
+  await d.reload();await d.locator('#workspace').waitFor({state:'visible',timeout:20000});
+  assert(await d.locator('#auth-screen').isHidden(),'A remembered login asked for the password');
+  assert(!await d.locator('body').evaluate(e=>e.classList.contains('quick-list'))&&await d.locator('#read-title').textContent()==='First','The open record was not reopened');
+  // Reopening from the list: same category, list scrolled where it was.
+  await d.keyboard.press('Escape');await d.locator('[data-quick-filter="note"]').click();
+  await d.evaluate(()=>{const list=document.getElementById('recent-list');list.scrollTop=list.scrollHeight;});
+  const scrolled=await d.evaluate(()=>document.getElementById('recent-list').scrollTop);await d.waitForTimeout(600);
+  await d.reload();await d.locator('#workspace').waitFor({state:'visible',timeout:20000});await d.waitForTimeout(300);
+  const place=await d.evaluate(()=>({list:document.body.classList.contains('quick-list'),filter:document.querySelector('[data-quick-filter].active')?.dataset.quickFilter,scroll:document.getElementById('recent-list').scrollTop}));
+  assert(scrolled>0&&place.list&&place.filter==='note'&&Math.abs(place.scroll-scrolled)<=2,'The list position was not restored: '+JSON.stringify({scrolled,...place}));
+  // The backend failing for a moment at startup is retried instead of showing the login screen.
+  let sessionCalls=0;
+  await d.route('**/api/session',route=>{sessionCalls++;if(sessionCalls<=2)return route.fulfill({status:503,contentType:'application/json',body:'{"error":"busy"}'});return route.continue();});
+  await d.reload();await d.locator('#workspace').waitFor({state:'visible',timeout:20000});
+  assert(sessionCalls>=3&&await d.locator('#auth-screen').isHidden(),'A temporary backend failure fell back to the login screen ('+sessionCalls+' calls)');
+  await d.unroute('**/api/session');
+  // After an explicit logout the password is needed again.
+  await d.locator('#lock').click();await d.locator('#auth-screen').waitFor({state:'visible'});
+  await d.reload();await d.waitForFunction(()=>!document.querySelector('#auth-submit').disabled);
+  assert(await d.locator('#auth-screen').isVisible()&&await d.locator('#workspace').isHidden(),'The vault opened again after logging out');
+  await d.context().close();
+
   assert(errors.length===0,errors.join('\n'));
-  console.log(JSON.stringify({web_links:'passed',browser_password_saving_off:'passed',fixed_layout:'passed',messages:'passed',shortcuts:'passed',search_tag_site:'passed',trash_restore:'passed',prompt_variables:'passed',backup_folder_retention:'passed',automatic_backup:'passed',layout_toggle_placement:'passed',import_merge:'passed',restore_empty_computer:'passed'}));
+  console.log(JSON.stringify({stay_logged_in_and_place:'passed',bottom_action_bar:'passed',web_links:'passed',browser_password_saving_off:'passed',fixed_layout:'passed',messages:'passed',shortcuts:'passed',search_tag_site:'passed',trash_restore:'passed',prompt_variables:'passed',backup_folder_retention:'passed',automatic_backup:'passed',layout_toggle_placement:'passed',import_merge:'passed',restore_empty_computer:'passed'}));
  }finally{
   await browser.close();
  }

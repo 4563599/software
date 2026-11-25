@@ -10,7 +10,7 @@ $fixture=@([pscustomobject]@{ProcessId=10;ParentProcessId=1;Name='studio64.exe';
 if((Select-AndroidStudioRelatedProcessIds -Processes $fixture)-join ',' -ne '10,11'){throw 'Android process selection regressed.'}
 if((Get-AndroidStudioTaskKillArguments -ProcessIds @(10,11,10)) -ne '/F /T /PID 10 /PID 11'){throw 'Android elevated arguments regressed.'}
 Add-Type -AssemblyName System.Drawing
-$hits=@(@(8,8,0),@(59,59,0),@(60,30,-1),@(68,30,1),@(128,30,2),@(179,30,2),@(180,30,-1),@(30,7,-1),@(30,60,-1)) | ForEach-Object {(Get-FloatingButtonIndex -X $_[0] -Y $_[1] -Count 3 -ButtonSize 52 -Gap 8 -Margin 8) -eq $_[2]}
+$hits=@(@(8,8,0),@(59,59,0),@(60,30,0),@(63,30,0),@(64,30,1),@(68,30,1),@(128,30,2),@(179,30,2),@(180,30,2),@(187,67,2),@(30,7,0),@(30,60,0),@(0,0,0),@(188,30,-1),@(30,68,-1),@(-1,30,-1)) | ForEach-Object {(Get-FloatingButtonIndex -X $_[0] -Y $_[1] -Count 3 -ButtonSize 52 -Gap 8 -Margin 8) -eq $_[2]}
 if($hits -contains $false){throw 'Toolbar button hit-testing regressed.'}
 $screens=@([pscustomobject]@{Left=0;Top=0;Right=1920;Bottom=1040},[pscustomobject]@{Left=1920;Top=0;Right=3456;Bottom=824})
 $barSize=[pscustomobject]@{Width=188;Height=68};$fallback=[System.Drawing.Point]::new(1720,960)
@@ -37,6 +37,7 @@ if((@(ConvertFrom-TNotesAnchor -Anchor 'p-1500,900,52,52') -join ',') -ne '-1500
 & (Join-Path $PSScriptRoot 'ai-process-cleanup.tests.ps1')
 & (Join-Path $PSScriptRoot 'configure-notes.tests.ps1')
 & (Join-Path $PSScriptRoot 'notes-window-state.tests.ps1')
+& (Join-Path $PSScriptRoot 'close-guard.tests.ps1')
 & (Join-Path $PSScriptRoot 'toolbar-startup.tests.ps1')
 & (Join-Path $PSScriptRoot 'toolbar-reveal.tests.ps1')
 & (Join-Path $PSScriptRoot 'dev-tools.tests.ps1')

@@ -2,6 +2,8 @@
 # Dot-source this file; it defines functions only and starts nothing.
 
 $script:TNotesPendingLaunch = $null
+$script:TNotesPendingRunspace = $null
+$script:TNotesWindowCache = $null
 
 function Get-TNotesBrowserProfile {
     # The browser profile lives beside the data it shows, so a separate data directory
@@ -52,6 +54,18 @@ function Get-TNotesWindowHandle {
         [string]$ProfileDirectory = (Get-TNotesBrowserProfile)
     )
 
+    # The window found last time is tried first: still a window, still of the same browser process, for the same
+    # profile. Finding it again needs a process search that takes a few hundred milliseconds.
+    $cache = $script:TNotesWindowCache
+    if ($null -ne $cache -and $cache.Profile -eq $ProfileDirectory) {
+        $api = Get-TNotesWindowApi
+        $owner = 0
+        if ($api::IsWindow($cache.Handle) -and $api::GetWindowThreadProcessId($cache.Handle, [ref]$owner) -ne 0 -and $owner -eq $cache.ProcessId) {
+            return $cache.Handle
+        }
+        $script:TNotesWindowCache = $null
+    }
+
     foreach ($processId in @(Get-TNotesBrowserProcessIds -ProfileDirectory $ProfileDirectory)) {
         $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
         if ($null -eq $process) {
@@ -60,6 +74,7 @@ function Get-TNotesWindowHandle {
 
         try {
             if ($process.MainWindowHandle -ne [IntPtr]::Zero) {
+                $script:TNotesWindowCache = [pscustomobject]@{ Handle = $process.MainWindowHandle; ProcessId = $processId; Profile = $ProfileDirectory }
                 return $process.MainWindowHandle
             }
         }
@@ -94,6 +109,10 @@ function Get-TNotesWindowApi {
         @{ Name = 'IsIconic'; Returns = [bool]; Parameters = [Type[]]@([IntPtr]) },
         @{ Name = 'IsZoomed'; Returns = [bool]; Parameters = [Type[]]@([IntPtr]) },
         @{ Name = 'GetForegroundWindow'; Returns = [IntPtr]; Parameters = [Type[]]@() },
+        @{ Name = 'IsWindow'; Returns = [bool]; Parameters = [Type[]]@([IntPtr]) },
+        @{ Name = 'IsWindowVisible'; Returns = [bool]; Parameters = [Type[]]@([IntPtr]) },
+        @{ Name = 'GetWindowThreadProcessId'; Returns = [int]; Parameters = [Type[]]@([IntPtr], [int].MakeByRefType()) },
+        @{ Name = 'FindWindow'; Returns = [IntPtr]; Parameters = [Type[]]@([string], [string]) },
         # RECT is four 32-bit integers; an int array of four is filled in place.
         @{ Name = 'GetWindowRect'; Returns = [bool]; Parameters = [Type[]]@([IntPtr], [int[]]) },
         @{ Name = 'GetWindowPlacement'; Returns = [bool]; Parameters = [Type[]]@([IntPtr], [IntPtr]) },
@@ -312,7 +331,11 @@ function Open-TNotes {
         [switch]$Toggle,
 
         # Screen rectangle of the button that was clicked; the window is placed directly above it.
-        [string]$Anchor = ''
+        [string]$Anchor = '',
+
+        # Start the window from a background runspace of this process (the long-running toolbar) instead of a new
+        # PowerShell process.
+        [switch]$InProcess
     )
 
     # Entry point for the T button. Returns 'Focused', 'Minimized', 'Started' or 'Starting';
@@ -326,10 +349,13 @@ function Open-TNotes {
         $script:TNotesPendingLaunch.Dispose()
         $script:TNotesPendingLaunch = $null
     }
+    if (Test-TNotesLaunchPending) {
+        return 'Starting'
+    }
 
     $launcher = Join-Path $PSScriptRoot 'Launch.ps1'
-    & $launcher -BackendOnly | Out-Null
-
+    # An open window is raised (or tucked away) first, so it shows at once; the check that the local backend runs
+    # (and its restart when it stopped) follows.
     $window = Get-TNotesWindowHandle
     if ($window -ne [IntPtr]::Zero) {
         $api = Get-TNotesWindowApi
@@ -340,15 +366,45 @@ function Open-TNotes {
         }
         Show-TNotesWindow -Handle $window
         Move-TNotesWindowToAnchor -Handle $window -Anchor $Anchor
+        & $launcher -BackendOnly | Out-Null
         return 'Focused'
     }
 
-    $arguments = '-NoProfile -WindowStyle Hidden -File "' + $launcher + '"'
+    # No window yet: the launcher checks the backend itself (and says so when it cannot start), then opens the window.
     $bounds = @(ConvertFrom-TNotesAnchor -Anchor $Anchor)
-    if ($bounds.Count -eq 4) {
-        $arguments += ' -Anchor "p' + ($bounds -join ',') + '"'
+    $anchorArgument = if ($bounds.Count -eq 4) { 'p' + ($bounds -join ',') } else { '' }
+    if ($InProcess) {
+        # The toolbar keeps running, so it runs the launcher in a background runspace of its own process; starting a
+        # new PowerShell process for it would add about a second before the window appears.
+        $runner = [powershell]::Create()
+        [void]$runner.AddCommand($launcher).AddParameter('Anchor', $anchorArgument)
+        $script:TNotesPendingRunspace = [pscustomobject]@{ Runner = $runner; Result = $runner.BeginInvoke() }
+        return 'Started'
+    }
+    $arguments = '-NoProfile -WindowStyle Hidden -File "' + $launcher + '"'
+    if ($anchorArgument) {
+        $arguments += ' -Anchor "' + $anchorArgument + '"'
     }
     $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $script:TNotesPendingLaunch = Start-Process -FilePath $powershell -ArgumentList $arguments -WindowStyle Hidden -PassThru
     return 'Started'
+}
+
+function Test-TNotesLaunchPending {
+    # True while a launcher started by Open-TNotes is still bringing the window up. A finished background launcher
+    # is cleaned up here.
+    if ($null -ne $script:TNotesPendingLaunch) {
+        return -not $script:TNotesPendingLaunch.HasExited
+    }
+    $pending = $script:TNotesPendingRunspace
+    if ($null -eq $pending) {
+        return $false
+    }
+    if (-not $pending.Result.IsCompleted) {
+        return $true
+    }
+    try { [void]$pending.Runner.EndInvoke($pending.Result) } catch {}
+    $pending.Runner.Dispose()
+    $script:TNotesPendingRunspace = $null
+    return $false
 }

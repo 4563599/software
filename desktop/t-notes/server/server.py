@@ -20,6 +20,10 @@ from urllib.parse import parse_qs, urlsplit
 
 MAX_BODY = 262144
 MAX_VAULT_BYTES = 16 * 1024 * 1024
+# Blobs: larger encrypted items (compressed AI conversation archives) kept apart from the notes records.
+MAX_BLOB_BYTES = 32 * 1024 * 1024
+MAX_BLOBS = 4000
+LIMITS = {"records": (MAX_VAULT_BYTES, 2000), "blobs": (MAX_BLOB_BYTES, MAX_BLOBS)}
 NAME = re.compile(r"^[a-zA-Z0-9_-]{3,40}$")
 
 
@@ -60,6 +64,11 @@ class Store:
                     salt TEXT NOT NULL, check_blob TEXT NOT NULL, auth_hash TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS records (
+                    owner TEXT NOT NULL REFERENCES users(id), id TEXT NOT NULL,
+                    rev INTEGER NOT NULL, envelope TEXT NOT NULL, updated INTEGER NOT NULL,
+                    PRIMARY KEY(owner,id)
+                );
+                CREATE TABLE IF NOT EXISTS blobs (
                     owner TEXT NOT NULL REFERENCES users(id), id TEXT NOT NULL,
                     rev INTEGER NOT NULL, envelope TEXT NOT NULL, updated INTEGER NOT NULL,
                     PRIMARY KEY(owner,id)
@@ -127,24 +136,41 @@ class Store:
         return [{"id": row["id"], "rev": row["rev"], "envelope": json.loads(row["envelope"]),
                  "updated": row["updated"]} for row in rows]
 
-    def put(self, owner, data):
+    # The notes client lists every record on each sync, so large items go to blobs instead: their listing
+    # carries sizes only, and each blob is fetched by id when it has changed.
+    def list_blobs(self, owner):
+        with self.connect() as db:
+            rows = db.execute("SELECT id,rev,LENGTH(envelope) AS size,updated FROM blobs WHERE owner=? ORDER BY updated,id", (owner,)).fetchall()
+        return {"items": [{"id": row["id"], "rev": row["rev"], "size": row["size"], "updated": row["updated"]} for row in rows],
+                "used": sum(row["size"] for row in rows), "limit": MAX_BLOB_BYTES}
+
+    def get_blob(self, owner, value):
+        blob_id = identifier(value)
+        with self.connect() as db:
+            row = db.execute("SELECT id,rev,envelope,updated FROM blobs WHERE owner=? AND id=?", (owner, blob_id)).fetchone()
+        if row is None:
+            raise ApiError(404, "Blob not found")
+        return {"id": row["id"], "rev": row["rev"], "envelope": json.loads(row["envelope"]), "updated": row["updated"]}
+
+    def put(self, owner, data, table="records"):
+        max_bytes, max_items = LIMITS[table]
         record_id, encoded = identifier(data.get("id")), envelope(data.get("envelope"))
         base = data.get("base")
         if type(base) is not int or base < 0:
             raise ApiError(400, "Invalid revision")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT * FROM records WHERE owner=? AND id=?", (owner, record_id)).fetchone()
+            row = db.execute(f"SELECT * FROM {table} WHERE owner=? AND id=?", (owner, record_id)).fetchone()
             # Retrying a write after a lost response is idempotent.
             if row is not None and row["envelope"] == encoded:
                 return {"id": record_id, "rev": row["rev"]}
             if (row is None and base != 0) or (row is not None and row["rev"] != base):
                 raise ApiError(409, "Revision conflict")
-            used = db.execute("SELECT COALESCE(SUM(LENGTH(envelope)),0),COUNT(*) FROM records WHERE owner=?", (owner,)).fetchone()
-            if used[0] - (len(row["envelope"]) if row else 0) + len(encoded) > MAX_VAULT_BYTES or (row is None and used[1] >= 2000):
+            used = db.execute(f"SELECT COALESCE(SUM(LENGTH(envelope)),0),COUNT(*) FROM {table} WHERE owner=?", (owner,)).fetchone()
+            if used[0] - (len(row["envelope"]) if row else 0) + len(encoded) > max_bytes or (row is None and used[1] >= max_items):
                 raise ApiError(413, "Vault quota exceeded")
             rev = (row["rev"] if row else 0) + 1
-            db.execute("INSERT INTO records VALUES(?,?,?,?,?) ON CONFLICT(owner,id) DO UPDATE SET rev=excluded.rev,envelope=excluded.envelope,updated=excluded.updated",
+            db.execute(f"INSERT INTO {table} VALUES(?,?,?,?,?) ON CONFLICT(owner,id) DO UPDATE SET rev=excluded.rev,envelope=excluded.envelope,updated=excluded.updated",
                        (owner, record_id, rev, encoded, int(time.time() * 1000)))
         return {"id": record_id, "rev": rev}
 
@@ -233,6 +259,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.server.store.profile(parse_qs(route.query).get("name", [""])[0])
             if route.path == "/v1/records":
                 return {"items": self.server.store.list_records(self.owner())}
+            if route.path == "/v1/blobs":
+                wanted = parse_qs(route.query).get("id")
+                if wanted:
+                    return self.server.store.get_blob(self.owner(), wanted[0])
+                return self.server.store.list_blobs(self.owner())
             raise ApiError(404, "Not found")
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -256,6 +287,8 @@ class Handler(BaseHTTPRequestHandler):
             return {"token": session}
         if self.command == "PUT" and route.path == "/v1/records":
             return self.server.store.put(self.owner(), data)
+        if self.command == "PUT" and route.path == "/v1/blobs":
+            return self.server.store.put(self.owner(), data, "blobs")
         raise ApiError(404, "Not found")
 
     def dispatch(self):

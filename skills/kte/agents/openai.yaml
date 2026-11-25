@@ -1,0 +1,4 @@
+interface:
+  display_name: "kte"
+  short_description: "逐句解释一个或几个文件里未提交的修改：高亮不换行的代码加行尾注释、Kotlin 语法（文档页码）、和 Java 对比的小例子、为什么这样改"
+  default_prompt: "使用 $kte 逐句解释这个文件里还没提交的修改；我没说是哪个文件时，先列出有修改的文件问我要看哪几个。"

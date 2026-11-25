@@ -1,0 +1,620 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Globalization;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace Codex.AiRecords
+{
+    // The answers are Markdown; this turns the parts they use (headings, paragraphs, lists, tables, code, quotes,
+    // bold, inline code, links) into HTML with one look, so every answer reads the same.
+    public static class MarkdownHtml
+    {
+        private static readonly Regex Heading = new Regex("^(#{1,6})\\s+(.*)$");
+        private static readonly Regex Item = new Regex("^(\\s*)([-*+]|\\d+[.)])\\s+(.*)$");
+        private static readonly Regex Rule = new Regex("^\\s*([-*_])(\\s*\\1){2,}\\s*$");
+        private static readonly Regex TableLine = new Regex("^\\s*\\|");
+        private static readonly Regex TableRule = new Regex("^\\s*\\|?\\s*:?-{2,}:?\\s*(\\|\\s*:?-{2,}:?\\s*)*\\|?\\s*$");
+
+        public static string Render(string markdown)
+        {
+            var lines = (markdown ?? "").Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            var html = new StringBuilder();
+            var paragraph = new List<string>();
+            var lists = new Stack<Tuple<int, string>>();
+            Action flushParagraph = () =>
+            {
+                if (paragraph.Count == 0) return;
+                html.Append("<p>").Append(String.Join("<br>", paragraph.Select(Inline))).Append("</p>");
+                paragraph.Clear();
+            };
+            Action closeLists = () =>
+            {
+                while (lists.Count > 0) html.Append("</li></").Append(lists.Pop().Item2).Append(">");
+            };
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                string trimmed = line.Trim();
+                if (trimmed.StartsWith("```", StringComparison.Ordinal))
+                {
+                    flushParagraph();
+                    var code = new List<string>();
+                    for (i++; i < lines.Length && !lines[i].Trim().StartsWith("```", StringComparison.Ordinal); i++) code.Add(lines[i]);
+                    int cut = code.Where(item => item.Trim().Length > 0).Select(item => item.Length - item.TrimStart().Length).DefaultIfEmpty(0).Min();
+                    html.Append("<pre><code>").Append(Escape(String.Join("\n", code.Select(item => item.Length >= cut ? item.Substring(cut) : item.TrimStart())))).Append("</code></pre>");
+                    continue;
+                }
+                if (trimmed.Length == 0) { flushParagraph(); if (!NextIsItem(lines, i)) closeLists(); continue; }
+                Match heading = Heading.Match(trimmed);
+                if (heading.Success)
+                {
+                    flushParagraph(); closeLists();
+                    int level = Math.Min(6, heading.Groups[1].Value.Length + 1);
+                    html.Append("<h").Append(level).Append(">").Append(Inline(heading.Groups[2].Value)).Append("</h").Append(level).Append(">");
+                    continue;
+                }
+                if (Rule.IsMatch(trimmed) && !Item.IsMatch(line)) { flushParagraph(); closeLists(); html.Append("<hr>"); continue; }
+                if (TableLine.IsMatch(line) && i + 1 < lines.Length && TableRule.IsMatch(lines[i + 1]))
+                {
+                    flushParagraph(); closeLists();
+                    var head = Cells(line);
+                    html.Append("<table><thead><tr>");
+                    foreach (string cell in head) html.Append("<th>").Append(Inline(cell)).Append("</th>");
+                    html.Append("</tr></thead><tbody>");
+                    for (i += 2; i < lines.Length && TableLine.IsMatch(lines[i]); i++)
+                    {
+                        html.Append("<tr>");
+                        foreach (string cell in Cells(lines[i])) html.Append("<td>").Append(Inline(cell)).Append("</td>");
+                        html.Append("</tr>");
+                    }
+                    i--;
+                    html.Append("</tbody></table>");
+                    continue;
+                }
+                if (trimmed.StartsWith(">", StringComparison.Ordinal) && lists.Count == 0)
+                {
+                    flushParagraph();
+                    var quote = new List<string>();
+                    for (; i < lines.Length && lines[i].Trim().StartsWith(">", StringComparison.Ordinal); i++) quote.Add(Regex.Replace(lines[i].Trim(), "^>\\s?", ""));
+                    i--;
+                    html.Append("<blockquote>").Append(Render(String.Join("\n", quote))).Append("</blockquote>");
+                    continue;
+                }
+                Match bullet = Item.Match(line);
+                if (bullet.Success)
+                {
+                    flushParagraph();
+                    int indent = bullet.Groups[1].Value.Replace("\t", "    ").Length;
+                    string kind = Char.IsDigit(bullet.Groups[2].Value[0]) ? "ol" : "ul";
+                    if (lists.Count == 0 || indent > lists.Peek().Item1 + 1)
+                    {
+                        html.Append("<").Append(kind).Append(">");
+                        lists.Push(Tuple.Create(indent, kind));
+                    }
+                    else
+                    {
+                        while (lists.Count > 1 && indent < lists.Peek().Item1 - 1) html.Append("</li></").Append(lists.Pop().Item2).Append(">");
+                        if (lists.Peek().Item2 != kind)
+                        {
+                            // A numbered list right after a bulleted one (or the other way round) is a new list.
+                            html.Append("</li></").Append(lists.Pop().Item2).Append("><").Append(kind).Append(">");
+                            lists.Push(Tuple.Create(indent, kind));
+                        }
+                        else html.Append("</li>");
+                    }
+                    html.Append("<li>").Append(Inline(bullet.Groups[3].Value));
+                    continue;
+                }
+                if (lists.Count > 0 && line.StartsWith(" ", StringComparison.Ordinal))
+                {
+                    // A wrapped line of the current list item.
+                    html.Append("<br>").Append(Inline(trimmed));
+                    continue;
+                }
+                closeLists();
+                paragraph.Add(trimmed);
+            }
+            flushParagraph();
+            closeLists();
+            return html.ToString();
+        }
+
+        private static bool NextIsItem(string[] lines, int i)
+        {
+            for (int j = i + 1; j < lines.Length; j++)
+            {
+                if (lines[j].Trim().Length == 0) continue;
+                return Item.IsMatch(lines[j]) || lines[j].StartsWith("  ", StringComparison.Ordinal);
+            }
+            return false;
+        }
+
+        private static List<string> Cells(string line)
+        {
+            string row = line.Trim();
+            if (row.StartsWith("|", StringComparison.Ordinal)) row = row.Substring(1);
+            if (row.EndsWith("|", StringComparison.Ordinal)) row = row.Substring(0, row.Length - 1);
+            // A "|" inside inline code belongs to the cell.
+            var cells = new List<string>();
+            var cell = new StringBuilder();
+            bool code = false;
+            foreach (char c in row)
+            {
+                if (c == '`') code = !code;
+                if (c == '|' && !code) { cells.Add(cell.ToString().Trim()); cell.Clear(); continue; }
+                cell.Append(c);
+            }
+            cells.Add(cell.ToString().Trim());
+            return cells;
+        }
+
+        public static string Escape(string text)
+        {
+            return WebUtility.HtmlEncode(text ?? "");
+        }
+
+        private static string Inline(string text)
+        {
+            // Code spans are kept as they are; bold, italics and links are read only outside them.
+            var html = new StringBuilder();
+            string[] parts = text.Split('`');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (i % 2 == 1 && i < parts.Length - 1) { html.Append("<code>").Append(Escape(parts[i])).Append("</code>"); continue; }
+                string part = (i % 2 == 1 ? "`" : "") + parts[i];
+                string escaped = Escape(part);
+                escaped = Regex.Replace(escaped, "\\[([^\\]]+)\\]\\(([^)\\s]+)\\)", match => "<span class=\"link\" title=\"" + match.Groups[2].Value + "\">" + match.Groups[1].Value + "</span>");
+                // As in Markdown: ** opens only before text and closes only after it, so "**`code` ** **words**"
+                // makes "words" bold. A ** left over next to a space or a code span is a cut-off marker, not text.
+                escaped = Regex.Replace(escaped, "\\*\\*(?=\\S)((?:(?!\\*\\*).)+?)(?<=\\S)\\*\\*", "<b>$1</b>");
+                escaped = Regex.Replace(escaped, "(^|\\s)\\*\\*|\\*\\*(?=\\s|$)", "$1");
+                escaped = Regex.Replace(escaped, "(?<![\\w*])\\*(?!\\s)([^*]+?)(?<!\\s)\\*(?![\\w*])", "<i>$1</i>");
+                escaped = Regex.Replace(escaped, "~~(.+?)~~", "<s>$1</s>");
+                // Answers use <br> for line breaks inside table cells.
+                escaped = Regex.Replace(escaped, "&lt;br\\s*/?&gt;", "<br>", RegexOptions.IgnoreCase);
+                html.Append(escaped);
+            }
+            return html.ToString();
+        }
+    }
+
+    // The window: projects on the left, the rounds of the chosen project (newest first) in the middle, the chosen
+    // round on the right, and a search box over all of it.
+    public sealed class AiRecordsWindow : Form
+    {
+        private static AiRecordsWindow current;
+        private static readonly Color Page = Color.FromArgb(244, 246, 250), Paper = Color.White, Ink = Color.FromArgb(31, 41, 55),
+            Muted = Color.FromArgb(75, 85, 99), Border = Color.FromArgb(222, 227, 235), Accent = Color.FromArgb(37, 99, 235), Selected = Color.FromArgb(219, 234, 254);
+        private readonly Font body, strong, small, heading;
+        private readonly TextBox search = new TextBox();
+        private readonly Button refresh = new Button();
+        private readonly Label status = new Label();
+        private readonly ListBox projects = new ListBox();
+        private readonly ListBox rounds = new ListBox();
+        private readonly WebBrowser view = new WebBrowser();
+        private readonly Timer typing = new Timer { Interval = 300 };
+        // The notes backend rewrites sync-status.json after each sync; a short delay lets the write finish.
+        private readonly Timer syncChanged = new Timer { Interval = 600 };
+        private FileSystemWatcher syncWatcher;
+        private string statusLine = "";
+        private List<ChatRecord> all = new List<ChatRecord>();
+        private ChatRecord shown;
+        private string[] terms = new string[0];
+        private bool loading;
+        private DateTime loadedAt = DateTime.MinValue;
+
+        public static void Open(Form owner)
+        {
+            if (current == null || current.IsDisposed)
+            {
+                current = new AiRecordsWindow { Icon = owner.Icon };
+                var area = Screen.FromControl(owner).WorkingArea;
+                current.StartPosition = FormStartPosition.Manual;
+                current.Size = new Size(Math.Min(1380, area.Width - 40), Math.Min(900, area.Height - 30));
+                current.Location = new Point(area.Left + (area.Width - current.Width) / 2, area.Top + (area.Height - current.Height) / 2);
+                current.Show(owner);
+            }
+            if (current.WindowState == FormWindowState.Minimized) current.WindowState = FormWindowState.Normal;
+            current.Activate();
+        }
+
+        private static string Family(string preferred)
+        {
+            using (var fonts = new System.Drawing.Text.InstalledFontCollection())
+                return fonts.Families.Any(item => item.Name == preferred) ? preferred : "Microsoft YaHei UI";
+        }
+
+        private AiRecordsWindow()
+        {
+            string family = Family("Noto Sans SC");
+            string strongFamily = family == "Noto Sans SC" && Family("Noto Sans SC Medium") == "Noto Sans SC Medium" ? "Noto Sans SC Medium" : family;
+            FontStyle strongStyle = strongFamily != family ? FontStyle.Regular : FontStyle.Bold;
+            body = new Font(family, 10F);
+            small = new Font(family, 9F);
+            strong = new Font(strongFamily, 10F, strongStyle);
+            heading = new Font(strongFamily, 11F, strongStyle);
+            Text = "AI 对话记录";
+            Font = body;
+            BackColor = Page;
+
+            var top = new TableLayoutPanel { Dock = DockStyle.Top, Height = 52, ColumnCount = 3, Padding = new Padding(12, 10, 12, 6), BackColor = Page };
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 420));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            search.Dock = DockStyle.Fill;
+            search.Font = new Font(family, 11F);
+            search.Margin = new Padding(0, 2, 8, 0);
+            SetCue(search, "搜索关键词（空格分隔多个词，全部包含才显示）");
+            refresh.Text = "刷新";
+            refresh.AutoSize = true;
+            refresh.FlatStyle = FlatStyle.Flat;
+            refresh.FlatAppearance.BorderColor = Border;
+            refresh.BackColor = Paper;
+            refresh.ForeColor = Accent;
+            refresh.Margin = new Padding(0, 0, 12, 0);
+            status.Dock = DockStyle.Fill;
+            status.ForeColor = Muted;
+            status.TextAlign = ContentAlignment.MiddleLeft;
+            status.AutoEllipsis = true;
+            top.Controls.Add(search, 0, 0);
+            top.Controls.Add(refresh, 1, 0);
+            top.Controls.Add(status, 2, 0);
+
+            projects.Dock = DockStyle.Fill;
+            projects.BorderStyle = BorderStyle.None;
+            projects.IntegralHeight = false;
+            projects.DrawMode = DrawMode.OwnerDrawFixed;
+            projects.ItemHeight = 38;
+            projects.DrawItem += DrawProject;
+            projects.SelectedIndexChanged += delegate { ShowRounds(); };
+            rounds.Dock = DockStyle.Fill;
+            rounds.BorderStyle = BorderStyle.None;
+            rounds.IntegralHeight = false;
+            rounds.DrawMode = DrawMode.OwnerDrawFixed;
+            rounds.ItemHeight = 84;
+            rounds.DrawItem += DrawRound;
+            rounds.SelectedIndexChanged += delegate { ShowRecord(rounds.SelectedItem as ChatRecord); };
+            view.Dock = DockStyle.Fill;
+            view.ScriptErrorsSuppressed = true;
+            view.WebBrowserShortcutsEnabled = true;
+            view.IsWebBrowserContextMenuEnabled = true;
+            view.AllowWebBrowserDrop = false;
+            view.DocumentCompleted += delegate { Highlight(); };
+
+            var columns = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Padding = new Padding(12, 0, 12, 12), BackColor = Page };
+            columns.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210));
+            columns.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 400));
+            columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            columns.Controls.Add(Card("项目", projects, new Padding(0, 0, 8, 0)), 0, 0);
+            columns.Controls.Add(Card("对话（最新在上）", rounds, new Padding(0, 0, 8, 0)), 1, 0);
+            var viewCard = new Panel { Dock = DockStyle.Fill, BackColor = Paper, Padding = new Padding(1), Margin = Padding.Empty };
+            viewCard.Controls.Add(view);
+            columns.Controls.Add(viewCard, 2, 0);
+            Controls.Add(columns);
+            Controls.Add(top);
+
+            search.TextChanged += delegate { typing.Stop(); typing.Start(); };
+            typing.Tick += delegate { typing.Stop(); terms = Terms(search.Text); ShowRounds(); };
+            refresh.Click += delegate { Reload(); };
+            Shown += delegate { Reload(); };
+            // Coming back to the window picks up the answers written since.
+            Activated += delegate { if ((DateTime.Now - loadedAt).TotalSeconds > 30) Reload(); };
+            FormClosed += delegate { typing.Dispose(); syncChanged.Dispose(); if (syncWatcher != null) syncWatcher.Dispose(); };
+            WatchSync();
+            ShowRecord(null);
+        }
+
+        // Records that arrive from another computer appear without pressing 刷新.
+        private void WatchSync()
+        {
+            try
+            {
+                Directory.CreateDirectory(ChatArchive.ArchiveRoot);
+                syncWatcher = new FileSystemWatcher(ChatArchive.RecordsRoot, Path.GetFileName(ChatArchive.SyncStatusPath)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName };
+                FileSystemEventHandler changed = delegate { if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(() => { syncChanged.Stop(); syncChanged.Start(); })); };
+                syncWatcher.Changed += changed;
+                syncWatcher.Created += changed;
+                syncWatcher.Renamed += delegate { if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(() => { syncChanged.Stop(); syncChanged.Start(); })); };
+                syncWatcher.EnableRaisingEvents = true;
+            }
+            catch (Exception) { syncWatcher = null; }
+            syncChanged.Tick += delegate
+            {
+                syncChanged.Stop();
+                ShowStatus();
+                if (ChatArchive.SyncChanges() > 0 && !loading) Reload();
+            };
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, string lParam);
+
+        private static void SetCue(TextBox box, string text)
+        {
+            box.HandleCreated += delegate { SendMessage(box.Handle, 0x1501, (IntPtr)1, text); };
+        }
+
+        private Control Card(string title, Control content, Padding margin)
+        {
+            var card = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Paper, Margin = margin, Padding = new Padding(8) };
+            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+            card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            card.Controls.Add(new Label { Text = title, Font = strong, ForeColor = Ink, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+            card.Controls.Add(content, 0, 1);
+            return card;
+        }
+
+        private static string[] Terms(string text)
+        {
+            return (text ?? "").ToLowerInvariant().Split(new[] { ' ', '\t', '　' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
+        private void Reload()
+        {
+            if (loading) return;
+            loading = true;
+            refresh.Enabled = false;
+            status.Text = "正在读取对话记录…";
+            Task.Run(() =>
+            {
+                List<ChatRecord> loaded = null;
+                string failure = null;
+                try { loaded = ChatArchive.LoadAll(message => { if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(() => status.Text = message)); }); }
+                catch (Exception error) { failure = error.Message; }
+                if (IsDisposed || !IsHandleCreated) return;
+                BeginInvoke(new Action(() =>
+                {
+                    loading = false;
+                    refresh.Enabled = true;
+                    loadedAt = DateTime.Now;
+                    if (loaded == null) { status.Text = "读取失败：" + failure; return; }
+                    all = loaded;
+                    ShowProjects();
+                    // Archives are written now; the backend uploads what changed and fetches other computers' records.
+                    ChatArchive.RequestSync();
+                }));
+            });
+        }
+
+        // One line of the left list: 全部 (Source and Name null), a group such as Claude or Codex (Name null),
+        // or a project inside a group.
+        private sealed class ProjectChoice
+        {
+            public string Source, Name, Label;
+            public int Count;
+            public DateTime Latest;
+        }
+
+        private void ShowProjects()
+        {
+            var previous = projects.SelectedItem as ProjectChoice;
+            var choices = new List<ProjectChoice> { new ProjectChoice { Label = "全部", Count = all.Count } };
+            // Claude first, then Codex; inside each, the project used most recently first.
+            foreach (var source in all.GroupBy(record => record.Source).OrderBy(group => group.Key == "Claude" ? 0 : 1).ThenBy(group => group.Key))
+            {
+                choices.Add(new ProjectChoice { Source = source.Key, Label = source.Key, Count = source.Count() });
+                choices.AddRange(source.GroupBy(record => record.Project)
+                    .Select(group => new ProjectChoice { Source = source.Key, Name = group.Key, Label = group.Key, Count = group.Count(), Latest = group.Max(record => record.AnswerTime) })
+                    .OrderByDescending(choice => choice.Latest));
+            }
+            projects.BeginUpdate();
+            projects.Items.Clear();
+            projects.Items.AddRange(choices.ToArray());
+            int index = previous == null ? 0 : choices.FindIndex(choice => choice.Source == previous.Source && choice.Name == previous.Name);
+            projects.SelectedIndex = index >= 0 ? index : 0;
+            projects.EndUpdate();
+            ShowRounds();
+        }
+
+        private bool Matches(ChatRecord record)
+        {
+            var choice = projects.SelectedItem as ProjectChoice;
+            if (choice != null && choice.Source != null && record.Source != choice.Source) return false;
+            if (choice != null && choice.Name != null && record.Project != choice.Name) return false;
+            return terms.All(term => record.SearchText.Contains(term));
+        }
+
+        private static string ChoiceName(ProjectChoice choice)
+        {
+            if (choice == null || choice.Source == null) return "全部项目";
+            return choice.Name == null ? choice.Source + " 全部项目" : choice.Source + " · " + choice.Name;
+        }
+
+        private void ShowRounds()
+        {
+            var previous = rounds.SelectedItem as ChatRecord;
+            var shownRounds = all.Where(Matches).ToArray();
+            rounds.BeginUpdate();
+            rounds.Items.Clear();
+            rounds.Items.AddRange(shownRounds);
+            int index = previous == null ? -1 : Array.FindIndex(shownRounds, record => record.Session == previous.Session && record.QuestionTicks == previous.QuestionTicks);
+            rounds.SelectedIndex = shownRounds.Length == 0 ? -1 : Math.Max(0, index);
+            rounds.EndUpdate();
+            statusLine = ChoiceName(projects.SelectedItem as ProjectChoice) + "：" + shownRounds.Length + " 轮对话"
+                + (terms.Length > 0 ? "，包含「" + String.Join(" ", terms) + "」" : "");
+            ShowStatus();
+            if (shownRounds.Length == 0) ShowRecord(null);
+            else if (rounds.SelectedItem != shown) ShowRecord(rounds.SelectedItem as ChatRecord);
+            else Highlight();
+        }
+
+        private void ShowStatus()
+        {
+            if (loading) return;
+            status.Text = statusLine + (statusLine.Length > 0 ? "   ·   " : "") + "保存在 " + ChatArchive.RecordsRoot + "   ·   " + ChatArchive.SyncText();
+        }
+
+        // "   ·   来自 LAPTOP-1" for rounds synced from another computer.
+        private static string FromMachine(ChatRecord record)
+        {
+            return record.Machine.Length > 0 && !String.Equals(record.Machine, Environment.MachineName, StringComparison.OrdinalIgnoreCase) ? "   ·   来自 " + record.Machine : "";
+        }
+
+        private static string When(DateTime time)
+        {
+            return time.ToString("M月d日 HH:mm", CultureInfo.InvariantCulture);
+        }
+
+        private static string FirstLine(string text)
+        {
+            foreach (string line in (text ?? "").Replace("\r", "").Split('\n'))
+            {
+                string plain = Regex.Replace(line, "[*`#>|]", "").Trim();
+                if (plain.Length > 0) return plain;
+            }
+            return "";
+        }
+
+        private string Snippet(ChatRecord record)
+        {
+            // With a search: the text around the first match; otherwise the answer's first line.
+            if (terms.Length > 0)
+            {
+                foreach (string text in new[] { record.Answer }.Concat(record.Process).Concat(new[] { record.Question }))
+                {
+                    int at = (text ?? "").ToLowerInvariant().IndexOf(terms[0], StringComparison.Ordinal);
+                    if (at < 0) continue;
+                    int from = Math.Max(0, at - 24);
+                    string piece = Regex.Replace(text.Substring(from, Math.Min(text.Length - from, 90)), "\\s+", " ");
+                    return (from > 0 ? "…" : "") + Regex.Replace(piece, "[*`#|]", "");
+                }
+            }
+            return FirstLine(record.Answer.Length > 0 ? record.Answer : String.Join("\n", record.Process));
+        }
+
+        private void DrawProject(object sender, DrawItemEventArgs args)
+        {
+            if (args.Index < 0) return;
+            var choice = (ProjectChoice)projects.Items[args.Index];
+            bool active = (args.State & DrawItemState.Selected) != 0;
+            bool group = choice.Source != null && choice.Name == null;
+            using (var fill = new SolidBrush(active ? Selected : Paper)) args.Graphics.FillRectangle(fill, args.Bounds);
+            // A group starts with a thin line and a coloured mark; its projects are indented under it.
+            if (group)
+            {
+                using (var line = new Pen(Border)) args.Graphics.DrawLine(line, args.Bounds.Left + 4, args.Bounds.Top, args.Bounds.Right - 4, args.Bounds.Top);
+                using (var mark = new SolidBrush(SourceColor(choice.Source))) args.Graphics.FillRectangle(mark, args.Bounds.X + 8, args.Bounds.Y + args.Bounds.Height / 2 - 7, 4, 14);
+            }
+            int indent = choice.Source == null ? 8 : group ? 18 : 30;
+            var box = new Rectangle(args.Bounds.X + indent, args.Bounds.Y, args.Bounds.Width - indent - 8, args.Bounds.Height);
+            TextRenderer.DrawText(args.Graphics, choice.Label, choice.Name == null ? strong : body, box, active ? Accent : Ink, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(args.Graphics, choice.Count.ToString(CultureInfo.InvariantCulture), small, box, Muted, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+
+        // Drawn width of a piece of a line, trailing spaces included. Measured without the ellipsis flag: with it and
+        // no room given, the text is measured as if cut to "…", and the pieces after it were drawn on top of it.
+        private static int TextWidth(Graphics graphics, string text, Font font)
+        {
+            const TextFormatFlags measure = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+            var room = new Size(Int32.MaxValue, Int32.MaxValue);
+            return TextRenderer.MeasureText(graphics, text + "x", font, room, measure).Width - TextRenderer.MeasureText(graphics, "x", font, room, measure).Width;
+        }
+
+        private static Color SourceColor(string source)
+        {
+            return source == "Codex" ? Color.FromArgb(16, 163, 127) : source == "Claude" ? Color.FromArgb(217, 119, 87) : Color.FromArgb(107, 114, 128);
+        }
+
+        // "Codex · software · 来自 LAPTOP-1 · title" under each round and above its content.
+        private static string Place(ChatRecord record)
+        {
+            return record.Source + "   ·   " + record.Project + FromMachine(record) + (record.Title.Length > 0 ? "   ·   " + record.Title : "");
+        }
+
+        private void DrawRound(object sender, DrawItemEventArgs args)
+        {
+            if (args.Index < 0) return;
+            var record = (ChatRecord)rounds.Items[args.Index];
+            bool active = (args.State & DrawItemState.Selected) != 0;
+            var bounds = args.Bounds;
+            using (var fill = new SolidBrush(active ? Selected : Paper)) args.Graphics.FillRectangle(fill, bounds);
+            using (var line = new Pen(Border)) args.Graphics.DrawLine(line, bounds.Left, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
+            if (active) using (var bar = new SolidBrush(Accent)) args.Graphics.FillRectangle(bar, bounds.Left, bounds.Top, 4, bounds.Height - 1);
+            const TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
+            int left = bounds.X + 12, width = bounds.Width - 20;
+            TextRenderer.DrawText(args.Graphics, FirstLine(record.Question), strong, new Rectangle(left, bounds.Y + 7, width, 22), active ? Accent : Ink, flags);
+            TextRenderer.DrawText(args.Graphics, Snippet(record), small, new Rectangle(left, bounds.Y + 32, width, 20), Muted, flags);
+            const TextFormatFlags metaFlags = flags | TextFormatFlags.NoPadding;
+            string when = When(record.AnswerTime) + "   ·   ";
+            int whenWidth = TextWidth(args.Graphics, when, small);
+            TextRenderer.DrawText(args.Graphics, when, small, new Rectangle(left, bounds.Y + 55, width, 20), Muted, metaFlags);
+            // The source in its group's colour, so Claude and Codex rounds tell apart in the full list.
+            int sourceWidth = TextWidth(args.Graphics, record.Source, small);
+            TextRenderer.DrawText(args.Graphics, record.Source, small, new Rectangle(left + whenWidth, bounds.Y + 55, Math.Max(0, width - whenWidth), 20), SourceColor(record.Source), metaFlags);
+            string rest = Place(record).Substring(record.Source.Length);
+            TextRenderer.DrawText(args.Graphics, rest, small, new Rectangle(left + whenWidth + sourceWidth, bounds.Y + 55, Math.Max(0, width - whenWidth - sourceWidth), 20), Muted, metaFlags);
+        }
+
+        private void ShowRecord(ChatRecord record)
+        {
+            shown = record;
+            view.DocumentText = record == null ? PageHtml(record, "<p class=\"empty\">" + (loading || all.Count == 0 ? "正在读取对话记录…" : "没有找到对话。换个关键词试试。") + "</p>") : PageHtml(record, RecordHtml(record));
+        }
+
+        private static string RecordHtml(ChatRecord record)
+        {
+            var html = new StringBuilder();
+            html.Append("<div class=\"meta\">").Append(MarkdownHtml.Escape(When(record.QuestionTime) + "   ·   " + Place(record)))
+                .Append(record.Handed ? (record.Source == "Codex" ? "   ·   由自动化任务发起" : "   ·   由其他会话转来的任务") : "").Append("</div>");
+            // Codex's composer sends Markdown (bold, `code`), shown as Codex shows it; Claude questions are plain text.
+            html.Append("<div class=\"label\">你的问题</div><div class=\"question\">")
+                .Append(record.Source == "Codex" ? MarkdownHtml.Render(record.Question) : MarkdownHtml.Escape(record.Question).Replace("\n", "<br>")).Append("</div>");
+            if (record.Process.Count > 0)
+            {
+                html.Append("<div class=\"label\">过程说明（").Append(record.Process.Count).Append(" 段）</div><div class=\"process\">");
+                foreach (string part in record.Process) html.Append("<div class=\"step\">").Append(MarkdownHtml.Render(part)).Append("</div>");
+                html.Append("</div>");
+            }
+            html.Append("<div class=\"label\">回答 · ").Append(MarkdownHtml.Escape(When(record.AnswerTime))).Append("</div><div class=\"answer\">")
+                .Append(record.Answer.Length > 0 ? MarkdownHtml.Render(record.Answer) : "<p class=\"empty\">这一轮还没有回答（可能还在进行，或被中断了）。</p>").Append("</div>");
+            return html.ToString();
+        }
+
+        private string PageHtml(ChatRecord record, string content)
+        {
+            string family = body.FontFamily.Name;
+            return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"><style>"
+                + "body{margin:0;padding:18px 24px 40px 24px;background:#fff;color:#1f2937;font-family:'" + family + "','Microsoft YaHei UI',sans-serif;font-size:15px;line-height:1.75;}"
+                + ".meta{color:#4b5563;font-size:13px;margin-bottom:12px;}"
+                + ".label{font-weight:bold;color:#1f2937;font-size:14px;margin:18px 0 8px 0;padding-left:8px;border-left:4px solid #2563eb;}"
+                + ".question{background:#f4f6fa;border:1px solid #dee3eb;border-radius:6px;padding:10px 14px;white-space:normal;}"
+                + ".process{color:#4b5563;font-size:14px;border-left:2px solid #dee3eb;padding-left:12px;}"
+                + ".process .step{margin-bottom:6px;}"
+                + "p{margin:0 0 10px 0;}"
+                + "h2,h3,h4,h5,h6{margin:16px 0 8px 0;line-height:1.4;color:#111827;} h2{font-size:19px;} h3{font-size:17px;} h4,h5,h6{font-size:15px;}"
+                + "ul,ol{margin:0 0 10px 0;padding-left:24px;} li{margin:2px 0;}"
+                + "table{border-collapse:collapse;margin:4px 0 12px 0;} th,td{border:1px solid #dee3eb;padding:6px 10px;vertical-align:top;text-align:left;} th{background:#f4f6fa;}"
+                + "code{font-family:Consolas,monospace;font-size:13px;background:#f1f5f9;border-radius:3px;padding:1px 4px;}"
+                + "pre{background:#f6f8fa;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;overflow-x:auto;margin:0 0 12px 0;} pre code{background:none;padding:0;font-size:13px;line-height:1.5;}"
+                + "blockquote{margin:0 0 10px 0;padding:4px 12px;border-left:3px solid #cbd5e1;color:#374151;background:#f9fafb;}"
+                + "hr{border:none;border-top:1px solid #dee3eb;margin:14px 0;} .link{color:#2563eb;} .empty{color:#6b7280;}"
+                + "mark{background:#fde68a;color:inherit;padding:0 1px;}"
+                + "</style></head><body>" + content + "</body></html>";
+        }
+
+        private void Highlight()
+        {
+            // Every match of the search words is marked yellow, and the first one is scrolled into view.
+            if (view.Document == null || view.Document.Body == null) return;
+            string words = String.Join("\u0001", terms.Select(term => term.Replace("\\", "\\\\").Replace("'", "\\'")));
+            string script = "(function(words){var list=words?words.split('\\u0001'):[];"
+                + "var old=document.querySelectorAll('mark');for(var k=old.length-1;k>=0;k--){var m=old[k];m.parentNode.replaceChild(document.createTextNode(m.innerText||m.textContent),m);}"
+                + "document.body.normalize();if(!list.length)return 0;var first=null;"
+                + "var walker=document.createTreeWalker(document.body,4,null,false);var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);"
+                + "for(var n=0;n<nodes.length;n++){var node=nodes[n];var text=node.nodeValue;var lower=text.toLowerCase();var hits=[];"
+                + "for(var w=0;w<list.length;w++){var at=lower.indexOf(list[w]);while(at>=0){hits.push([at,at+list[w].length]);at=lower.indexOf(list[w],at+1);}}"
+                + "if(!hits.length)continue;hits.sort(function(a,b){return a[0]-b[0];});var frag=document.createDocumentFragment();var pos=0;"
+                + "for(var h=0;h<hits.length;h++){if(hits[h][0]<pos)continue;frag.appendChild(document.createTextNode(text.substring(pos,hits[h][0])));"
+                + "var mark=document.createElement('mark');mark.appendChild(document.createTextNode(text.substring(hits[h][0],hits[h][1])));frag.appendChild(mark);if(!first)first=mark;pos=hits[h][1];}"
+                + "frag.appendChild(document.createTextNode(text.substring(pos)));node.parentNode.replaceChild(frag,node);}"
+                + "if(first){var r=first.getBoundingClientRect();window.scrollTo(0,Math.max(0,r.top+(window.pageYOffset||document.documentElement.scrollTop)-120));}return 1;})('" + words + "')";
+            try { view.Document.InvokeScript("eval", new object[] { script }); } catch (Exception) { }
+        }
+    }
+}

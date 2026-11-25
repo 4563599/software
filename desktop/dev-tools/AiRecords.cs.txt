@@ -1,0 +1,421 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Web.Script.Serialization;
+
+namespace Codex.AiRecords
+{
+    // One round of a conversation: what was asked and what the assistant answered.
+    public sealed class ChatRecord
+    {
+        // Filled from the session when loaded, not stored with every round.
+        [ScriptIgnore] public string Session = "", Project = "", Title = "", Cwd = "", Machine = "", Source = "";
+        public string Question = "";
+        // The texts written while working (before the last one) and the final answer of the round.
+        public List<string> Process = new List<string>();
+        public string Answer = "";
+        // Local time as ticks: the JSON serializer would turn DateTime values into UTC.
+        public long QuestionTicks, AnswerTicks;
+        public bool Handed;   // started by another session rather than typed by the user
+        [ScriptIgnore] public string SearchText;
+        [ScriptIgnore] public DateTime QuestionTime { get { return new DateTime(QuestionTicks); } }
+        [ScriptIgnore] public DateTime AnswerTime { get { return new DateTime(AnswerTicks == 0 ? QuestionTicks : AnswerTicks); } }
+    }
+
+    public sealed class ChatSessionArchive
+    {
+        // Machine: the computer whose Claude transcript this is (archives synced from another computer keep its name).
+        // Source: "Codex" for conversations exported from Codex (t-notes\client\codex-records.cjs); empty means Claude.
+        public string Session = "", Project = "", Title = "", Cwd = "", Transcript = "", Machine = "", Source = "";
+        public long Length;
+        public long Written;
+        public List<ChatRecord> Records = new List<ChatRecord>();
+    }
+
+    // Claude Code keeps every conversation as JSONL under ~/.claude/projects/<folder>/<session>.jsonl and removes old
+    // ones after a while. Each session's questions and answers are copied into an archive of our own, so they stay
+    // searchable after Claude cleans up; an unchanged transcript is read from the archive instead of parsed again.
+    public static class ChatArchive
+    {
+        private const int Version = 1;
+        private static readonly Dictionary<string, string> projectByFolder = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        public static string TranscriptRoot
+        {
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "projects"); }
+        }
+
+        // Where the records are kept: TNOTES_AI_RECORDS when set, else E:\AIRecords on a computer with an E: drive,
+        // else beside the notes data. The notes backend (t-notes\client\ai-sync.cjs) syncs this folder with the same rule.
+        public static string RecordsRoot
+        {
+            get
+            {
+                string custom = Environment.GetEnvironmentVariable("TNOTES_AI_RECORDS");
+                if (!String.IsNullOrEmpty(custom) && Path.IsPathRooted(custom)) return custom;
+                if (Directory.Exists(@"E:\")) return @"E:\AIRecords";
+                return LegacyRoot;
+            }
+        }
+
+        // One gzip-compressed JSON file per session: <session>.json.gz.
+        public static string ArchiveRoot { get { return Path.Combine(RecordsRoot, "sessions"); } }
+
+        // Written by the notes backend after each sync; this file asks it to sync now.
+        public static string SyncStatusPath { get { return Path.Combine(RecordsRoot, "sync-status.json"); } }
+        public static string SyncRequestPath { get { return Path.Combine(RecordsRoot, "sync-request"); } }
+
+        // Before November 2026 the archives were uncompressed <session>.json files here.
+        private static string LegacyRoot
+        {
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TNotes", "ai-records"); }
+        }
+
+        private static JavaScriptSerializer NewSerializer()
+        {
+            return new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue, RecursionLimit = 256 };
+        }
+
+        public static string ArchivePath(string session)
+        {
+            return Path.Combine(ArchiveRoot, session + ".json.gz");
+        }
+
+        public static ChatSessionArchive ReadArchive(string file, JavaScriptSerializer serializer)
+        {
+            using (var input = new GZipStream(File.OpenRead(file), CompressionMode.Decompress))
+            using (var reader = new StreamReader(input, Encoding.UTF8))
+                return serializer.Deserialize<ChatSessionArchive>(reader.ReadToEnd());
+        }
+
+        public static void WriteArchive(ChatSessionArchive archive, JavaScriptSerializer serializer)
+        {
+            byte[] json = new UTF8Encoding(false).GetBytes(serializer.Serialize(archive));
+            string target = ArchivePath(archive.Session);
+            // Written beside the target and swapped in, so the sync never picks up half a file.
+            string temp = target + "." + System.Diagnostics.Process.GetCurrentProcess().Id + ".tmp";
+            try
+            {
+                using (var output = new GZipStream(File.Create(temp), CompressionLevel.Optimal))
+                    output.Write(json, 0, json.Length);
+                if (File.Exists(target)) File.Replace(temp, target, null);
+                else File.Move(temp, target);
+            }
+            finally
+            {
+                if (File.Exists(temp)) File.Delete(temp);
+            }
+        }
+
+        // Moves archives from the old uncompressed folder into the compressed one. An old file is removed only
+        // after its compressed copy is written.
+        private static void MoveLegacyArchives(JavaScriptSerializer serializer)
+        {
+            if (!Directory.Exists(LegacyRoot)) return;
+            foreach (string file in Directory.GetFiles(LegacyRoot, "*.json"))
+            {
+                try
+                {
+                    var archive = serializer.Deserialize<ChatSessionArchive>(File.ReadAllText(file, Encoding.UTF8));
+                    if (archive == null || String.IsNullOrEmpty(archive.Session)) continue;
+                    if (archive.Machine.Length == 0) archive.Machine = Environment.MachineName;
+                    if (!File.Exists(ArchivePath(archive.Session))) WriteArchive(archive, serializer);
+                    File.Delete(file);
+                }
+                catch (Exception) { }
+            }
+            try
+            {
+                if (!String.Equals(Path.GetFullPath(LegacyRoot), Path.GetFullPath(RecordsRoot), StringComparison.OrdinalIgnoreCase) && !Directory.EnumerateFileSystemEntries(LegacyRoot).Any())
+                    Directory.Delete(LegacyRoot);
+            }
+            catch (Exception) { }
+        }
+
+        // Asks the notes backend to sync now (it watches the records folder). Harmless when it is not running.
+        public static void RequestSync()
+        {
+            try { File.WriteAllText(SyncRequestPath, DateTime.Now.ToString("o", CultureInfo.InvariantCulture)); } catch (Exception) { }
+        }
+
+        // One line for the window's status bar, from the status the notes backend wrote after its last sync.
+        public static string SyncText()
+        {
+            try
+            {
+                if (!File.Exists(SyncStatusPath)) return "还没有同步过（随手记后台启动后会自动同步）";
+                var status = NewSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(SyncStatusPath, Encoding.UTF8));
+                string state = Text(status, "state"), message = Text(status, "message");
+                DateTime time;
+                string when = DateTime.TryParse(Text(status, state == "ok" ? "updated" : "lastSuccess"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out time)
+                    ? time.ToLocalTime().ToString("M月d日 HH:mm", CultureInfo.InvariantCulture) : "";
+                if (state == "ok") return "已同步到服务器 " + when + (Text(status, "stored").Length > 0 ? "（服务器上占用 " + Size(Convert.ToInt64(status["stored"], CultureInfo.InvariantCulture)) + "）" : "");
+                return message + (when.Length > 0 ? "（上次同步成功：" + when + "）" : "");
+            }
+            catch (Exception) { return "同步状态读取失败"; }
+        }
+
+        // Archives the backend's last sync brought in: downloaded from other computers or newly exported from Codex.
+        public static int SyncChanges()
+        {
+            try
+            {
+                var status = NewSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(SyncStatusPath, Encoding.UTF8));
+                int total = 0;
+                object value;
+                foreach (string key in new[] { "downloaded", "codex" })
+                    if (status.TryGetValue(key, out value) && value != null) total += Convert.ToInt32(value, CultureInfo.InvariantCulture);
+                return total;
+            }
+            catch (Exception) { return 0; }
+        }
+
+        private static string Size(long bytes)
+        {
+            return bytes >= 1024 * 1024 ? (bytes / 1048576.0).ToString("0.0", CultureInfo.InvariantCulture) + " MB" : Math.Max(1, (bytes + 512) / 1024) + " KB";
+        }
+
+        // t-notes\client\codex-records.cjs, set by ai-records.ps1. Codex keeps its conversations in SQLite, which this
+        // code cannot read, so Node (already needed by the notes backend) exports them as archives first.
+        public static string CodexExporter = "";
+
+        private static void ExportCodex(Action<string> progress)
+        {
+            if (String.IsNullOrEmpty(CodexExporter) || !File.Exists(CodexExporter)) return;
+            if (progress != null) progress("正在读取 Codex 对话记录…");
+            try
+            {
+                var start = new System.Diagnostics.ProcessStartInfo("node", "--no-warnings \"" + CodexExporter + "\" export \"" + ArchiveRoot + "\"")
+                {
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+                };
+                using (var child = System.Diagnostics.Process.Start(start))
+                {
+                    child.StandardOutput.ReadToEndAsync();
+                    child.StandardError.ReadToEndAsync();
+                    if (!child.WaitForExit(60000)) child.Kill();
+                }
+            }
+            catch (Exception) { }   // no Node, or Codex not installed: Claude's records still load
+        }
+
+        public static List<ChatRecord> LoadAll(Action<string> progress)
+        {
+            Directory.CreateDirectory(ArchiveRoot);
+            var serializer = NewSerializer();
+            MoveLegacyArchives(serializer);
+            ExportCodex(progress);
+            var sessions = new Dictionary<string, ChatSessionArchive>(StringComparer.OrdinalIgnoreCase);
+            // Everything archived before, including sessions whose transcript Claude has since removed
+            // and sessions synced from other computers.
+            foreach (string file in Directory.GetFiles(ArchiveRoot, "*.json.gz"))
+            {
+                try
+                {
+                    var archive = ReadArchive(file, serializer);
+                    if (archive != null && !String.IsNullOrEmpty(archive.Session)) sessions[archive.Session] = archive;
+                }
+                catch (Exception) { }
+            }
+            if (Directory.Exists(TranscriptRoot))
+            {
+                var transcripts = Directory.GetDirectories(TranscriptRoot).SelectMany(folder => Directory.GetFiles(folder, "*.jsonl")).ToList();
+                int index = 0;
+                foreach (string transcript in transcripts)
+                {
+                    index++;
+                    var info = new FileInfo(transcript);
+                    string session = Path.GetFileNameWithoutExtension(transcript);
+                    ChatSessionArchive known;
+                    if (sessions.TryGetValue(session, out known) && known.Length == info.Length && known.Written == info.LastWriteTimeUtc.Ticks) continue;
+                    if (progress != null) progress("正在读取对话记录 " + index + "/" + transcripts.Count + "：" + Path.GetFileName(Path.GetDirectoryName(transcript)));
+                    try
+                    {
+                        var archive = ReadTranscript(transcript, serializer);
+                        archive.Length = info.Length;
+                        archive.Written = info.LastWriteTimeUtc.Ticks;
+                        // Never let a shorter read (a transcript cut by Claude) lose rounds archived earlier.
+                        if (known != null && known.Records.Count > archive.Records.Count && archive.Records.Count == 0) continue;
+                        sessions[session] = archive;
+                        WriteArchive(archive, serializer);
+                    }
+                    catch (Exception) { }
+                }
+            }
+            var records = new List<ChatRecord>();
+            foreach (var archive in sessions.Values)
+                foreach (var record in archive.Records)
+                {
+                    record.Session = archive.Session;
+                    record.Project = archive.Project;
+                    record.Title = archive.Title;
+                    record.Cwd = archive.Cwd;
+                    record.Machine = archive.Machine ?? "";
+                    record.Source = String.IsNullOrEmpty(archive.Source) ? "Claude" : archive.Source;
+                    record.SearchText = (record.Question + "\n" + String.Join("\n", record.Process) + "\n" + record.Answer + "\n" + archive.Title + "\n" + archive.Project + "\n" + record.Source).ToLowerInvariant();
+                    records.Add(record);
+                }
+            return records.OrderByDescending(record => record.AnswerTime).ToList();
+        }
+
+        public static ChatSessionArchive ReadTranscript(string path, JavaScriptSerializer serializer)
+        {
+            var archive = new ChatSessionArchive { Session = Path.GetFileNameWithoutExtension(path), Transcript = path, Machine = Environment.MachineName };
+            ChatRecord current = null;
+            using (var reader = new StreamReader(path, Encoding.UTF8))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    // Cheap checks first: most lines are tool calls, tool results and bookkeeping.
+                    bool user = line.Contains("\"type\":\"user\"");
+                    bool assistant = !user && line.Contains("\"type\":\"assistant\"");
+                    bool title = !user && !assistant && line.Contains("\"type\":\"custom-title\"");
+                    if (!user && !assistant && !title) continue;
+                    if (user && line.Contains("\"tool_result\"") && !line.Contains("\"turnOrigin\"")) continue;
+                    if (assistant && !line.Contains("\"type\":\"text\"")) continue;
+                    Dictionary<string, object> entry;
+                    try { entry = serializer.Deserialize<Dictionary<string, object>>(line); }
+                    catch (Exception) { continue; }
+                    if (entry == null) continue;
+                    if (title)
+                    {
+                        string name = Text(entry, "customTitle");
+                        if (name.Length > 0) archive.Title = name;
+                        continue;
+                    }
+                    if (Flag(entry, "isSidechain")) continue;
+                    string cwd = Text(entry, "cwd");
+                    if (cwd.Length > 0 && archive.Cwd.Length == 0) { archive.Cwd = cwd; archive.Project = ProjectName(cwd); }
+                    var message = entry.ContainsKey("message") ? entry["message"] as Dictionary<string, object> : null;
+                    if (message == null) continue;
+                    DateTime time = Time(entry);
+                    if (user)
+                    {
+                        string origin = Text(entry, "turnOrigin");
+                        if (Flag(entry, "isMeta") || (origin != "human" && origin != "host_synthetic")) continue;
+                        string question = Clean(MessageText(message, true));
+                        if (question.Length == 0) continue;
+                        if (current != null) Close(current, archive);
+                        current = new ChatRecord { Question = question, QuestionTicks = time.Ticks, Handed = origin == "host_synthetic" };
+                    }
+                    else if (current != null)
+                    {
+                        string text = MessageText(message, false).Trim();
+                        if (text.Length == 0) continue;
+                        current.Process.Add(text);
+                        current.AnswerTicks = time.Ticks;
+                    }
+                }
+            }
+            if (current != null) Close(current, archive);
+            if (archive.Project.Length == 0) archive.Project = ProjectName(Path.GetFileName(Path.GetDirectoryName(path)));
+            return archive;
+        }
+
+        private static void Close(ChatRecord record, ChatSessionArchive archive)
+        {
+            // The last text of the round is the answer; the ones before it were written along the way.
+            if (record.Process.Count > 0)
+            {
+                record.Answer = record.Process[record.Process.Count - 1];
+                record.Process.RemoveAt(record.Process.Count - 1);
+            }
+            archive.Records.Add(record);
+        }
+
+        private static string MessageText(Dictionary<string, object> message, bool user)
+        {
+            object content;
+            if (!message.TryGetValue("content", out content) || content == null) return "";
+            var text = content as string;
+            if (text != null) return text;
+            var blocks = content as System.Collections.ArrayList;
+            if (blocks == null) return "";
+            var parts = new List<string>();
+            int pictures = 0;
+            foreach (var item in blocks)
+            {
+                var block = item as Dictionary<string, object>;
+                if (block == null) continue;
+                string type = Text(block, "type");
+                if (type == "text") parts.Add(Text(block, "text"));
+                else if (type == "image") pictures++;
+            }
+            string joined = String.Join("\n\n", parts.Where(part => part.Trim().Length > 0));
+            if (user && pictures > 0) joined += (joined.Length > 0 ? "\n\n" : "") + "[附图 " + pictures + " 张]";
+            return joined;
+        }
+
+        private static string Clean(string question)
+        {
+            // Slash commands arrive wrapped in tags: "<command-name>/lyycode</command-name><command-args>...</command-args>".
+            Match name = Regex.Match(question, "<command-name>(.*?)</command-name>", RegexOptions.Singleline);
+            Match args = Regex.Match(question, "<command-args>(.*?)</command-args>", RegexOptions.Singleline);
+            if (name.Success) question = name.Groups[1].Value.Trim() + (args.Success ? " " + args.Groups[1].Value.Trim() : "");
+            question = Regex.Replace(question, "<system-reminder>.*?</system-reminder>", "", RegexOptions.Singleline);
+            question = Regex.Replace(question, "</?(command-message|command-name|command-args|local-command-stdout)>", "");
+            // Pasted text arrives as <pasted_content id="...">…</pasted_content id="...">: keep the text, mark it as pasted.
+            question = Regex.Replace(question, "<pasted_content[^>]*>\\s*", "【粘贴的内容】\n");
+            question = Regex.Replace(question, "\\s*</pasted_content[^>]*>", "\n【粘贴结束】");
+            // file:/// links with %E5%8D… are shown as the readable path.
+            question = Regex.Replace(question, "file:///[^\\s<>\"]+", match =>
+            {
+                try { return Uri.UnescapeDataString(match.Value); } catch (Exception) { return match.Value; }
+            });
+            return question.Trim();
+        }
+
+        public static string ProjectName(string cwd)
+        {
+            // The repository the conversation ran in (the folder holding .git), e.g. "software" or "Octopus".
+            if (cwd.IndexOf("scratch-workspaces", StringComparison.OrdinalIgnoreCase) >= 0 || cwd.IndexOf("scratch-workspaces".Replace("-", "--"), StringComparison.OrdinalIgnoreCase) >= 0)
+                return "临时会话";
+            string cached;
+            if (projectByFolder.TryGetValue(cwd, out cached)) return cached;
+            string name = cwd;
+            try
+            {
+                if (Directory.Exists(cwd))
+                {
+                    for (var folder = new DirectoryInfo(cwd); folder != null; folder = folder.Parent)
+                        if (Directory.Exists(Path.Combine(folder.FullName, ".git")) || File.Exists(Path.Combine(folder.FullName, ".git"))) { name = folder.Name; break; }
+                    if (name == cwd) name = new DirectoryInfo(cwd).Name;
+                }
+                else
+                {
+                    // A transcript folder name such as "E--code-encode-Octopus": its last part.
+                    string[] parts = cwd.TrimEnd('\\', '/').Split('\\', '/', '-');
+                    name = parts.LastOrDefault(part => part.Length > 0) ?? cwd;
+                }
+            }
+            catch (Exception) { }
+            projectByFolder[cwd] = name;
+            return name;
+        }
+
+        private static string Text(Dictionary<string, object> values, string key)
+        {
+            object value;
+            return values.TryGetValue(key, out value) && value != null ? Convert.ToString(value, CultureInfo.InvariantCulture) : "";
+        }
+
+        private static bool Flag(Dictionary<string, object> values, string key)
+        {
+            object value;
+            return values.TryGetValue(key, out value) && value is bool && (bool)value;
+        }
+
+        private static DateTime Time(Dictionary<string, object> values)
+        {
+            DateTime time;
+            return DateTime.TryParse(Text(values, "timestamp"), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out time)
+                ? time.ToLocalTime() : DateTime.MinValue;
+        }
+    }
+}

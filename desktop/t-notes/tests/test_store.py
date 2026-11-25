@@ -42,6 +42,41 @@ class StoreTests(unittest.TestCase):
         item['base']=1
         self.assertEqual(self.store.put(self.owner,item)['rev'],2)
 
+    def test_blobs_apart_from_records(self):
+        blob={'id':str(uuid.uuid4()),'base':0,'envelope':self.encrypted}
+        self.assertEqual(self.store.put(self.owner,blob,'blobs')['rev'],1)
+        self.assertEqual(self.store.put(self.owner,blob,'blobs')['rev'],1)
+        # The notes listing never carries blobs, and the blob listing carries sizes only.
+        self.assertEqual(self.store.list_records(self.owner),[])
+        listing=self.store.list_blobs(self.owner)
+        self.assertEqual([item['id'] for item in listing['items']],[blob['id']])
+        self.assertNotIn('envelope',listing['items'][0])
+        self.assertEqual(listing['used'],listing['items'][0]['size'])
+        self.assertEqual(listing['limit'],server.MAX_BLOB_BYTES)
+        self.assertEqual(self.store.get_blob(self.owner,blob['id'])['envelope'],self.encrypted)
+        with self.assertRaises(server.ApiError) as error:self.store.get_blob(str(uuid.uuid4()),blob['id'])
+        self.assertEqual(error.exception.status,404)
+        with self.assertRaises(server.ApiError):self.store.get_blob(self.owner,'../../other')
+        blob['envelope']={**self.encrypted,'data':base64.b64encode(b'z'*32).decode()}
+        with self.assertRaises(server.ApiError) as error:self.store.put(self.owner,blob,'blobs')
+        self.assertEqual(error.exception.status,409)
+        blob['base']=1
+        self.assertEqual(self.store.put(self.owner,blob,'blobs')['rev'],2)
+        # A record with the same id is a separate item.
+        self.assertEqual(self.store.put(self.owner,{**blob,'base':0})['rev'],1)
+
+    def test_blob_quota_is_separate(self):
+        original=server.LIMITS['blobs']
+        server.LIMITS['blobs']=(400,1)
+        try:
+            self.store.put(self.owner,{'id':str(uuid.uuid4()),'base':0,'envelope':self.encrypted},'blobs')
+            with self.assertRaises(server.ApiError) as error:
+                self.store.put(self.owner,{'id':str(uuid.uuid4()),'base':0,'envelope':self.encrypted},'blobs')
+            self.assertEqual(error.exception.status,413)
+            self.store.put(self.owner,{'id':str(uuid.uuid4()),'base':0,'envelope':self.encrypted})
+        finally:
+            server.LIMITS['blobs']=original
+
     def test_isolation_and_validation(self):
         self.store.put(self.owner,{'id':str(uuid.uuid4()),'base':0,'envelope':self.encrypted})
         self.assertEqual(self.store.list_records(str(uuid.uuid4())),[])

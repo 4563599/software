@@ -61,6 +61,9 @@ try {
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'IsIconic' -ReturnType ([bool]) -ParameterTypes @([IntPtr])
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'IsWindowVisible' -ReturnType ([bool]) -ParameterTypes @([IntPtr])
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'FindWindow' -ReturnType ([IntPtr]) -ParameterTypes @([string], [string])
+        # When the message being handled was posted, in the same milliseconds as [Environment]::TickCount.
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'GetMessageTime' -ReturnType ([int]) -ParameterTypes @()
+        Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'PostMessage' -ReturnType ([bool]) -ParameterTypes @([IntPtr], [uint32], [IntPtr], [IntPtr])
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'GetWindowThreadProcessId' -ReturnType ([int]) -ParameterTypes @([IntPtr], [int].MakeByRefType())
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'GetWindowRect' -ReturnType ([bool]) -ParameterTypes @([IntPtr], [int[]])
         Add-CodexPInvokeMethod -TypeBuilder $typeBuilder -Name 'GetWindowLong' -ReturnType ([int]) -ParameterTypes @([IntPtr], [int])
@@ -129,8 +132,22 @@ try {
         }
         # Open-TNotes raises the existing window or starts exactly one; repeated clicks never add a window.
         # With the window already in front, the click tucks it away instead.
-        try { Open-TNotes -Toggle -Anchor $Anchor | Out-Null }
-        catch { [System.Windows.Forms.MessageBox]::Show('T Notes backend could not start. Your unsaved text is still in the current window.', 'T Notes') | Out-Null }
+        $result = ''
+        try { $result = [string]@(Open-TNotes -Toggle -Anchor $Anchor -InProcess)[-1] }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show('T Notes backend could not start. Your unsaved text is still in the current window.', 'T Notes') | Out-Null
+            return
+        }
+        # A window that is still starting takes a few seconds; the card says so until it shows.
+        if ($result -eq 'Started' -or $result -eq 'Starting') {
+            # The launcher ends once the window is there and placed above the button; the window is then looked up
+            # for this vault's browser profile, which also lets the next click find it at once.
+            Show-ToolbarProgress -Text $progressText.Notes -ButtonIndex 2 -Done {
+                if (Test-TNotesLaunchPending) { return 'wait' }
+                if ((Get-TNotesWindowHandle) -ne [IntPtr]::Zero) { return 'done' }
+                return 'gone'
+            }
+        }
     }
 
     # The tool window keeps its text in a UTF-8 file; its title is how an open window is found again.
@@ -154,7 +171,8 @@ try {
         }
 
         # Like T: one window. A click raises it above the button, or tucks it away when it is already in front.
-        $handle = [CodexWindowApi].GetMethod('FindWindow').Invoke($null, [object[]]@($null, [string]$devToolsText.Title))
+        # A window that is still being built (not showing yet) belongs to a start in progress.
+        $handle = Find-ToolbarWindow -Title ([string]$devToolsText.Title)
         if ($handle -ne [IntPtr]::Zero -and (Get-Command -Name 'Get-TNotesWindowApi' -CommandType Function -ErrorAction SilentlyContinue)) {
             $ownerId = 0
             [void][CodexWindowApi]::GetWindowThreadProcessId($handle, [ref]$ownerId)
@@ -179,9 +197,21 @@ try {
             }
         }
 
-        $arguments = '-NoProfile -ExecutionPolicy RemoteSigned -WindowStyle Hidden -File "' + $devToolsScript + '" -Anchor "' + $Anchor + '"'
-        Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $arguments -WindowStyle Hidden
+        # Starting the tool window takes one to a few seconds. The card says so until it shows, and clicks meanwhile
+        # do not start a second copy.
+        $launch = $devToolsLaunch.Process
+        if ($null -eq $launch -or $launch.HasExited) {
+            if ($null -ne $launch) { $launch.Dispose() }
+            $arguments = '-NoProfile -ExecutionPolicy RemoteSigned -WindowStyle Hidden -File "' + $devToolsScript + '" -Anchor "' + $Anchor + '"'
+            $devToolsLaunch.Process = Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $arguments -WindowStyle Hidden -PassThru
+        }
+        Show-ToolbarProgress -Text $progressText.DevTools -ButtonIndex 3 -Done {
+            if ((Find-ToolbarWindow -Title ([string]$devToolsText.Title)) -ne [IntPtr]::Zero) { return 'done' }
+            if (-not $devToolsLaunch.Process.HasExited) { return 'wait' }
+            return 'gone'
+        }
     }
+    $devToolsLaunch = [pscustomobject]@{ Process = $null }
 
     function Get-AiRelatedProcessIds {
         param([object[]]$Processes)
@@ -201,14 +231,17 @@ try {
         )
         if ($confirmation -ne [System.Windows.Forms.DialogResult]::Yes) { return }
         $form.UseWaitCursor = $true
+        Show-ToolbarProgress -Text $progressText.CloseAi -ButtonIndex 0
         try {
             $worker = Join-Path $projectRoot 'ai-process-cleanup-worker.ps1'
             if (-not (Test-Path -LiteralPath $worker)) { throw 'Cleanup worker is missing.' }
             $resultFile = Join-Path $projectRoot ('ai-cleanup-result-' + [guid]::NewGuid().ToString('N') + '.json')
             $arguments = '-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -WindowStyle Hidden -File "' +
                 $worker + '" -Mode Clean -ResultPath "' + $resultFile + '" -ProtectedProcessId ' + $PID
-            $workerProcess = Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+            $workerProcess = Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
+            Wait-ToolbarProcess -Process $workerProcess
             $workerProcess.Dispose()
+            Hide-ToolbarProgress
             if (-not (Test-Path -LiteralPath $resultFile)) { throw 'Cleanup did not return a verified result.' }
             $result = Get-Content -Raw -LiteralPath $resultFile | ConvertFrom-Json
             if ($result.Status -eq 'Complete') {
@@ -228,10 +261,12 @@ try {
             [System.Windows.Forms.MessageBox]::Show($form,$message,$confirmTitle,[System.Windows.Forms.MessageBoxButtons]::OK,$icon) | Out-Null
         }
         catch {
+            Hide-ToolbarProgress
             $message = (-join ([char[]](0x7BA1, 0x7406, 0x5458, 0x6388, 0x6743, 0x5DF2, 0x53D6, 0x6D88, 0xFF0C, 0x6216, 0x6E05, 0x7406, 0x68C0, 0x67E5, 0x672A, 0x5B8C, 0x6210, 0x3002, 0x672A, 0x786E, 0x8BA4, 0x5168, 0x90E8, 0x8FDB, 0x7A0B, 0x5DF2, 0x5173, 0x95ED, 0x3002)))
             [System.Windows.Forms.MessageBox]::Show($form,$message,$confirmTitle,[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
         }
         finally {
+            Hide-ToolbarProgress
             $form.UseWaitCursor = $false
         }
     }
@@ -257,6 +292,7 @@ try {
             return
         }
 
+        Show-ToolbarProgress -Text $progressText.CloseStudio -ButtonIndex 1
         $processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
         $processIds = @(Select-AndroidStudioRelatedProcessIds -Processes $processes |
             Where-Object { $_ -ne $PID })
@@ -268,6 +304,7 @@ try {
             }
             catch {
             }
+            [System.Windows.Forms.Application]::DoEvents()
         }
 
         $remainingIds = @($processIds | Where-Object {
@@ -277,12 +314,14 @@ try {
         if ($remainingIds.Count -gt 0) {
             $taskKillArguments = Get-AndroidStudioTaskKillArguments -ProcessIds $remainingIds
             try {
-                Start-Process `
+                $killer = Start-Process `
                     -FilePath (Join-Path $env:WINDIR 'System32\taskkill.exe') `
                     -ArgumentList $taskKillArguments `
                     -Verb RunAs `
                     -WindowStyle Hidden `
-                    -Wait | Out-Null
+                    -PassThru
+                Wait-ToolbarProcess -Process $killer
+                $killer.Dispose()
             }
             catch {
                 $elevationCancelled = $true
@@ -290,6 +329,7 @@ try {
         }
 
         Start-Sleep -Milliseconds 300
+        Hide-ToolbarProgress
         $remainingIds = @($processIds | Where-Object {
             $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue)
         })
@@ -391,7 +431,7 @@ try {
             ToolTip = $devToolsToolTipText; Action = { param($anchor) Invoke-DevTools -Anchor $anchor }
         }
     )
-    $barState = [pscustomobject]@{ Hover = -1; Pressed = -1; Busy = $false; Painted = $false; Ticks = 0; Failures = 0; LastTopMost = $true }
+    $barState = [pscustomobject]@{ Hover = -1; Pressed = -1; Busy = $false; BusyEnded = $null; Painted = $false; Ticks = 0; Failures = 0; LastTopMost = $true }
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'CodexFloatingButton'
@@ -423,17 +463,49 @@ try {
             [single]$X,
             [single]$Y,
             [single]$Size,
-            [single]$Radius
+            [single]$Radius,
+            # A height of its own makes a rounded rectangle instead of a square.
+            [single]$Height = 0
         )
 
+        $tall = if ($Height -gt 0) { $Height } else { $Size }
         $diameter = 2 * $Radius
         $path = New-Object System.Drawing.Drawing2D.GraphicsPath
         $path.AddArc($X, $Y, $diameter, $diameter, 180, 90)
         $path.AddArc($X + $Size - $diameter, $Y, $diameter, $diameter, 270, 90)
-        $path.AddArc($X + $Size - $diameter, $Y + $Size - $diameter, $diameter, $diameter, 0, 90)
-        $path.AddArc($X, $Y + $Size - $diameter, $diameter, $diameter, 90, 90)
+        $path.AddArc($X + $Size - $diameter, $Y + $tall - $diameter, $diameter, $diameter, 0, 90)
+        $path.AddArc($X, $Y + $tall - $diameter, $diameter, $diameter, 90, 90)
         $path.CloseFigure()
         return $path
+    }
+
+    # Hands a picture with transparency to a layered window (the bar, the progress card) and disposes the picture.
+    function Set-ToolbarLayeredBitmap {
+        param(
+            [IntPtr]$Handle,
+            [System.Drawing.Bitmap]$Bitmap
+        )
+
+        $screenDc = [CodexWindowApi]::GetDC([IntPtr]::Zero)
+        $memoryDc = [CodexWindowApi]::CreateCompatibleDC($screenDc)
+        # A transparent background makes GDI+ hand over the premultiplied pixels the layered window expects.
+        $surface = $Bitmap.GetHbitmap([System.Drawing.Color]::FromArgb(0))
+        $previousObject = [CodexWindowApi]::SelectObject($memoryDc, $surface)
+        try {
+            [Int64]$surfaceSize = ([Int64]$Bitmap.Height -shl 32) -bor [Int64]$Bitmap.Width
+            [Int64]$sourcePoint = 0
+            # AC_SRC_OVER, no flags, constant alpha 255, AC_SRC_ALPHA.
+            [int]$blend = 0x01FF0000
+            $ULW_ALPHA = 2
+            return [bool][CodexWindowApi]::UpdateLayeredWindow($Handle, $screenDc, [IntPtr]::Zero, [ref]$surfaceSize, $memoryDc, [ref]$sourcePoint, 0, [ref]$blend, $ULW_ALPHA)
+        }
+        finally {
+            [CodexWindowApi]::SelectObject($memoryDc, $previousObject) | Out-Null
+            [CodexWindowApi]::DeleteObject($surface) | Out-Null
+            [CodexWindowApi]::DeleteDC($memoryDc) | Out-Null
+            [CodexWindowApi]::ReleaseDC([IntPtr]::Zero, $screenDc) | Out-Null
+            $Bitmap.Dispose()
+        }
     }
 
     function Write-ToolbarDiagnostic {
@@ -542,36 +614,7 @@ try {
             $graphics.Dispose()
         }
 
-        $screenDc = [CodexWindowApi]::GetDC([IntPtr]::Zero)
-        $memoryDc = [CodexWindowApi]::CreateCompatibleDC($screenDc)
-        # A transparent background makes GDI+ hand over the premultiplied pixels the layered window expects.
-        $surface = $bitmap.GetHbitmap([System.Drawing.Color]::FromArgb(0))
-        $previousObject = [CodexWindowApi]::SelectObject($memoryDc, $surface)
-        try {
-            [Int64]$surfaceSize = ([Int64]$bitmap.Height -shl 32) -bor [Int64]$bitmap.Width
-            [Int64]$sourcePoint = 0
-            # AC_SRC_OVER, no flags, constant alpha 255, AC_SRC_ALPHA.
-            [int]$blend = 0x01FF0000
-            $ULW_ALPHA = 2
-            $barState.Painted = [bool][CodexWindowApi]::UpdateLayeredWindow(
-                $form.Handle,
-                $screenDc,
-                [IntPtr]::Zero,
-                [ref]$surfaceSize,
-                $memoryDc,
-                [ref]$sourcePoint,
-                0,
-                [ref]$blend,
-                $ULW_ALPHA
-            )
-        }
-        finally {
-            [CodexWindowApi]::SelectObject($memoryDc, $previousObject) | Out-Null
-            [CodexWindowApi]::DeleteObject($surface) | Out-Null
-            [CodexWindowApi]::DeleteDC($memoryDc) | Out-Null
-            [CodexWindowApi]::ReleaseDC([IntPtr]::Zero, $screenDc) | Out-Null
-            $bitmap.Dispose()
-        }
+        $barState.Painted = Set-ToolbarLayeredBitmap -Handle $form.Handle -Bitmap $bitmap
 
         if (-not $barState.Painted) {
             # The timer below keeps retrying; the first few failures are written down so they can be traced.
@@ -654,6 +697,174 @@ try {
         & $keepTopMost
     })
 
+    # A small card above a button while its work takes a moment: a window that is still starting, or programs being
+    # closed. A blue ring turns beside the text. The card never takes the focus and lets clicks through; it goes away
+    # when the work is done. A window that has not appeared within the time limit turns it into a short red message.
+    $progressText = [pscustomobject]@{
+        Notes = (-join ([char[]](0x6B63, 0x5728, 0x6253, 0x5F00))) + ' T ' + (-join ([char[]](0x7B14, 0x8BB0, 0x2026)))
+        DevTools = (-join ([char[]](0x6B63, 0x5728, 0x6253, 0x5F00))) + $(if ($null -ne $devToolsText) { [string]$devToolsText.Title } else { 'Dev tools' }) + [char]0x2026
+        CloseAi = (-join ([char[]](0x6B63, 0x5728, 0x5173, 0x95ED))) + ' Codex / ChatGPT / Claude' + [char]0x2026
+        CloseStudio = (-join ([char[]](0x6B63, 0x5728, 0x5173, 0x95ED))) + ' Android Studio' + [char]0x2026
+        Failed = -join ([char[]](0x6CA1, 0x6709, 0x6253, 0x5F00, 0xFF0C, 0x8BF7, 0x518D, 0x70B9, 0x4E00, 0x6B21))
+    }
+    $progressForm = New-Object System.Windows.Forms.Form
+    $progressForm.Text = 'CodexToolbarProgress'
+    $progressForm.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+    $progressForm.ShowInTaskbar = $false
+    $progressForm.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+    $progressHandle = $progressForm.Handle
+    $WS_EX_TRANSPARENT = 0x00000020
+    [CodexWindowApi]::SetWindowLong($progressHandle, $GWL_EXSTYLE,
+        [CodexWindowApi]::GetWindowLong($progressHandle, $GWL_EXSTYLE) -bor $WS_EX_TOOLWINDOW -bor $WS_EX_LAYERED -bor $WS_EX_NOACTIVATE -bor $WS_EX_TRANSPARENT) | Out-Null
+    $progressFont = New-Object System.Drawing.Font('Segoe UI', 13, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
+    $progressBox = [pscustomobject]@{ Shown = $false; Text = ''; Failed = $false; Angle = 0; Ticks = 0; Width = 0; Height = 0; Check = $null; Started = 0; GoneSince = 0; FailedAt = 0 }
+    $progressShadow = 10
+
+    function Update-ToolbarProgress {
+        $box = $progressBox
+        $bitmap = New-Object System.Drawing.Bitmap($box.Width, $box.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        $pens = @()
+        try {
+            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+            $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
+            $cardWidth = $box.Width - 2 * $progressShadow
+            $cardHeight = $box.Height - 2 * $progressShadow
+            foreach ($layer in @(@(4, 7), @(2, 12), @(1, 20))) {
+                $grow = $layer[0]
+                $shadowPath = New-ToolbarRoundedPath -X ($progressShadow - $grow) -Y ($progressShadow - $grow + 2) -Size ($cardWidth + 2 * $grow) -Height ($cardHeight + 2 * $grow) -Radius (10 + $grow)
+                $shadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb($layer[1], 0, 0, 0))
+                try { $graphics.FillPath($shadowBrush, $shadowPath) } finally { $shadowBrush.Dispose(); $shadowPath.Dispose() }
+            }
+            $cardPath = New-ToolbarRoundedPath -X $progressShadow -Y $progressShadow -Size $cardWidth -Height $cardHeight -Radius 10
+            $cardBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
+            $pens += ($borderPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(226, 232, 236), 1))
+            try { $graphics.FillPath($cardBrush, $cardPath); $graphics.DrawPath($borderPen, $cardPath) } finally { $cardBrush.Dispose(); $cardPath.Dispose() }
+
+            $centerY = $progressShadow + $cardHeight / 2
+            $ring = [System.Drawing.RectangleF]::new($progressShadow + 14, $centerY - 8, 16, 16)
+            if ($box.Failed) {
+                $markBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(220, 76, 76))
+                $markFont = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+                $markFormat = New-Object System.Drawing.StringFormat
+                try {
+                    $markFormat.Alignment = [System.Drawing.StringAlignment]::Center
+                    $markFormat.LineAlignment = [System.Drawing.StringAlignment]::Center
+                    $graphics.FillEllipse($markBrush, $ring)
+                    $graphics.DrawString('!', $markFont, [System.Drawing.Brushes]::White, [System.Drawing.RectangleF]::new($ring.X, $ring.Y + 0.5, 16, 16), $markFormat)
+                }
+                finally { $markFormat.Dispose(); $markFont.Dispose(); $markBrush.Dispose() }
+            }
+            else {
+                $pens += ($trackPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(219, 231, 253), 2.4))
+                $pens += ($arcPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(37, 99, 235), 2.4))
+                $arcPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+                $arcPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+                $graphics.DrawEllipse($trackPen, $ring)
+                $graphics.DrawArc($arcPen, $ring, [single]$box.Angle, [single]100)
+            }
+            $textColor = if ($box.Failed) { [System.Drawing.Color]::FromArgb(181, 59, 59) } else { [System.Drawing.Color]::FromArgb(31, 42, 48) }
+            $textBrush = New-Object System.Drawing.SolidBrush($textColor)
+            $textFormat = New-Object System.Drawing.StringFormat
+            try {
+                $textFormat.LineAlignment = [System.Drawing.StringAlignment]::Center
+                $textFormat.FormatFlags = [System.Drawing.StringFormatFlags]::NoWrap
+                $graphics.DrawString($box.Text, $progressFont, $textBrush, [System.Drawing.RectangleF]::new($progressShadow + 40, $progressShadow, $cardWidth - 48, $cardHeight), $textFormat)
+            }
+            finally { $textFormat.Dispose(); $textBrush.Dispose() }
+        }
+        finally {
+            foreach ($pen in $pens) { $pen.Dispose() }
+            $graphics.Dispose()
+        }
+        [void](Set-ToolbarLayeredBitmap -Handle $progressHandle -Bitmap $bitmap)
+    }
+
+    # Shows the card above button $ButtonIndex. $Done, when given, is asked a few times a second and answers 'done'
+    # (the window is there: the card goes), 'wait', or 'gone' (the starter ended without a window: after a few more
+    # seconds the card says it did not open). Without $Done the card stays until Hide-ToolbarProgress.
+    function Show-ToolbarProgress {
+        param(
+            [string]$Text,
+            [int]$ButtonIndex,
+            [scriptblock]$Done = $null
+        )
+
+        $box = $progressBox
+        $box.Text = $Text; $box.Failed = $false; $box.Check = $Done; $box.Started = [Environment]::TickCount; $box.GoneSince = 0
+        $box.Width = [System.Windows.Forms.TextRenderer]::MeasureText($Text, $progressFont).Width + 56 + 2 * $progressShadow
+        $box.Height = 40 + 2 * $progressShadow
+        $buttonLeft = $form.Left + $barLayout.Margin + $ButtonIndex * ($barLayout.ButtonSize + $barLayout.Gap)
+        $buttonTop = $form.Top + $barLayout.Margin
+        $area = [System.Windows.Forms.Screen]::FromPoint([System.Drawing.Point]::new($buttonLeft, $buttonTop)).WorkingArea
+        $x = [int]($buttonLeft + $barLayout.ButtonSize / 2 - $box.Width / 2)
+        $x = [Math]::Max($area.Left, [Math]::Min($x, $area.Right - $box.Width))
+        # Above the button, or under the bar when it sits at the top of the screen.
+        $y = $buttonTop - 6 - $box.Height + $progressShadow
+        if ($y -lt $area.Top) { $y = $buttonTop + $barLayout.ButtonSize + 6 - $progressShadow }
+        [CodexWindowApi]::SetWindowPos($progressHandle, $HWND_TOPMOST, $x, $y, $box.Width, $box.Height, [uint32]$SWP_NOACTIVATE) | Out-Null
+        Update-ToolbarProgress
+        [CodexWindowApi]::SetWindowPos($progressHandle, $HWND_TOPMOST, 0, 0, 0, 0, $topMostFlags) | Out-Null
+        $box.Shown = $true
+        $progressTimer.Start()
+    }
+
+    function Hide-ToolbarProgress {
+        $progressTimer.Stop()
+        $progressBox.Check = $null
+        if ($progressBox.Shown) {
+            $SWP_HIDEWINDOW = 0x0080
+            [CodexWindowApi]::SetWindowPos($progressHandle, [IntPtr]::Zero, 0, 0, 0, 0, [uint32]($SWP_NOSIZE -bor $SWP_NOMOVE -bor $SWP_NOACTIVATE -bor 0x0004 -bor $SWP_HIDEWINDOW)) | Out-Null
+            $progressBox.Shown = $false
+        }
+    }
+
+    $progressTimer = New-Object System.Windows.Forms.Timer
+    $progressTimer.Interval = 40
+    $progressTimer.Add_Tick({
+        $box = $progressBox
+        $now = [Environment]::TickCount
+        if ($box.Failed) {
+            if ($now - $box.FailedAt -ge 3000) { Hide-ToolbarProgress }
+            return
+        }
+        $box.Angle = ($box.Angle + 16) % 360
+        $box.Ticks++
+        if ($null -ne $box.Check -and ($box.Ticks % 5) -eq 0) {
+            $answer = 'wait'
+            try { $answer = [string](& $box.Check) } catch { $answer = 'gone' }
+            if ($answer -eq 'done') { Hide-ToolbarProgress; return }
+            if ($answer -eq 'gone' -and $box.GoneSince -eq 0) { $box.GoneSince = $now }
+            if (($box.GoneSince -ne 0 -and $now - $box.GoneSince -ge 4000) -or $now - $box.Started -ge 30000) {
+                $box.Failed = $true; $box.FailedAt = $now; $box.Text = $progressText.Failed
+            }
+        }
+        Update-ToolbarProgress
+    })
+
+    # A top-level window with exactly this title that is showing, or zero.
+    function Find-ToolbarWindow {
+        param([string]$Title)
+
+        $handle = [CodexWindowApi].GetMethod('FindWindow').Invoke($null, [object[]]@($null, $Title))
+        if ($handle -ne [IntPtr]::Zero -and [CodexWindowApi]::IsWindowVisible($handle)) {
+            return $handle
+        }
+        return [IntPtr]::Zero
+    }
+
+    # Waits for a helper process while the bar and the progress card keep drawing; clicks on the bar meanwhile are
+    # ignored, since the bar is busy.
+    function Wait-ToolbarProcess {
+        param([System.Diagnostics.Process]$Process)
+
+        while (-not $Process.HasExited) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 30
+        }
+    }
+
     # The bar returns to where it was last dragged, as long as that screen is still connected.
     $dataDirectory = Join-Path $env:LOCALAPPDATA 'TNotes'
     $positionFile = Join-Path $dataDirectory 'toolbar.json'
@@ -688,6 +899,32 @@ try {
     Remove-Item -LiteralPath $pauseFile -Force -ErrorAction SilentlyContinue
 
     $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
+    # The close buttons of T Notes and the tool window only tuck them away; these items close them for good.
+    $quitText = -join ([char[]](0x9000, 0x51FA))
+    $quitNotesItem = $contextMenu.Items.Add($quitText + ' T ' + (-join ([char[]](0x7B14, 0x8BB0))))
+    $quitDevToolsItem = $contextMenu.Items.Add($quitText + $(if ($null -ne $devToolsText) { [string]$devToolsText.Title } else { ' Dev tools' }))
+    [void]$contextMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    $contextMenu.Add_Opening({
+        $quitNotesItem.Enabled = [bool](Get-Command -Name 'Get-TNotesWindowHandle' -CommandType Function -ErrorAction SilentlyContinue) -and (Get-TNotesWindowHandle) -ne [IntPtr]::Zero
+        $quitDevToolsItem.Enabled = $null -ne $devToolsText -and (Find-ToolbarWindow -Title ([string]$devToolsText.Title)) -ne [IntPtr]::Zero
+    })
+    $quitNotesItem.Add_Click({
+        # A close message, as Alt+F4 sends: the page still asks first when an edit is not saved.
+        $window = Get-TNotesWindowHandle
+        if ($window -ne [IntPtr]::Zero) {
+            [void][CodexWindowApi]::PostMessage($window, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+        }
+    })
+    $quitDevToolsItem.Add_Click({
+        # The tool window waits for this signal and then closes for good.
+        try {
+            $signal = [System.Threading.EventWaitHandle]::OpenExisting('Local\CodexDevToolsQuit')
+            [void]$signal.Set()
+            $signal.Dispose()
+        }
+        catch {
+        }
+    })
     $exitText = -join ([char[]](0x9000, 0x51FA, 0x60AC, 0x6D6E, 0x6309, 0x94AE))
     $exitItem = $contextMenu.Items.Add($exitText)
     $exitItem.Add_Click({
@@ -711,7 +948,8 @@ try {
         IsDragging = $false
         Offset = [System.Drawing.Point]::Empty
         Start = [System.Drawing.Point]::Empty
-        DragThreshold = 4
+        # A click whose pointer slips a little is still a click: Windows' own drag distance, and at least 6 pixels.
+        DragThreshold = [Math]::Max(6, [System.Windows.Forms.SystemInformation]::DragSize.Width)
     }
 
     $hitTest = {
@@ -747,6 +985,15 @@ try {
 
         if ($eventArgs.Button -ne [System.Windows.Forms.MouseButtons]::Left) {
             return
+        }
+        # A press made while the bar was still busy with the last click waited in the queue; acting on it now would
+        # repeat that click (and tuck away the window it just opened).
+        if ($null -ne $barState.BusyEnded) {
+            $sinceBusy = [int64][CodexWindowApi]::GetMessageTime() - [int64]$barState.BusyEnded
+            if ($sinceBusy -lt -2147483648) { $sinceBusy += 4294967296 } elseif ($sinceBusy -gt 2147483647) { $sinceBusy -= 4294967296 }
+            if ($sinceBusy -lt 0) {
+                return
+            }
         }
 
         $dragState.IsDown = $true
@@ -812,6 +1059,7 @@ try {
             }
             finally {
                 $barState.Busy = $false
+                $barState.BusyEnded = [Environment]::TickCount
             }
         }
     })
@@ -823,6 +1071,12 @@ try {
     $form.Add_FormClosed({
         $topMostTimer.Stop()
         $topMostTimer.Dispose()
+        $progressTimer.Stop()
+        $progressTimer.Dispose()
+        $guard = 'Codex.Toolbar.CloseGuard' -as [Type]
+        if ($null -ne $guard) { $guard::Stop() }
+        $progressForm.Dispose()
+        $progressFont.Dispose()
         $codexImage.Dispose()
         $toolTip.Dispose()
         $contextMenu.Dispose()
@@ -835,6 +1089,25 @@ try {
     # Recovery must also start when Shown is missed during desktop initialization.
     $topMostTimer.Start()
     Write-ToolbarDiagnostic ('Toolbar initialized; recovery timer enabled=' + $topMostTimer.Enabled + '.')
+    # T Notes' close button minimizes the window instead of closing it (t-notes\CloseGuard.cs.txt). It is compiled
+    # once, a moment after the bar is up, so the bar never waits for it; without it, the button closes as before.
+    $closeGuardTimer = New-Object System.Windows.Forms.Timer
+    $closeGuardTimer.Interval = 1500
+    $closeGuardTimer.Add_Tick({
+        $closeGuardTimer.Stop()
+        try {
+            if ($null -eq ('Codex.Toolbar.CloseGuard' -as [Type])) {
+                Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $projectRoot 't-notes\CloseGuard.cs.txt'))) -Language CSharp
+            }
+            $guard = 'Codex.Toolbar.CloseGuard' -as [Type]
+            $guard::Start()
+            Write-ToolbarDiagnostic ('Close guard for T Notes running=' + $guard::Running + '.')
+        }
+        catch {
+            Write-ToolbarDiagnostic ('Close guard for T Notes could not start: ' + $_.Exception.Message)
+        }
+    })
+    $closeGuardTimer.Start()
     [System.Windows.Forms.Application]::Run($form)
 }
 catch {

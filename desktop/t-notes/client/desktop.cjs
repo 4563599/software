@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const {spawn} = require('node:child_process');
+const {createAiSync, recordsRoot} = require('./ai-sync.cjs');
 
 const port = Number(process.env.TNOTES_PORT || 47321);
 const origin = `http://127.0.0.1:${port}`;
@@ -253,4 +254,41 @@ server.listen(port,'127.0.0.1');
 // The backend runs all day, so the daily backup needs no scheduled task of its own.
 setTimeout(()=>tryBackup(false),5000);
 setInterval(()=>tryBackup(false),10*60*1000);
+
+// AI conversation records (see ai-sync.cjs) go to the same server, encrypted with the remembered vault key.
+// Only the normal vault syncs them; a test or second data folder never touches the real records folder.
+function remoteRequest(method,pathname,payload,token) {
+  return new Promise((resolve,reject)=>{
+    const raw=payload?JSON.stringify(payload):null,headers={'Content-Type':'application/json'};
+    if(raw)headers['Content-Length']=Buffer.byteLength(raw);
+    if(token)headers.Authorization='Bearer '+token;
+    const upstream=https.request(new URL(pathname,remote),{method,ca,rejectUnauthorized:true,headers,timeout:20000},up=>{
+      let length=0;const chunks=[];
+      up.on('data',chunk=>{length+=chunk.length;if(length>8*1024*1024)up.destroy(Error('Response too large'));else chunks.push(chunk);});
+      up.on('error',reject);
+      up.on('end',()=>{let data={};try{data=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{}resolve({status:up.statusCode,data});});
+    });
+    upstream.on('timeout',()=>upstream.destroy(Object.assign(Error('Timeout'),{code:'ETIMEDOUT'})));
+    upstream.on('error',reject);
+    if(raw)upstream.write(raw);upstream.end();
+  });
+}
+const aiRecordsEnabled=!!process.env.TNOTES_AI_RECORDS||path.resolve(dataDir).toLowerCase()===path.resolve(standardDataDir).toLowerCase();
+// Started once this process owns the port, so a second backend started by mistake never syncs alongside.
+if(aiRecordsEnabled&&!process.env.TNOTES_NO_AI_SYNC)server.once('listening',()=>{
+  createAiSync({
+    root:recordsRoot(),
+    request:remoteRequest,
+    unavailable:()=>!remote?'未配置同步服务器，AI 记录只保存在本机':
+      !cached.data?.profile?'随手记还没有登录过，暂不同步':
+      !fs.existsSync(sessionPath)?'随手记没有记住登录，暂不同步（登录随手记时勾选“记住这台电脑”即可）':null,
+    credentials:async()=>{
+      const raw=await protectSession('Unprotect',fs.readFileSync(sessionPath,'utf8'));
+      const value=JSON.parse(Buffer.from(raw,'base64').toString('utf8'));
+      if(!validSession(value))return null;
+      return {key:Buffer.from(value.encryptionKey,'base64'),auth:value.auth,vault:value.vaultId,name:cached.data.profile.name};
+    },
+    archiver:path.join(__dirname,'..','..','dev-tools','ai-records.ps1'),
+  }).start();
+});
 server.on('error',e=>{console.error(e.code==='EADDRINUSE'?'TNotes port already in use':'TNotes startup failed');process.exitCode=1;});

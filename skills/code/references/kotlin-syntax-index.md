@@ -66,6 +66,7 @@ node <技能目录>/scripts/kotlin-docs.js find <关键字...> [--chapter <章�
 | 拖尾 lambda | `f(a) { … }` / `run { … }` | lambda 表达式 › 传递末尾的 lambda 表达式 · 第 774 页 | 最后一个参数是函数时，lambda 可以写在括号外；唯一参数时括号可省 |
 | it 隐式参数 | `{ it > 0 }` | lambda 表达式 › it：单个参数的隐式名称 · 第 774-775 页 | 只有一个参数时可以不声明，用 it |
 | 未使用的 lambda 参数 | `{ _, value -> … }` | lambda 表达式 › 下划线用于未使用的变量 · 第 775 页 | 用下划线占住当前不使用的参数位置 |
+| 省略 catch 的异常参数名 | `catch (_: Exception)` | Kotlin 1.5 的兼容性指南 › underscore-named catch block parameters · 第 2118 页；lambda 表达式 › 下划线用于未使用的变量 · 第 775 页 | 用 _ 表示不需要这个异常对象，代码里也不能再引用它 |
 | SAM 转换 | `setOnClickListener { }` | 函数式（SAM）接口 › SAM 转换 · 第 688 页；在 Kotlin 中调用 Java › SAM 转换 · 第 922 页 | lambda 自动转换成只有一个抽象方法的接口 |
 | 作用域函数 | `let` / `run` / `with` / `apply` / `also` | 作用域函数 · 第 1403-1404 页（对比表） | let/also 用 it，run/with/apply 用 this |
 | let | `x?.let { it… }` | 作用域函数 › let · 第 1409 页 | 返回 lambda 的结果，常配合 ?. 处理非空值 |
@@ -112,6 +113,7 @@ node <技能目录>/scripts/kotlin-docs.js find <关键字...> [--chapter <章�
 | 作用域 | `CoroutineScope` | 协程基础 · 第 1428-1430 页 | lifecycleScope 是 Android 提供的作用域（不在本文档里） |
 | Job 与 join | `val job = launch { }` / `job.join()` | 协程基础 · 第 1432 页 | launch 返回 Job，join 挂起等待它结束 |
 | 取消 | `job.cancel()` / `CancellationException` | 取消与超时 · 第 1435-1437 页 | 取消时挂起函数抛 CancellationException，不要吞掉它 |
+| 检查是否已取消 | `ensureActive()` / `isActive` | 取消与超时 › 使计算代码可取消 · 第 1437 页（isActive）；ensureActive 本身文档未收录（kotlinx.coroutines） | 协程已取消时 ensureActive() 抛出 CancellationException，常用在 catch 里避免吞掉取消 |
 | 超时 | `withTimeout` / `withTimeoutOrNull` | 取消与超时 › 超时 · 第 1440-1442 页 | 超时后 withTimeoutOrNull 返回 null 而不是抛异常 |
 
 ## 补充（生成验证页时查到的）

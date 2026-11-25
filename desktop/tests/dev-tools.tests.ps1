@@ -423,10 +423,78 @@ try{
  if(([regex]::Matches($appendixHtml,'class="slice"')).Count -ne 1 -or $appendixHtml -notmatch 'top:-49\.2em'){throw 'A section must not show other headings.'}
 }finally{Remove-Item -LiteralPath $protocolHtml -Force -ErrorAction SilentlyContinue}
 
+# AI records: one round per typed question, the last text of the round as the answer, the texts before it as the
+# process; tool calls, sub-agents and injected skill text are left out; Markdown answers become one-style HTML.
+. (Join-Path $root 'dev-tools\ai-records.ps1')
+Initialize-AiRecords
+$chatDir=Join-Path ([IO.Path]::GetTempPath()) ('ai-records-test-'+[guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path (Join-Path $chatDir '.git') -Force | Out-Null
+$chatFile=Join-Path $chatDir 'session-1.jsonl'
+$cwd=$chatDir.Replace('\','\\')
+$chatLines=@(
+ '{"type":"custom-title","customTitle":"Example title","sessionId":"session-1"}',
+ ('{"type":"user","turnOrigin":"human","isSidechain":false,"timestamp":"2026-11-20T08:00:00.000Z","cwd":"'+$cwd+'","message":{"role":"user","content":"<command-message>lyycode</command-message>\n<command-name>/lyycode</command-name>\n<command-args>save the answers</command-args>"}}'),
+ ('{"type":"user","isMeta":true,"timestamp":"2026-11-20T08:00:01.000Z","cwd":"'+$cwd+'","message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill"}]}}'),
+ ('{"type":"assistant","isSidechain":false,"timestamp":"2026-11-20T08:00:05.000Z","cwd":"'+$cwd+'","message":{"role":"assistant","content":[{"type":"text","text":"Reading the files first."},{"type":"tool_use","name":"Read"}]}}'),
+ ('{"type":"user","isSidechain":false,"timestamp":"2026-11-20T08:00:06.000Z","cwd":"'+$cwd+'","message":{"role":"user","content":[{"type":"tool_result","content":"file text"}]}}'),
+ ('{"type":"assistant","isSidechain":true,"timestamp":"2026-11-20T08:00:07.000Z","cwd":"'+$cwd+'","message":{"role":"assistant","content":[{"type":"text","text":"sub agent text"}]}}'),
+ ('{"type":"assistant","isSidechain":false,"timestamp":"2026-11-20T08:01:00.000Z","cwd":"'+$cwd+'","message":{"role":"assistant","content":[{"type":"text","text":"**Done.**\n\n| Code | Result |\n|---|---|\n| 1 | ok<br>fine |"}]}}'),
+ ('{"type":"user","turnOrigin":"human","isSidechain":false,"timestamp":"2026-11-20T09:00:00.000Z","cwd":"'+$cwd+'","message":{"role":"user","content":[{"type":"text","text":"second question"},{"type":"image","source":{}}]}}'),
+ ('{"type":"assistant","isSidechain":false,"timestamp":"2026-11-20T09:00:30.000Z","cwd":"'+$cwd+'","message":{"role":"assistant","content":[{"type":"text","text":"- one\n- two\n\n1. first"}]}}')
+)
+[IO.File]::WriteAllLines($chatFile,$chatLines,(New-Object Text.UTF8Encoding($false)))
+try{
+ $serializer=New-Object System.Web.Script.Serialization.JavaScriptSerializer
+ $chat=[Codex.AiRecords.ChatArchive]::ReadTranscript($chatFile,$serializer)
+ if($chat.Title -ne 'Example title' -or $chat.Project -ne (Split-Path -Leaf $chatDir) -or $chat.Records.Count -ne 2){throw "AI records: title, project or rounds wrong ($($chat.Title) / $($chat.Project) / $($chat.Records.Count))."}
+ $first=$chat.Records[0]
+ if($first.Question -ne '/lyycode save the answers' -or $first.Process.Count -ne 1 -or $first.Process[0] -ne 'Reading the files first.' -or $first.Answer -notmatch '^\*\*Done'){throw 'AI records: the first round was not read as question, process and answer.'}
+ if($chat.Records[1].Question -notmatch 'second question' -or $chat.Records[1].Question -notmatch '1'){throw 'AI records: a question with a picture lost its text.'}
+ $html=[Codex.AiRecords.MarkdownHtml]::Render($first.Answer)
+ if($html -notmatch '<b>Done\.</b>' -or $html -notmatch '<th>Code</th>' -or $html -notmatch '<td>ok<br>fine</td>'){throw 'AI records: Markdown table or bold not rendered.'}
+ $lists=[Codex.AiRecords.MarkdownHtml]::Render($chat.Records[1].Answer)
+ if($lists -ne '<ul><li>one</li><li>two</li></ul><ol><li>first</li></ol>'){throw "AI records: lists rendered wrong: $lists"}
+ if([Codex.AiRecords.MarkdownHtml]::Render('<script>x</script>') -match '<script>'){throw 'AI records: raw HTML in an answer must be escaped.'}
+ # Codex questions: a marker cut off by a code span, bold that must touch its text, a literal 2**3.
+ $bold=[Codex.AiRecords.MarkdownHtml]::Render('only**`CARO_MAX` ** **all devices** , **Result**x and 2**3')
+ if($bold -notmatch '<b>all devices</b>' -or $bold -notmatch '<b>Result</b>x' -or $bold -notmatch '<code>CARO_MAX</code>' -or $bold -notmatch '2\*\*3' -or ($bold -replace '2\*\*3','') -match '\*\*'){throw "AI records: bold markers rendered wrong: $bold"}
+ if($chat.Machine -ne $env:COMPUTERNAME){throw 'AI records: a session read here must name this computer.'}
+
+ # Archives are gzip files in <records>\sessions, swapped in whole; the sync status comes from the notes backend.
+ $previousRoot=$env:TNOTES_AI_RECORDS
+ $env:TNOTES_AI_RECORDS=Join-Path $chatDir 'records'
+ try{
+  if([Codex.AiRecords.ChatArchive]::ArchiveRoot -ne (Join-Path $env:TNOTES_AI_RECORDS 'sessions')){throw 'AI records: TNOTES_AI_RECORDS is not used.'}
+  [void][IO.Directory]::CreateDirectory([Codex.AiRecords.ChatArchive]::ArchiveRoot)
+  [Codex.AiRecords.ChatArchive]::WriteArchive($chat,$serializer)
+  [Codex.AiRecords.ChatArchive]::WriteArchive($chat,$serializer)
+  $stored=[Codex.AiRecords.ChatArchive]::ArchivePath('session-1')
+  $bytes=[IO.File]::ReadAllBytes($stored)
+  if($bytes[0] -ne 0x1f -or $bytes[1] -ne 0x8b){throw 'AI records: the archive is not gzip-compressed.'}
+  if(@(Get-ChildItem -LiteralPath ([Codex.AiRecords.ChatArchive]::ArchiveRoot) -File).Count -ne 1){throw 'AI records: writing an archive left temporary files.'}
+  $back=[Codex.AiRecords.ChatArchive]::ReadArchive($stored,$serializer)
+  if($back.Records.Count -ne 2 -or $back.Records[0].Answer -ne $first.Answer -or $back.Title -ne 'Example title' -or $back.Machine -ne $env:COMPUTERNAME){throw 'AI records: the compressed archive did not read back the same.'}
+  [Codex.AiRecords.ChatArchive]::RequestSync()
+  if(-not (Test-Path -LiteralPath ([Codex.AiRecords.ChatArchive]::SyncRequestPath))){throw 'AI records: the sync request file was not written.'}
+  if([Codex.AiRecords.ChatArchive]::SyncChanges() -ne 0){throw 'AI records: no status file should mean nothing downloaded.'}
+  [IO.File]::WriteAllText([Codex.AiRecords.ChatArchive]::SyncStatusPath,'{"state":"ok","updated":"2026-11-21T06:30:00.000Z","downloaded":2,"codex":1,"stored":530000}')
+  if([Codex.AiRecords.ChatArchive]::SyncText() -notmatch ' 518 KB' -or [Codex.AiRecords.ChatArchive]::SyncChanges() -ne 3){throw 'AI records: the sync status was not read.'}
+  [IO.File]::WriteAllText([Codex.AiRecords.ChatArchive]::SyncStatusPath,'{"state":"off","message":"server-old","updated":"2026-11-21T06:30:00.000Z","lastSuccess":null}')
+  if([Codex.AiRecords.ChatArchive]::SyncText() -ne 'server-old'){throw 'AI records: a sync problem must be shown as the backend wrote it.'}
+ }finally{$env:TNOTES_AI_RECORDS=$previousRoot}
+}finally{Remove-Item -LiteralPath $chatDir -Recurse -Force -ErrorAction SilentlyContinue}
+
+# The AI records sync (notes backend) between two computers through a fake server.
+& node --no-warnings (Join-Path $root 't-notes\tests\ai_sync_test.cjs')
+if($LASTEXITCODE -ne 0){throw 'AI records sync test failed.'}
+# Codex conversations exported from databases shaped like Codex's own.
+& node --no-warnings (Join-Path $root 't-notes\tests\codex_records_test.cjs')
+if($LASTEXITCODE -ne 0){throw 'Codex records test failed.'}
+
 # Every text the window uses exists in text.json.
 $text=[IO.File]::ReadAllText((Join-Path $root 'dev-tools\text.json'),[Text.Encoding]::UTF8)|ConvertFrom-Json
 $source=[IO.File]::ReadAllText((Join-Path $root 'dev-tools\DevTools.ps1'))+[IO.File]::ReadAllText((Join-Path $root 'codex-floating-button.ps1'))
 $missing=@([regex]::Matches($source,'\$(?:T|devToolsText)\.([A-Za-z]+)')|ForEach-Object{$_.Groups[1].Value}|Sort-Object -Unique|Where-Object{$null -eq $text.PSObject.Properties[$_]})
 if($missing.Count){throw ('Missing dev tool texts: '+($missing -join ', '))}
 
-Write-Output 'PASS: Dev tools parse adb output, pick Gradle processes, check paths, keep settings, encrypt installer sign-ins and read BLE logs.'
+Write-Output 'PASS: Dev tools parse adb output, pick Gradle processes, check paths, keep settings, encrypt installer sign-ins, read BLE logs and AI conversation records.'

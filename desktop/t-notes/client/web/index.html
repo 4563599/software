@@ -37,31 +37,36 @@
   <button data-filter="note"><i data-lucide="sticky-note"></i>备忘录</button>
   <button data-filter="prompt"><i data-lucide="sparkles"></i>AI 提示词</button>
   <button data-filter="password"><i data-lucide="key-round"></i>保险箱</button>
+  <button data-filter="config"><i data-lucide="file-code"></i>配置</button>
+  <button data-filter="todo"><i data-lucide="list-checks"></i>待办</button>
   <button data-filter="pinned"><i data-lucide="pin"></i>已置顶</button>
   <button data-filter="trash"><i data-lucide="trash-2"></i>回收站</button>
   <label class="tag-search">标签筛选<input id="tag-filter" placeholder="输入标签"></label>
  </nav>
  <section class="index">
   <div class="searchbar"><i data-lucide="search"></i><input id="search" aria-label="搜索记录" placeholder="搜索记录" title="搜索标题、正文、标签、网站（Ctrl+F）"><button id="new-record" title="新建（Ctrl+N）" aria-label="新建记录"><i data-lucide="plus"></i></button></div>
+  <div class="todo-add" hidden><input id="todo-title-library" class="todo-title" maxlength="200" placeholder="添加待办" title="待办的标题，回车添加；不填时用下面内容的第一行" aria-label="新待办的标题" autocomplete="off"><i data-lucide="plus"></i><textarea id="todo-add-library" rows="1" maxlength="50000" placeholder="内容（可不填，可粘贴表格）" title="回车添加，Shift+回车换行" aria-label="新待办的内容"></textarea><span class="todo-tag-field"><i data-lucide="tag"></i><input id="todo-tag-library" maxlength="40" placeholder="标签" aria-label="新待办的标签" autocomplete="off"><button class="todo-tag-open" type="button" tabindex="-1" title="选择用过的标签" aria-label="选择用过的标签"><i data-lucide="chevron-down"></i></button><div class="todo-tag-menu" aria-label="用过的标签" hidden></div></span></div>
+  <div id="todo-tags-library" class="todo-tags" hidden></div>
   <div id="record-list"></div>
  </section>
  <main class="editor">
   <div class="editor-top">
    <button id="back-to-list" title="返回记录列表（Esc）" aria-label="返回记录列表"><i data-lucide="arrow-left"></i></button>
    <span id="kind-label" class="kind-label">备忘录</span>
-   <select id="kind" aria-label="记录类型" hidden><option value="note">备忘录</option><option value="prompt">AI 提示词</option><option value="password">账号密码</option></select>
+   <select id="kind" aria-label="记录类型" hidden><option value="note">备忘录</option><option value="prompt">AI 提示词</option><option value="password">账号密码</option><option value="config">配置</option><option value="todo">待办</option></select>
   </div>
   <div class="editor-body">
   <section id="record-view" aria-label="查看记录">
    <div id="empty-record" class="empty-record"><i data-lucide="notebook"></i><p>暂无记录</p><button id="new-from-empty" class="primary"><i data-lucide="plus"></i>新建记录</button></div>
    <article id="read-content" hidden>
-    <h1 id="read-title"></h1>
+    <h1 id="read-title"></h1><div class="read-meta"><span id="read-tag"></span><span id="read-when"></span></div>
     <div id="read-secret" hidden>
      <div class="read-field"><span>账户</span><div class="field-row"><p id="read-account"></p><button id="view-copy-account" title="复制账户" aria-label="复制账户"><i data-lucide="copy"></i></button></div></div>
      <div class="read-field"><span>密码</span><div class="field-row"><input id="view-password" type="password" readonly autocomplete="off" aria-label="记录密码"><button id="view-reveal" title="显示 / 隐藏密码" aria-label="显示或隐藏记录密码"><i data-lucide="eye"></i></button><button id="view-copy-password" title="复制密码" aria-label="复制密码"><i data-lucide="copy"></i></button></div></div>
      <div id="read-site-row" class="read-field"><span>网站</span><p id="read-site"></p></div>
     </div>
-    <p id="read-body"></p><p id="read-tag" class="muted"></p>
+    <div id="read-config" class="code-box" hidden><div class="code-head"><span id="read-format" class="code-format"></span><span id="read-lines"></span><button id="copy-code" class="text" title="复制配置" aria-label="复制配置"><i data-lucide="copy"></i>复制</button></div><pre id="read-code" class="code" aria-label="配置内容"></pre></div>
+    <div id="read-body"></div>
    </article>
   </section>
   <div id="edit-fields" hidden>
@@ -71,7 +76,9 @@
     <label>密码<div class="field-row"><input id="password" type="password" autocomplete="off"><button id="reveal" title="显示 / 隐藏" aria-label="显示或隐藏密码"><i data-lucide="eye"></i></button><button id="generate" title="生成随机密码" aria-label="生成随机密码"><i data-lucide="dices"></i></button><button id="copy-password" title="复制密码" aria-label="复制密码"><i data-lucide="copy"></i></button></div></label>
     <label>网站<input id="site" placeholder="https://" autocomplete="off"></label>
    </div>
+   <label id="format-row" hidden>格式<select id="lang" aria-label="配置格式"></select></label>
    <label><span id="body-label">内容</span><textarea id="body" rows="7" placeholder="记录你的想法…" maxlength="50000"></textarea></label>
+   <label id="note-row" hidden>说明<textarea id="note" rows="4" maxlength="50000" placeholder="这段配置做什么用、要注意什么…"></textarea></label>
    <div class="editor-bottom"><label>标签<input id="tag" placeholder="工作 / 学习" maxlength="40"></label><button id="cancel-edit" title="取消编辑（Esc）" aria-label="取消编辑"><i data-lucide="x"></i></button><button id="save" class="primary" title="保存（Ctrl+S）"><i data-lucide="check"></i>保存</button></div>
   </div>
   <div id="prompt-tools" hidden><button id="fill-prompt" class="text"><i data-lucide="braces"></i>填充提示词变量</button></div>
@@ -79,6 +86,7 @@
   </div>
   <!-- The record's buttons sit at the bottom of the panel, where they are easy to reach, and stay put while it scrolls. -->
   <div class="editor-actions actions">
+   <button id="done" title="标记完成" aria-label="标记完成" aria-pressed="false" hidden disabled><i data-lucide="circle"></i><span>完成</span></button>
    <button id="edit" title="编辑" aria-label="编辑记录" disabled><i data-lucide="pencil"></i><span>编辑</span></button>
    <button id="pin" title="置顶" aria-label="置顶记录" aria-pressed="false" disabled><i data-lucide="pin"></i><span>置顶</span></button>
    <button id="copy" title="复制内容" aria-label="复制内容" disabled><i data-lucide="copy"></i><span>复制</span></button>
@@ -86,14 +94,18 @@
   </div>
  </main>
  <section class="recent">
-  <div class="recent-heading"><span>全部记录</span><span id="quick-count" class="muted"></span><button id="quick-new" title="新建记录（Ctrl+N）" aria-label="新建记录"><i data-lucide="plus"></i></button><button id="open-library" class="text">资料库<i data-lucide="arrow-up-right"></i></button></div>
+  <div class="recent-heading"><span id="quick-title">全部记录</span><span id="quick-count" class="muted"></span><button id="quick-new" title="新建记录（Ctrl+N）" aria-label="新建记录"><i data-lucide="plus"></i></button><button id="open-library" class="text">资料库<i data-lucide="arrow-up-right"></i></button></div>
   <div class="quick-search"><i data-lucide="search"></i><input id="quick-search" placeholder="搜索记录" aria-label="快速搜索记录" title="搜索标题、正文、标签、网站（Ctrl+F）"></div>
-  <nav class="quick-filters" aria-label="记录类型筛选"><button data-quick-filter="all" class="active" aria-pressed="true">全部</button><button data-quick-filter="note" aria-pressed="false">备忘录</button><button data-quick-filter="prompt" aria-pressed="false">提示词</button><button data-quick-filter="password" aria-pressed="false">账号</button><button data-quick-filter="pinned" aria-pressed="false"><i data-lucide="pin"></i>置顶</button></nav>
+  <nav class="quick-filters" aria-label="记录类型筛选"><button data-quick-filter="all" class="active" aria-pressed="true">全部</button><button data-quick-filter="note" aria-pressed="false">备忘录</button><button data-quick-filter="prompt" aria-pressed="false">提示词</button><button data-quick-filter="password" aria-pressed="false">账号</button><button data-quick-filter="config" aria-pressed="false">配置</button><button data-quick-filter="todo" aria-pressed="false">待办</button><button data-quick-filter="pinned" aria-pressed="false"><i data-lucide="pin"></i>置顶</button></nav>
+  <div class="todo-add" hidden><input id="todo-title-quick" class="todo-title" maxlength="200" placeholder="添加待办" title="待办的标题，回车添加；不填时用下面内容的第一行" aria-label="新待办的标题" autocomplete="off"><i data-lucide="plus"></i><textarea id="todo-add-quick" rows="1" maxlength="50000" placeholder="内容（可不填，Shift+回车换行，可粘贴表格）" title="回车添加，Shift+回车换行" aria-label="新待办的内容"></textarea><span class="todo-tag-field"><i data-lucide="tag"></i><input id="todo-tag-quick" maxlength="40" placeholder="标签" aria-label="新待办的标签" autocomplete="off"><button class="todo-tag-open" type="button" tabindex="-1" title="选择用过的标签" aria-label="选择用过的标签"><i data-lucide="chevron-down"></i></button><div class="todo-tag-menu" aria-label="用过的标签" hidden></div></span></div>
+  <div id="todo-tags-quick" class="todo-tags" hidden></div>
   <div id="recent-list"></div>
  </section>
 </div>
-<footer><span id="sync-label">尚未登录</span><button id="sync-now" class="text" disabled><i data-lucide="refresh-cw"></i>同步</button></footer>
+<footer><span id="sync-label">尚未登录</span><button id="error-log" class="text" title="查看错误日志" hidden><i data-lucide="circle-alert"></i><span>错误日志</span></button><button id="sync-now" class="text" disabled><i data-lucide="refresh-cw"></i>同步</button></footer>
 <div id="notice" role="status" aria-live="polite"></div>
+<div id="row-menu" class="row-menu" role="menu" aria-label="记录操作" hidden></div>
+<datalist id="todo-tag-list"></datalist>
 <dialog id="settings-dialog">
  <header><h2>同步与备份</h2><button data-close="settings-dialog" aria-label="关闭"><i data-lucide="x"></i></button></header>
  <dl><dt>同步服务器</dt><dd id="server-url"></dd><dt>本机数据目录</dt><dd>%LOCALAPPDATA%\TNotes</dd><dt>未同步记录</dt><dd id="pending-count">0</dd><dt>本机登录</dt><dd id="remember-state">未记住登录</dd><dt>数据加密</dt><dd>本机、服务器和备份文件均保存密文。</dd><dt>每日自动备份</dt><dd id="backup-state">正在读取…</dd></dl>
@@ -105,5 +117,6 @@
  <p class="muted">后台每天把加密后的资料库保存到备份文件夹，保留最近 30 份。导入不会覆盖现有记录：本机没有的记录直接恢复，内容不同的另存为“备份副本”。恢复和导入都需要主密码，主密码遗失后无法恢复资料。</p>
  <p class="muted">记住登录后，同一 Windows 用户可直接打开资料库。退出登录会清除本机登录记忆。</p>
 </dialog>
+<dialog id="error-dialog"><header><h2>错误日志</h2><button data-close="error-dialog" aria-label="关闭"><i data-lucide="x"></i></button></header><ol id="error-list"></ol><button id="error-clear" class="full"><i data-lucide="trash-2"></i>清空日志</button></dialog>
 <dialog id="prompt-dialog"><header><h2>填充提示词</h2><button data-close="prompt-dialog" aria-label="关闭"><i data-lucide="x"></i></button></header><div id="variables"></div><label>结果<textarea id="prompt-output" rows="10" readonly></textarea></label><button id="copy-prompt" class="primary"><i data-lucide="copy"></i>复制结果</button></dialog>
 </body></html>

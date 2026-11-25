@@ -91,7 +91,7 @@
     "NO_FILE": ["找不到要安装的 APK 文件", "确认文件还在原来的位置。"],
     "TIMEOUT": ["安装超过 10 分钟还没完成，已经停止", "看看手机上是否有等待确认的窗口，然后重新安装。"]
   },
-  "ToolbarTip": "开发工具：Activity / 任务栈 / 安装 APK / 截图 / 日志 / Gradle / 注销账号",
+  "ToolbarTip": "开发工具：Activity / 任务栈 / 安装 APK / 截图 / 日志 / Gradle / 注销账号 / AI 对话记录",
   "ActivityHint": "显示手机前台页面的包名和类名",
   "TaskStacks": "查看任务栈",
   "TaskStacksHint": "图示每个任务栈，从栈顶到栈底",
@@ -273,5 +273,7 @@
   "AccountUnknown": "未知",
   "AccountNoMessage": "服务器没有说明原因",
   "ViewerAnalyze": "蓝牙解析",
-  "ViewerAnalyzeTip": "把右边正在看的日志交给「蓝牙日志解析」，逐条解析收发报文、指令和字段"
+  "ViewerAnalyzeTip": "把右边正在看的日志交给「蓝牙日志解析」，逐条解析收发报文、指令和字段",
+  "AiRecords": "AI 对话记录",
+  "AiRecordsHint": "按项目查看、搜索 AI 帮你做过的事"
 }

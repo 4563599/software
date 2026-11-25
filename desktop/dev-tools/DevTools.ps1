@@ -43,6 +43,8 @@ try {
         Account = $null
         AaptPath = $null
         Cancel = $false
+        Quit = $false
+        Minimized = $false
     }
 
     # Blue accents on light grey; red only for failures. No green anywhere.
@@ -96,6 +98,7 @@ try {
         Package = [string][char]0xE7B8
         Wrench = [string][char]0xE90F
         Account = [string][char]0xE8F8
+        Chat = [string][char]0xE90A
     }
     $doubleBuffered = [System.Windows.Forms.Control].GetProperty('DoubleBuffered', [System.Reflection.BindingFlags]'NonPublic, Instance')
     $newline = [Environment]::NewLine
@@ -415,8 +418,8 @@ try {
     $form.Font = $fonts.Body
     $form.BackColor = $theme.Page
     $form.ForeColor = $theme.Text
-    $form.ClientSize = New-Object System.Drawing.Size(640, 862)
-    $form.MinimumSize = New-Object System.Drawing.Size(560, 822)
+    $form.ClientSize = New-Object System.Drawing.Size(640, 934)
+    $form.MinimumSize = New-Object System.Drawing.Size(560, 894)
     $form.MaximizeBox = $false
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $form.Icon = New-ToolsIcon
@@ -460,7 +463,8 @@ try {
         (New-ActionTile -Glyph $glyphs.Download -Title $T.ExportBle -Hint $T.ExportBleHint -Action { Invoke-DevAction -Title $T.ExportBle -Body { Invoke-BleExport } }),
         (New-ActionTile -Glyph $glyphs.List -Title $T.ShowBle -Hint $T.ShowBleHint -Action { Invoke-DevAction -Title $T.ShowBle -Body { Open-LogViewer } }),
         (New-ActionTile -Glyph $glyphs.Search -Title $T.AnalyzeBle -Hint $T.AnalyzeBleHint -Action { Invoke-DevAction -Title $T.AnalyzeBle -Body { Open-BleAnalyzer } }),
-        (New-ActionTile -Glyph $glyphs.Account -Title $T.AccountTitle -Hint $T.AccountHint -Action { Open-AccountWindow })
+        (New-ActionTile -Glyph $glyphs.Account -Title $T.AccountTitle -Hint $T.AccountHint -Action { Open-AccountWindow }),
+        (New-ActionTile -Glyph $glyphs.Chat -Title $T.AiRecords -Hint $T.AiRecordsHint -Action { Invoke-DevAction -Title $T.AiRecords -Body { Open-AiRecords } })
     )
 
     $pathCaption = New-Caption -Text $T.PathGroup
@@ -1994,6 +1998,12 @@ try {
         Set-ViewerStatus -Text $summary
     }
 
+    function Open-AiRecords {
+        # Every Claude conversation of every project, grouped and searchable (read from Claude's own transcripts).
+        . (Join-Path $PSScriptRoot 'ai-records.ps1')
+        Show-AiRecords -Owner $form
+    }
+
     function Open-BleAnalyzer {
         param(
             # Log lines to parse at once (the file open in the log viewer), and their file name.
@@ -3262,7 +3272,41 @@ try {
             Set-Status -Text $T.Ready
         }
     })
+    # The close button tucks the window away (minimized), so the next click on the tool button shows it at once with
+    # everything as it was. It closes for good with Shift held while clicking it, with Alt+F4, with the toolbar's
+    # quit item (a named signal, checked a few times a second) and when Windows shuts down.
+    $quitSignal = New-Object System.Threading.EventWaitHandle($false, [System.Threading.EventResetMode]::AutoReset, 'Local\CodexDevToolsQuit')
+    $quitTimer = New-Object System.Windows.Forms.Timer
+    $quitTimer.Interval = 300
+    $quitTimer.Add_Tick({
+        if ($quitSignal.WaitOne(0)) {
+            $state.Quit = $true
+            $form.Close()
+        }
+    })
+    $form.Add_Shown({ $quitTimer.Start() })
+    # Phones may have been plugged in or out while the window was tucked away; the list is read again when it returns.
+    $form.Add_Resize({
+        $minimized = $form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized
+        if ($state.Minimized -and -not $minimized -and -not $state.Busy) {
+            Invoke-DevAction -Title $T.Refresh -Body {
+                Update-DeviceList
+                Set-Status -Text $T.Ready
+            }
+        }
+        $state.Minimized = $minimized
+    })
     $form.Add_FormClosing({
+        param($sender, $eventArgs)
+        $keys = [System.Windows.Forms.Control]::ModifierKeys
+        $forGood = $state.Quit -or $eventArgs.CloseReason -ne [System.Windows.Forms.CloseReason]::UserClosing -or
+            ($keys -band [System.Windows.Forms.Keys]::Shift) -or ($keys -band [System.Windows.Forms.Keys]::Alt)
+        if (-not $forGood) {
+            $eventArgs.Cancel = $true
+            $form.WindowState = [System.Windows.Forms.FormWindowState]::Minimized
+            return
+        }
+        $quitTimer.Stop()
         $state.Closing = $true
         if ($null -ne $state.Viewer) {
             $state.Viewer.Form.Close()

@@ -148,19 +148,16 @@ function Get-FloatingButtonIndex {
         [int]$Margin
     )
 
-    # Buttons sit in one row; the gaps and the shadow margin around them belong to no button.
-    if ($Y -lt $Margin -or $Y -ge ($Margin + $ButtonSize)) {
+    # Buttons sit in one row, and the whole bar counts: a gap belongs half to each neighbour and the shadow margin
+    # around the row to the nearest button, so a click just beside a button still presses it. Outside the bar, none.
+    $width = 2 * $Margin + $Count * $ButtonSize + ($Count - 1) * $Gap
+    $height = 2 * $Margin + $ButtonSize
+    if ($Count -le 0 -or $X -lt 0 -or $Y -lt 0 -or $X -ge $width -or $Y -ge $height) {
         return -1
     }
 
-    for ($index = 0; $index -lt $Count; $index++) {
-        $left = $Margin + $index * ($ButtonSize + $Gap)
-        if ($X -ge $left -and $X -lt ($left + $ButtonSize)) {
-            return $index
-        }
-    }
-
-    return -1
+    $index = [Math]::Floor(($X - $Margin + $Gap / 2) / ($ButtonSize + $Gap))
+    return [int][Math]::Max(0, [Math]::Min($Count - 1, $index))
 }
 
 function Get-FloatingBarStartLocation {
